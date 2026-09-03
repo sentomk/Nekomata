@@ -79,7 +79,7 @@
 | 开工前要补的域 | 对应阶段 | 为什么在那个节点学 |
 |---|---|---|
 | DWARF 基础（`DW_TAG_subprogram` 的 pc 区间、`llvm-dwarfdump` 用法） | 阶段二 · 真实可用 | 符号表给不出精确函数区间时才需要它；阶段一用不到 |
-| 构建依赖图（`.d` 文件、compile_commands.json、`-ffunction-sections`） | 阶段二 | 决定"改了文件要重编谁"，是 PatchPlanner 的输入；blink 的替代方案（从调试信息提取原编译命令）也在此阶段评估 |
+| 构建依赖图（`.d` 文件、compile_commands.json、`-ffunction-sections`） | 阶段二 | 决定"改了文件要重编谁"，是 patch_planner 的输入；blink 的替代方案（从调试信息提取原编译命令）也在此阶段评估 |
 | 线程安全点（暂停线程查 RIP vs 空闲点替换） | 阶段二 | 阶段一允许固定时刻替换，回避了这个问题 |
 | PDB 经 DIA SDK 读取、PE 基址重定位、`/hotpatch` 构建约定 | 阶段三 · Windows | 只在 Windows 后端启动时学 |
 | `.eh_frame` 栈展开 | 阶段三 | 补丁后栈回溯必须仍正确 |
@@ -104,7 +104,7 @@
 4. [Eli Bendersky：Load-time relocation of shared libraries](https://eli.thegreenplace.net/2011/08/25/load-time-relocation-of-shared-libraries) 及其同站 PIC 系列 —— 域一的重定位部分加深。
 5. [ELF Nightmares: GOTs, PLTs, and Relocations（BSDCan 2025）](https://www.bsdcan.org/2025/talks/elf-nightmares.pdf) —— 进阶二页，阶段二前读。
 6. [Microsoft Detours](https://github.com/microsoft/Detours) —— trampoline 实现的经典参考，练习三遇到边界问题时对照源码。
-7. [LLVM ORC 文档](https://llvm.org/docs/ORCv2.html) —— 运行时重定位/内存管理的同源机制，阶段二设计 `CodeSubstituter` 时读。
+7. [LLVM ORC 文档](https://llvm.org/docs/ORCv2.html) —— 运行时重定位/内存管理的同源机制，阶段二设计 `code_substituter` 时读。
 8. 同类开源的 README 与设计文档：**blink 的 README「Concept」一节是"运行时链接"端到端最简明的单页讲义**（找 PDB → 重跑原编译命令 → 拷节进进程 → 按旧地址保全局 → 修重定位 → 函数入口写 jmp），做完练习三后精读；jet-live 的 "How it works"（compile_commands.json 与 .d 依赖图的实际用法）、cr.h、RCC++ wiki —— 对照它们各自的取舍，反推自己的设计要点。
 9. 《Linkers and Loaders》（John R. Levine）—— 域一的系统性加深，可无限后置，不阻塞任何阶段。
 

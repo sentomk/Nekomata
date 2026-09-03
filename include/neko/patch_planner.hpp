@@ -1,4 +1,4 @@
-// PatchPlanner — from changed files to a concrete reload plan.
+// patch_planner — from changed files to a concrete reload plan.
 //
 // Answers "what does this change break?": which translation units must be
 // recompiled (dependency graph, seeded by compiler `.d` files) and which
@@ -14,12 +14,12 @@
 
 namespace neko {
 
-class PatchPlanner {
+class patch_planner {
 public:
-    virtual ~PatchPlanner() = default;
+    virtual ~patch_planner() = default;
 
     /// Compute the reload plan for a set of changed source files.
-    virtual std::vector<PatchPlan> plan(const ChangeSet& changes) const = 0;
+    virtual std::vector<patch_plan> plan(const change_set& changes) const = 0;
 };
 
 } // namespace neko

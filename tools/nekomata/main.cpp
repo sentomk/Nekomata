@@ -12,7 +12,7 @@
 
 namespace {
 
-void printUsage(std::FILE* out) {
+void print_usage(std::FILE* out) {
     std::fputs("nekomata — native hot-reload for C/C++\n\n"
                "Usage: nekomata [options]\n\n"
                "Options:\n"
@@ -30,11 +30,11 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (std::strcmp(argv[i], "--help") == 0) {
-            printUsage(stdout);
+            print_usage(stdout);
             return 0;
         }
         std::fprintf(stderr, "nekomata: unknown option '%s'\n\n", argv[i]);
-        printUsage(stderr);
+        print_usage(stderr);
         return 2;
     }
 

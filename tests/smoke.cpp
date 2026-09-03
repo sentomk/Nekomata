@@ -14,12 +14,12 @@
 
 namespace {
 
-class NullSymbolProvider final : public neko::SymbolProvider {
+class null_symbol_provider final : public neko::symbol_provider {
 public:
-    std::vector<neko::FunctionInfo> allFunctions() const override { return {}; }
+    std::vector<neko::function_info> all_functions() const override { return {}; }
 
-    neko::TypeLayout layoutOf(neko::TypeId id) const override {
-        neko::TypeLayout layout;
+    neko::type_layout layout_of(neko::type_id id) const override {
+        neko::type_layout layout;
         layout.id = id;
         return layout;
     }
@@ -33,8 +33,8 @@ TEST_CASE("version_string matches the configured project version") {
 }
 
 TEST_CASE("kernel interfaces are implementable and default-usable") {
-    NullSymbolProvider provider;
-    CHECK(provider.allFunctions().empty());
-    CHECK(provider.layoutOf(7).id == 7);
-    CHECK(provider.layoutOf(7).size == 0);
+    null_symbol_provider provider;
+    CHECK(provider.all_functions().empty());
+    CHECK(provider.layout_of(7).id == 7);
+    CHECK(provider.layout_of(7).size == 0);
 }

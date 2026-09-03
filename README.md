@@ -56,10 +56,10 @@ is a pluggable backend in its own directory with its own tests.
 ```
               +------------------------------------------+
    ChangedSet |  kernel (platform-neutral, include/neko)  |
- ------------->  PatchPlanner   what must be recompiled? |
-              |  SymbolProvider where is everything?     |
-              |  CodeSubstituter write + redirect code   |
-              |  StateManager    keep state alive        |
+ ------------->  patch_planner   what must be recompiled? |
+              |  symbol_provider where is everything?     |
+              |  code_substituter write + redirect code   |
+              |  state_manager    keep state alive        |
               +--------------------+---------------------+
                                    |
         +--------------------------+--------------------------+
@@ -127,6 +127,10 @@ The project is in its design/scaffolding phase; interfaces are explicitly
 marked as drafts that Phase 1 will validate. Reading the proposal first is the
 best way in — open an issue or discussion for anything from API shape to
 backend design.
+
+Naming follows the C++ standard library style: `snake_case` everywhere, types
+included (like `std::string_view`). Commit messages use Conventional Commits,
+with identifiers wrapped in backticks.
 
 ## License
 

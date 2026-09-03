@@ -1,4 +1,4 @@
-// StateManager — keeping program state across reloads.
+// state_manager — keeping program state across reloads.
 //
 // Maps global/static variables of freshly compiled code onto the existing
 // storage of the running process, so state survives the swap. Phase 5
@@ -10,13 +10,13 @@
 
 namespace neko {
 
-class StateManager {
+class state_manager {
 public:
-    virtual ~StateManager() = default;
+    virtual ~state_manager() = default;
 
     /// Map a global/static variable of the new code onto existing storage.
     /// Returns the address the new code must use, or nullptr on failure.
-    virtual void* mapGlobal(GlobalId global) = 0;
+    virtual void* map_global(global_id global) = 0;
 };
 
 } // namespace neko

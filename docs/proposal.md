@@ -37,7 +37,7 @@
 
 * **切入点真实存在**：截至 2026-09，活跃方案中 jet-live 已做到低侵入，但作者明示仅支持 `-O0` 调试构建、多线程重载不可靠、无 Windows；其余活跃项目要求拆库/插件化；零侵入二进制补丁的 blink 已停更。"低侵入 + 优化构建 + 多线程安全 + 跨平台 + 活跃维护"五项交集为空，这正是 Live++ 独占而开源空缺的规格（数据见 Motivation）。
 * **技术路线**：运行时重编译受影响的翻译单元，按运行中进程的真实地址做重定位，再将被替换函数的入口改写为跳转（recompile + relocate + redirect）。
-* **架构**：平台无关内核 + 可插拔后端。内核只依赖四个接口（`SymbolProvider` / `CodeSubstituter` / `PatchPlanner` / `StateManager`），ELF/DWARF 与 PE/PDB 分别作为后端实现。
+* **架构**：平台无关内核 + 可插拔后端。内核只依赖四个接口（`symbol_provider` / `code_substituter` / `patch_planner` / `state_manager`），ELF/DWARF 与 PE/PDB 分别作为后端实现。
 * **首个可交付**：Linux/ELF 上的单函数替换原型，单人 4–8 周可完成，完成后即开源。
 * **诚实的能力边界**：优化构建下的内联处理与类布局迁移放在后期阶段，首版不承诺（见 Non-Goals）。
 * **目标不止游戏**：热重载价值 ≈ 重启成本 × 迭代频率 × 保住的不可重建状态 − 接入与信任成本。非游戏世界已有大量付费先例（内核 livepatch、JRebel、HMR、Flutter），nekomata 面向"任何重启昂贵的 C++ 工作负载"（见 Motivation 与 Adoption Strategy）。
@@ -127,26 +127,26 @@ Live++（Molecular Matters GmbH，创始人 Stefan Reinalter）是这个方向�
 namespace neko {
 
 // 符号与调试信息：函数地址、边界、类型布局、内联单元
-class SymbolProvider {
-  virtual std::vector<FunctionInfo> allFunctions() const = 0;
-  virtual TypeLayout layoutOf(TypeId) const = 0;
+class symbol_provider {
+  virtual std::vector<function_info> all_functions() const = 0;
+  virtual type_layout layout_of(type_id) const = 0;
 };
 
 // 代码替换：写入新代码、生成入口跳转、执行重定位
-class CodeSubstituter {
-  virtual void* reserveCode(uint64_t bytes) = 0;
-  virtual bool patchEntry(const Patch& p) = 0;
+class code_substituter {
+  virtual void* reserve_code(uint64_t bytes) = 0;
+  virtual bool patch_entry(const Patch& p) = 0;
   virtual bool relocate(const Relocation& r) = 0;
 };
 
 // 变化规划：改动文件 -> 需要重编的翻译单元 -> 需要替换的函数
-class PatchPlanner {
-  virtual std::vector<PatchPlan> plan(const ChangeSet&) const = 0;
+class patch_planner {
+  virtual std::vector<patch_plan> plan(const change_set&) const = 0;
 };
 
 // 状态管理：全局/静态变量映射与（后期）布局迁移
-class StateManager {
-  virtual void* mapGlobal(GlobalId g) = 0;
+class state_manager {
+  virtual void* map_global(global_id g) = 0;
 };
 }
 ```

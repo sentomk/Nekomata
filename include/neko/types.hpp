@@ -13,13 +13,13 @@
 namespace neko {
 
 /// Opaque handle for a user-defined type known to the symbol backend.
-using TypeId = std::uint32_t;
+using type_id = std::uint32_t;
 
 /// Opaque handle for a global/static variable tracked by the state manager.
-using GlobalId = std::uint32_t;
+using global_id = std::uint32_t;
 
 /// Address and extent of a function inside the live process.
-struct FunctionInfo {
+struct function_info {
     /// Mangled symbol name as emitted by the compiler (e.g. `_Z4funcv`).
     std::string name;
     /// Runtime address of the function entry, as loaded in the target process.
@@ -30,8 +30,8 @@ struct FunctionInfo {
 
 /// Physical layout of a type. Phase 5 (class layout migration) will extend
 /// this with member offsets and vtable information; keep it minimal for now.
-struct TypeLayout {
-    TypeId id = 0;
+struct type_layout {
+    type_id id = 0;
     std::size_t size = 0;
     std::size_t alignment = 0;
 };
@@ -58,20 +58,20 @@ struct Relocation {
 /// `/hotpatch`-reserved hole or over a trampoline copied from the prologue.
 struct Patch {
     /// The function being replaced.
-    FunctionInfo target;
-    /// Buffer produced by CodeSubstituter::reserveCode() holding the new body.
+    function_info target;
+    /// Buffer produced by code_substituter::reserve_code() holding the new body.
     void* new_code = nullptr;
     /// Relocations that must be applied to `new_code` before patching.
     std::vector<Relocation> relocations;
 };
 
 /// Set of source files changed since the last reload.
-struct ChangeSet {
+struct change_set {
     std::vector<std::string> changed_files;
 };
 
 /// The outcome of planning: what to recompile and what to replace afterwards.
-struct PatchPlan {
+struct patch_plan {
     /// Translation units that must be recompiled.
     std::vector<std::string> translation_units;
     /// Function patches to apply once recompilation succeeded.

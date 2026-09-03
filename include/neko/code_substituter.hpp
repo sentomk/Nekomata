@@ -1,4 +1,4 @@
-// CodeSubstituter — writing and redirecting machine code in the live process.
+// code_substituter — writing and redirecting machine code in the live process.
 //
 // Owns the executable-page playground: reserving RWX/RX memory close to the
 // target code, applying relocations to freshly compiled code ("runtime
@@ -15,18 +15,18 @@
 
 namespace neko {
 
-class CodeSubstituter {
+class code_substituter {
 public:
-    virtual ~CodeSubstituter() = default;
+    virtual ~code_substituter() = default;
 
     /// Reserve `bytes` of executable memory for a freshly compiled function
     /// body. Returns nullptr on failure.
-    virtual void* reserveCode(std::uint64_t bytes) = 0;
+    virtual void* reserve_code(std::uint64_t bytes) = 0;
 
     /// Rewrite the entry point of `patch.target` so the next call lands in
     /// `patch.new_code`. Must preserve in-flight executions of the old body
     /// (trampoline or /hotpatch hole).
-    virtual bool patchEntry(const Patch& patch) = 0;
+    virtual bool patch_entry(const Patch& patch) = 0;
 
     /// Apply one relocation against the live process's real addresses.
     virtual bool relocate(const Relocation& relocation) = 0;
