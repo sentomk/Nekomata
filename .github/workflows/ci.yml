@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.cc }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ubuntu-22.04 defaults: GCC 11 / Clang 14 — Clang 14 is the floor
+          # required of the compiler frontend backend (proposal §Detailed Design).
+          - { os: ubuntu-22.04, cc: gcc, cxx: g++ }
+          - { os: ubuntu-22.04, cc: clang, cxx: clang++ }
+          - { os: ubuntu-24.04, cc: gcc, cxx: g++ }
+          - { os: ubuntu-24.04, cc: clang, cxx: clang++ }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake --preset debug
+
+      - name: Build
+        run: cmake --build --preset debug
+
+      - name: Test
+        run: ctest --preset debug
+
+  # The kernel is platform-neutral; building it on macOS keeps it honest.
+  # Backend directories are skipped by design on this platform.
+  kernel-portability:
+    name: kernel-only / macOS arm64
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake --preset debug
+
+      - name: Build
+        run: cmake --build --preset debug
+
+      - name: Test
+        run: ctest --preset debug
+
+  sanitizers:
+    name: sanitizers / ASan + UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure
+        env:
+          CC: clang
+          CXX: clang++
+        run: cmake --preset asan
+
+      - name: Build
+        run: cmake --build --preset asan
+
+      - name: Test
+        run: ctest --preset asan
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check formatting
+        run: |
+          clang-format --version
+          find include src tests tools -type f \( -name '*.cpp' -o -name '*.hpp' \) -print0 \
+            | xargs -0 clang-format --dry-run --Werror
+
+  # Windows (PE/PDB backend, MSVC matrix) arrives with Phase 3 of the
+  # roadmap. See docs/proposal.md, "阶段三 · Windows/PE/PDB".
