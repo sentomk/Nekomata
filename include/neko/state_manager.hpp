@@ -6,9 +6,9 @@
 
 #pragma once
 
-#include <hlr/types.hpp>
+#include <neko/types.hpp>
 
-namespace hlr {
+namespace neko {
 
 class StateManager {
 public:
@@ -19,4 +19,4 @@ public:
     virtual void* mapGlobal(GlobalId global) = 0;
 };
 
-} // namespace hlr
+} // namespace neko

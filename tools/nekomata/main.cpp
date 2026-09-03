@@ -4,7 +4,7 @@
 // (attach to process, watch sources, trigger reloads) lands together with
 // the ELF backend.
 
-#include <hlr/version.hpp>
+#include <neko/version.hpp>
 
 #include <cstdio>
 #include <cstring>
@@ -26,7 +26,7 @@ void printUsage(std::FILE* out) {
 int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--version") == 0) {
-            std::printf("nekomata %s\n", hlr::version_string().c_str());
+            std::printf("nekomata %s\n", neko::version_string().c_str());
             return 0;
         }
         if (std::strcmp(argv[i], "--help") == 0) {
@@ -40,6 +40,6 @@ int main(int argc, char** argv) {
 
     std::printf("nekomata %s — hot reload core is not implemented yet "
                 "(phase 1 in progress).\n",
-                hlr::version_string().c_str());
+                neko::version_string().c_str());
     return 0;
 }

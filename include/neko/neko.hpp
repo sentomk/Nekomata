@@ -5,9 +5,9 @@
 
 #pragma once
 
-#include <hlr/code_substituter.hpp>
-#include <hlr/patch_planner.hpp>
-#include <hlr/state_manager.hpp>
-#include <hlr/symbol_provider.hpp>
-#include <hlr/types.hpp>
-#include <hlr/version.hpp>
+#include <neko/code_substituter.hpp>
+#include <neko/patch_planner.hpp>
+#include <neko/state_manager.hpp>
+#include <neko/symbol_provider.hpp>
+#include <neko/types.hpp>
+#include <neko/version.hpp>

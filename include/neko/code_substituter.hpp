@@ -9,11 +9,11 @@
 
 #pragma once
 
-#include <hlr/types.hpp>
+#include <neko/types.hpp>
 
 #include <cstdint>
 
-namespace hlr {
+namespace neko {
 
 class CodeSubstituter {
 public:
@@ -32,4 +32,4 @@ public:
     virtual bool relocate(const Relocation& relocation) = 0;
 };
 
-} // namespace hlr
+} // namespace neko

@@ -5,5 +5,5 @@
 #   * /hotpatch (/FUNCTIONPADMIN) entry-rewrite convention
 #
 # Status: not implemented. Stub keeps the directory wired into the build.
-add_library(hlr_backend_pe INTERFACE)
-add_library(nekomata::backends::pe ALIAS hlr_backend_pe)
+add_library(neko_backend_pe INTERFACE)
+add_library(nekomata::backends::pe ALIAS neko_backend_pe)

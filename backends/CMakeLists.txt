@@ -10,7 +10,7 @@
 #   binary backend     ELF               PE
 #   runtime agent      mmap/mprotect     VirtualProtect
 #
-# The kernel (include/hlr) must stay buildable on every platform so the
+# The kernel (include/neko) must stay buildable on every platform so the
 # orchestration logic is testable everywhere; backends are gated below.
 
 if(NEKOMATA_TARGET_LINUX)

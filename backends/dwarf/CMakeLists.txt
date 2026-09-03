@@ -6,5 +6,5 @@
 #   * (Phase 4) inline unit reconstruction from DW_TAG_inlined_subroutine
 #
 # Status: not implemented. Stub keeps the directory wired into the build.
-add_library(hlr_backend_dwarf INTERFACE)
-add_library(nekomata::backends::dwarf ALIAS hlr_backend_dwarf)
+add_library(neko_backend_dwarf INTERFACE)
+add_library(nekomata::backends::dwarf ALIAS neko_backend_dwarf)

@@ -68,19 +68,19 @@ endfunction()
 # ---------------------------------------------------------------------------
 # Kernel: platform-neutral core.
 # The four interfaces (SymbolProvider / CodeSubstituter / PatchPlanner /
-# StateManager) live under include/hlr/ and must not depend on any backend.
+# StateManager) live under include/neko/ and must not depend on any backend.
 # ---------------------------------------------------------------------------
-configure_file(include/hlr/version.hpp.in generated/hlr/version.hpp @ONLY)
+configure_file(include/neko/version.hpp.in generated/neko/version.hpp @ONLY)
 
-add_library(hlr STATIC src/version.cpp)
-add_library(nekomata::hlr ALIAS hlr)
-target_include_directories(hlr
+add_library(neko STATIC src/version.cpp)
+add_library(nekomata::neko ALIAS neko)
+target_include_directories(neko
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>)
-target_compile_features(hlr PUBLIC cxx_std_20)
-nekomata_apply_warnings(hlr)
-nekomata_apply_sanitizers(hlr)
+target_compile_features(neko PUBLIC cxx_std_20)
+nekomata_apply_warnings(neko)
+nekomata_apply_sanitizers(neko)
 
 # ---------------------------------------------------------------------------
 # Backends: platform-specific, each in its own directory with its own tests.

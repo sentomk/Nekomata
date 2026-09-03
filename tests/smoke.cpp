@@ -7,19 +7,19 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include <hlr/hlr.hpp>
+#include <neko/neko.hpp>
 
 #include <string>
 #include <vector>
 
 namespace {
 
-class NullSymbolProvider final : public hlr::SymbolProvider {
+class NullSymbolProvider final : public neko::SymbolProvider {
 public:
-    std::vector<hlr::FunctionInfo> allFunctions() const override { return {}; }
+    std::vector<neko::FunctionInfo> allFunctions() const override { return {}; }
 
-    hlr::TypeLayout layoutOf(hlr::TypeId id) const override {
-        hlr::TypeLayout layout;
+    neko::TypeLayout layoutOf(neko::TypeId id) const override {
+        neko::TypeLayout layout;
         layout.id = id;
         return layout;
     }
@@ -28,8 +28,8 @@ public:
 } // namespace
 
 TEST_CASE("version_string matches the configured project version") {
-    CHECK(hlr::version_string() == NEKOMATA_VERSION_STRING);
-    CHECK_FALSE(hlr::version_string().empty());
+    CHECK(neko::version_string() == NEKOMATA_VERSION_STRING);
+    CHECK_FALSE(neko::version_string().empty());
 }
 
 TEST_CASE("kernel interfaces are implementable and default-usable") {

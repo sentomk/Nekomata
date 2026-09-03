@@ -8,11 +8,11 @@
 
 #pragma once
 
-#include <hlr/types.hpp>
+#include <neko/types.hpp>
 
 #include <vector>
 
-namespace hlr {
+namespace neko {
 
 class SymbolProvider {
 public:
@@ -25,4 +25,4 @@ public:
     virtual TypeLayout layoutOf(TypeId id) const = 0;
 };
 
-} // namespace hlr
+} // namespace neko

@@ -7,5 +7,5 @@
 #
 # Status: not implemented. This stub keeps the directory wired into the
 # build so the structure is in place before the first real code lands.
-add_library(hlr_backend_elf INTERFACE)
-add_library(nekomata::backends::elf ALIAS hlr_backend_elf)
+add_library(neko_backend_elf INTERFACE)
+add_library(nekomata::backends::elf ALIAS neko_backend_elf)

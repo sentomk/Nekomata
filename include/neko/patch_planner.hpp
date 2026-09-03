@@ -8,11 +8,11 @@
 
 #pragma once
 
-#include <hlr/types.hpp>
+#include <neko/types.hpp>
 
 #include <vector>
 
-namespace hlr {
+namespace neko {
 
 class PatchPlanner {
 public:
@@ -22,4 +22,4 @@ public:
     virtual std::vector<PatchPlan> plan(const ChangeSet& changes) const = 0;
 };
 
-} // namespace hlr
+} // namespace neko

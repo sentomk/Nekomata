@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace hlr {
+namespace neko {
 
 /// Opaque handle for a user-defined type known to the symbol backend.
 using TypeId = std::uint32_t;
@@ -78,4 +78,4 @@ struct PatchPlan {
     std::vector<Patch> patches;
 };
 
-} // namespace hlr
+} // namespace neko

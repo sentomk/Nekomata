@@ -124,7 +124,7 @@ Live++（Molecular Matters GmbH，创始人 Stefan Reinalter）是这个方向�
 内核不含任何平台代码，只依赖四个抽象接口：
 
 ```cpp
-namespace hlr {
+namespace neko {
 
 // 符号与调试信息：函数地址、边界、类型布局、内联单元
 class SymbolProvider {

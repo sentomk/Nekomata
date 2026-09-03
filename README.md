@@ -55,7 +55,7 @@ is a pluggable backend in its own directory with its own tests.
 
 ```
               +------------------------------------------+
-   ChangedSet |  kernel (platform-neutral, include/hlr)  |
+   ChangedSet |  kernel (platform-neutral, include/neko)  |
  ------------->  PatchPlanner   what must be recompiled? |
               |  SymbolProvider where is everything?     |
               |  CodeSubstituter write + redirect code   |
