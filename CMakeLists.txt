@@ -1,0 +1,116 @@
+cmake_minimum_required(VERSION 3.21)
+
+project(nekomata
+  VERSION 0.1.0
+  DESCRIPTION "Native hot-reload for C/C++ — no restarts, no refactor."
+  LANGUAGES CXX)
+
+# ---------------------------------------------------------------------------
+# Options
+# ---------------------------------------------------------------------------
+option(NEKOMATA_BUILD_TESTS "Build nekomata tests" ON)
+option(NEKOMATA_BUILD_TOOLS "Build nekomata command line tools" ON)
+option(NEKOMATA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
+option(NEKOMATA_ENABLE_SANITIZERS "Build with ASan+UBSan (Clang/GCC only)" OFF)
+
+# ---------------------------------------------------------------------------
+# Global compile settings
+# ---------------------------------------------------------------------------
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+  set_property(CACHE CMAKE_BUILD_TYPE
+    PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+endif()
+
+# Platform gates for the pluggable backends (see docs/proposal.md).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(NEKOMATA_TARGET_LINUX ON)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+  set(NEKOMATA_TARGET_WINDOWS ON)
+endif()
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+function(nekomata_apply_warnings target)
+  if(MSVC)
+    set(flags /W4 /permissive-)
+    if(NEKOMATA_WARNINGS_AS_ERRORS)
+      list(APPEND flags /WX)
+    endif()
+  else()
+    set(flags -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor)
+    if(NEKOMATA_WARNINGS_AS_ERRORS)
+      list(APPEND flags -Werror)
+    endif()
+  endif()
+  target_compile_options(${target} PRIVATE ${flags})
+endfunction()
+
+function(nekomata_apply_sanitizers target)
+  if(NOT NEKOMATA_ENABLE_SANITIZERS)
+    return()
+  endif()
+  if(MSVC)
+    target_compile_options(${target} PUBLIC /fsanitize=address)
+  else()
+    target_compile_options(${target} PUBLIC -fsanitize=address,undefined
+                                            -fno-omit-frame-pointer)
+    target_link_options(${target} PUBLIC -fsanitize=address,undefined)
+  endif()
+endfunction()
+
+# ---------------------------------------------------------------------------
+# Kernel: platform-neutral core.
+# The four interfaces (SymbolProvider / CodeSubstituter / PatchPlanner /
+# StateManager) live under include/hlr/ and must not depend on any backend.
+# ---------------------------------------------------------------------------
+configure_file(include/hlr/version.hpp.in generated/hlr/version.hpp @ONLY)
+
+add_library(hlr STATIC src/version.cpp)
+add_library(nekomata::hlr ALIAS hlr)
+target_include_directories(hlr
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>)
+target_compile_features(hlr PUBLIC cxx_std_20)
+nekomata_apply_warnings(hlr)
+nekomata_apply_sanitizers(hlr)
+
+# ---------------------------------------------------------------------------
+# Backends: platform-specific, each in its own directory with its own tests.
+# ---------------------------------------------------------------------------
+add_subdirectory(backends)
+
+# ---------------------------------------------------------------------------
+# Tools & tests
+# ---------------------------------------------------------------------------
+if(NEKOMATA_BUILD_TOOLS)
+  add_subdirectory(tools)
+endif()
+
+if(NEKOMATA_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
+
+# ---------------------------------------------------------------------------
+# Configuration summary
+# ---------------------------------------------------------------------------
+message(STATUS "nekomata ${PROJECT_VERSION}")
+message(STATUS "  compiler:   ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+message(STATUS "  build type: ${CMAKE_BUILD_TYPE}")
+if(NEKOMATA_TARGET_LINUX)
+  message(STATUS "  backends:   elf + dwarf (Linux)")
+elseif(NEKOMATA_TARGET_WINDOWS)
+  message(STATUS "  backends:   pe + pdb (Windows)")
+else()
+  message(STATUS "  backends:   none for this platform; building kernel only")
+endif()
+message(STATUS "  sanitizers: ${NEKOMATA_ENABLE_SANITIZERS}")
+message(STATUS "  tests:      ${NEKOMATA_BUILD_TESTS}")

@@ -1,0 +1,9 @@
+# Build trees (one subdirectory per CMake preset)
+build/
+
+# Editor / tooling
+compile_commands.json
+.cache/
+.vscode/
+.idea/
+.DS_Store
