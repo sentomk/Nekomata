@@ -20,16 +20,15 @@ int main(int argc, char** argv) {
 
     neko::reload_session session{neko::elf::create_backend()}; // 1. agent
     session.watch(watched);                                    // 2. watch a path
-    std::printf("%s watching '%s' (pid %d) — drop a fresh hot.o to reload\n", neko::kLogTag,
-                watched, static_cast<int>(getpid()));
+    neko::log(neko::log_level::info, "watching '%s' (pid %d) — drop a fresh hot.o to reload\n",
+              watched, static_cast<int>(getpid()));
 
     for (int i = 0; i < 2000; ++i) { // ~6.5 min at 200 ms; the demo exits sooner
         tick();                      //    hot code
         try {
             session.update(); // 3. per-iteration tick
         } catch (const std::exception& e) {
-            std::fprintf(stderr, "%s reload failed, keeping old code: %s\n", neko::kLogTag,
-                         e.what());
+            neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n", e.what());
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }

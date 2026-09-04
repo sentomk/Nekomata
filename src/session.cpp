@@ -99,8 +99,7 @@ bool reload_session::try_load(const std::filesystem::path& path) {
         ++redirected;
     }
 
-    std::fprintf(stderr, "%s reload applied: %zu function(s) redirected\n", neko::kLogTag,
-                 redirected);
+    neko::log(neko::log_level::ok, "reload applied: %zu function(s) redirected\n", redirected);
     return true;
 }
 

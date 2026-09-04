@@ -314,8 +314,8 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     }
 
     for (const auto& repl : out.replacements) {
-        std::fprintf(
-            stderr, "%s   %s -> %p (+0x%x)\n", neko::kLogTag, repl.name.c_str(),
+        neko::log(
+            log_level::info, "  %s -> %p (+0x%x)\n", repl.name.c_str(),
             static_cast<void*>(reinterpret_cast<std::uint8_t*>(out.code) + repl.offset_in_image),
             repl.offset_in_image);
     }

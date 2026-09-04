@@ -22,9 +22,10 @@ int main(int argc, char** argv) {
     session.watch(watched);                                    // 2. watch
 
     std::printf("\033[2J\033[H"); // 清屏一次
-    std::printf("%s playground running (pid %d) — edit demo.cc, then run "
-                "./reload.sh\033[K\n",
-                neko::kLogTag, static_cast<int>(getpid()));
+    neko::log(neko::log_level::info,
+              "playground running (pid %d) — edit demo.cc, then run "
+              "./reload.sh\n",
+              static_cast<int>(getpid()));
 
     for (int i = 0; i < 100000; ++i) {
         step_world();
@@ -32,9 +33,8 @@ int main(int argc, char** argv) {
         try {
             session.update(); // 3. 每帧 tick：发现新 .o 就热替换
         } catch (const std::exception& e) {
-            std::printf("\033[22;1H%s reload rejected, old code keeps "
-                        "running: %s\033[K\n",
-                        neko::kLogTag, e.what());
+            neko::log(neko::log_level::error, "reload rejected, old code keeps running: %s\n",
+                      e.what());
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
     }
