@@ -15,22 +15,22 @@
 void tick(); // defined in hot.cpp — swapped live by nekomata
 
 int main(int argc, char** argv) {
-    const char* watched = argc > 1 ? argv[1] : "hot.new.o";
-    std::setvbuf(stdout, nullptr, _IOLBF, 0);
+  const char* watched = argc > 1 ? argv[1] : "hot.new.o";
+  std::setvbuf(stdout, nullptr, _IOLBF, 0);
 
-    neko::reload_session session{neko::elf::create_backend()}; // 1. agent
-    session.watch(watched);                                    // 2. watch a path
-    neko::log(neko::log_level::info, "watching '%s' (pid %d) — drop a fresh hot.o to reload\n",
-              watched, static_cast<int>(getpid()));
+  neko::reload_session session{neko::elf::create_backend()}; // 1. agent
+  session.watch(watched);                                    // 2. watch a path
+  neko::log(neko::log_level::info, "watching '%s' (pid %d) — drop a fresh hot.o to reload\n",
+            watched, static_cast<int>(getpid()));
 
-    for (int i = 0; i < 2000; ++i) { // ~6.5 min at 200 ms; the demo exits sooner
-        tick();                      //    hot code
-        try {
-            session.update(); // 3. per-iteration tick
-        } catch (const std::exception& e) {
-            neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n", e.what());
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  for (int i = 0; i < 2000; ++i) { // ~6.5 min at 200 ms; the demo exits sooner
+    tick();                        //    hot code
+    try {
+      session.update(); // 3. per-iteration tick
+    } catch (const std::exception& e) {
+      neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n", e.what());
     }
-    return 0;
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  }
+  return 0;
 }

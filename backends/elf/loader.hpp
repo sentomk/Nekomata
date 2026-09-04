@@ -35,14 +35,14 @@ namespace neko::elf {
 
 class loader final : public object_loader {
 public:
-    loader(symbol_provider& symbols, state_manager& state, code_substituter& substituter);
+  loader(symbol_provider& symbols, state_manager& state, code_substituter& substituter);
 
-    loaded_image load(const std::uint8_t* object_data, std::size_t size) override;
+  loaded_image load(const std::uint8_t* object_data, std::size_t size) override;
 
 private:
-    symbol_provider& symbols_;
-    state_manager& state_;
-    code_substituter& substituter_;
+  symbol_provider& symbols_;
+  state_manager& state_;
+  code_substituter& substituter_;
 };
 
 } // namespace neko::elf

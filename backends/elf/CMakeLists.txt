@@ -21,3 +21,4 @@ target_link_libraries(neko_backend_elf
 
 nekomata_apply_warnings(neko_backend_elf)
 nekomata_apply_sanitizers(neko_backend_elf)
+nekomata_apply_clang_tidy(neko_backend_elf)

@@ -125,7 +125,32 @@ ctest --preset debug          # test
 ./build/debug/tools/nekomata/nekomata --version
 ```
 
-Presets: `debug`, `release`, `asan` (ASan + UBSan).
+Presets: `debug`, `release`, `asan` (ASan + UBSan), `tidy` (clang-tidy).
+
+CI uses clang-format 18 with two-space indentation. The same script checks or
+formats all tracked and new non-ignored C/C++ sources, headers, and header
+templates, including backends and examples; vendored code is excluded:
+
+```sh
+bash scripts/format.sh --check
+bash scripts/format.sh --fix
+```
+
+Set `CLANG_FORMAT` if the version-18 executable has a different name or path.
+
+Static analysis runs on the kernel, enabled backends, and CLI targets, including
+their project headers. Tests and examples are still built and executed but are
+not analyzed. CI pins clang-tidy 18 and treats enabled diagnostics as errors:
+
+```sh
+CC=clang-18 CXX=clang++-18 cmake --preset tidy \
+  -DNEKOMATA_CLANG_TIDY_EXECUTABLE=clang-tidy-18
+cmake --build --preset tidy
+ctest --preset tidy
+```
+
+The `tidy` build directory is separate from normal builds. To repeat analysis
+without source changes, use `cmake --build --preset tidy --clean-first`.
 
 Platform notes:
 

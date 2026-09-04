@@ -31,39 +31,39 @@ const char kPhysName[] = "v1 地球重力, 弹性0.85"; // ✏️ 改个名字�
 
 void step_world() {
 #ifdef AIR_DRAG
-    g_vx *= 0.995; // 空气阻力：速度衰减
-    g_vy *= 0.995;
+  g_vx *= 0.995; // 空气阻力：速度衰减
+  g_vy *= 0.995;
 #endif
-    g_vy += kGravity * kDt;
-    g_x += g_vx * kDt;
-    g_y += g_vy * kDt;
+  g_vy += kGravity * kDt;
+  g_x += g_vx * kDt;
+  g_y += g_vy * kDt;
 
-    if (g_y < 0.0) { // 落地反弹
-        g_y = 0.0;
-        g_vy = -g_vy * kRestitution;
-    }
-    if (g_x > 76.0)
-        g_vx = -fabs(g_vx); // 右墙
-    if (g_x < 1.0)
-        g_vx = fabs(g_vx); // 左墙
-    ++g_frame;
+  if (g_y < 0.0) { // 落地反弹
+    g_y = 0.0;
+    g_vy = -g_vy * kRestitution;
+  }
+  if (g_x > 76.0)
+    g_vx = -fabs(g_vx); // 右墙
+  if (g_x < 1.0)
+    g_vx = fabs(g_vx); // 左墙
+  ++g_frame;
 }
 
 void render_world() {
-    // 世界坐标 -> 终端行列（行 2..21 画世界，第 23 行画 HUD）
-    int row = 21 - static_cast<int>(g_y);
-    if (row < 2)
-        row = 2;
-    if (row > 21)
-        row = 21;
-    int col = static_cast<int>(g_x);
-    if (col < 1)
-        col = 1;
-    if (col > 76)
-        col = 76;
+  // 世界坐标 -> 终端行列（行 2..21 画世界，第 23 行画 HUD）
+  int row = 21 - static_cast<int>(g_y);
+  if (row < 2)
+    row = 2;
+  if (row > 21)
+    row = 21;
+  int col = static_cast<int>(g_x);
+  if (col < 1)
+    col = 1;
+  if (col > 76)
+    col = 76;
 
-    std::printf("\033[%d;%dHo", row, col + 1);
-    std::printf("\033[23;1H[%s] frame=%d  pos=(%.1f, %.1f)  vel=(%.1f, %.1f)\033[K", kPhysName,
-                g_frame, g_x, g_y, g_vx, g_vy);
-    std::fflush(stdout);
+  std::printf("\033[%d;%dHo", row, col + 1);
+  std::printf("\033[23;1H[%s] frame=%d  pos=(%.1f, %.1f)  vel=(%.1f, %.1f)\033[K", kPhysName,
+              g_frame, g_x, g_y, g_vx, g_vy);
+  std::fflush(stdout);
 }

@@ -23,20 +23,20 @@ namespace neko {
 
 class symbol_provider {
 public:
-    virtual ~symbol_provider() = default;
+  virtual ~symbol_provider() = default;
 
-    /// All functions known in the live process.
-    virtual std::vector<function_info> all_functions() const = 0;
+  /// All functions known in the live process.
+  virtual std::vector<function_info> all_functions() const = 0;
 
-    /// Look up one function by its mangled symbol name.
-    virtual std::optional<function_info> function_by_name(std::string_view name) const = 0;
+  /// Look up one function by its mangled symbol name.
+  virtual std::optional<function_info> function_by_name(std::string_view name) const = 0;
 
-    /// Look up one global/static variable by its symbol name.
-    virtual std::optional<global_variable> global_by_name(std::string_view name) const = 0;
+  /// Look up one global/static variable by its symbol name.
+  virtual std::optional<global_variable> global_by_name(std::string_view name) const = 0;
 
-    /// Layout of a user-defined type. Not exercised by Phase 1; Phase 5 will
-    /// drive its final shape (object layout migration).
-    virtual type_layout layout_of(type_id id) const = 0;
+  /// Layout of a user-defined type. Not exercised by Phase 1; Phase 5 will
+  /// drive its final shape (object layout migration).
+  virtual type_layout layout_of(type_id id) const = 0;
 };
 
 } // namespace neko

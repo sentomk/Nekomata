@@ -1,0 +1,31 @@
+---
+# Correctness first; formatting and naming are handled separately.
+Checks: >-
+  -*,
+  clang-analyzer-*,
+  bugprone-assert-side-effect,
+  bugprone-dangling-handle,
+  bugprone-forward-declaration-namespace,
+  bugprone-inaccurate-erase,
+  bugprone-integer-division,
+  bugprone-macro-parentheses,
+  bugprone-macro-repeated-side-effects,
+  bugprone-misplaced-widening-cast,
+  bugprone-move-forwarding-reference,
+  bugprone-multiple-statement-macro,
+  bugprone-sizeof-expression,
+  bugprone-string-constructor,
+  bugprone-suspicious-memset-usage,
+  bugprone-suspicious-missing-comma,
+  bugprone-suspicious-semicolon,
+  bugprone-swapped-arguments,
+  bugprone-undefined-memory-manipulation,
+  bugprone-use-after-move,
+  bugprone-unused-raii,
+  performance-*,
+  portability-*
+WarningsAsErrors: '*'
+HeaderFilterRegex: '(^|/)(include/neko|src|backends|tools)/'
+SystemHeaders: false
+InheritParentConfig: false
+FormatStyle: file

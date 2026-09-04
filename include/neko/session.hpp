@@ -34,31 +34,31 @@ namespace neko {
 /// (e.g. neko::elf::create_backend()). Shared ownership: one implementation
 /// object may serve several interface roles.
 struct backend_bundle {
-    std::shared_ptr<object_loader> loader;
-    std::shared_ptr<symbol_provider> symbols;
-    std::shared_ptr<state_manager> state;
-    std::shared_ptr<code_substituter> substituter;
-    std::shared_ptr<patch_planner> planner;
+  std::shared_ptr<object_loader> loader;
+  std::shared_ptr<symbol_provider> symbols;
+  std::shared_ptr<state_manager> state;
+  std::shared_ptr<code_substituter> substituter;
+  std::shared_ptr<patch_planner> planner;
 };
 
 class reload_session {
 public:
-    explicit reload_session(backend_bundle backends);
+  explicit reload_session(backend_bundle backends);
 
-    /// Offer an object file path to watch. When a regular file appears there,
-    /// it is claimed and loaded on the next update().
-    void watch(std::filesystem::path object_path);
+  /// Offer an object file path to watch. When a regular file appears there,
+  /// it is claimed and loaded on the next update().
+  void watch(std::filesystem::path object_path);
 
-    /// Pick up any newly offered object file. Returns true when a reload was
-    /// applied. Throws std::runtime_error on a failed reload attempt — the
-    /// process keeps running the previously loaded code afterwards.
-    bool update();
+  /// Pick up any newly offered object file. Returns true when a reload was
+  /// applied. Throws std::runtime_error on a failed reload attempt — the
+  /// process keeps running the previously loaded code afterwards.
+  bool update();
 
 private:
-    bool try_load(const std::filesystem::path& path);
+  bool try_load(const std::filesystem::path& path);
 
-    backend_bundle backends_;
-    std::vector<std::filesystem::path> watched_;
+  backend_bundle backends_;
+  std::vector<std::filesystem::path> watched_;
 };
 
 } // namespace neko

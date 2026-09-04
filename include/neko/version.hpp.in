@@ -3,14 +3,17 @@
 
 #include <string>
 
+// Preserve CMake placeholders until configure_file substitutes them.
+// clang-format off
 #define NEKOMATA_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
 #define NEKOMATA_VERSION_MINOR @PROJECT_VERSION_MINOR@
 #define NEKOMATA_VERSION_PATCH @PROJECT_VERSION_PATCH@
 #define NEKOMATA_VERSION_STRING "@PROJECT_VERSION@"
+// clang-format on
 
 namespace neko {
 
 /// Project version as a string, e.g. "0.1.0".
 std::string version_string();
 
-}  // namespace neko
+} // namespace neko

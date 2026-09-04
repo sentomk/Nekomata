@@ -28,22 +28,22 @@ namespace neko::elf {
 
 class code_pages final : public code_substituter {
 public:
-    ~code_pages() override;
+  ~code_pages() override;
 
-    void* reserve_code_near(std::uintptr_t hint, std::uint64_t bytes) override;
-    bool commit_code(void* reservation, const void* image, std::uint64_t bytes) override;
-    bool patch_entry(std::uintptr_t entry, void* target) override;
+  void* reserve_code_near(std::uintptr_t hint, std::uint64_t bytes) override;
+  bool commit_code(void* reservation, const void* image, std::uint64_t bytes) override;
+  bool patch_entry(std::uintptr_t entry, void* target) override;
 
 private:
-    bool owns_address(std::uintptr_t address) const;
+  bool owns_address(std::uintptr_t address) const;
 
-    struct arena_range {
-        std::uintptr_t begin;
-        std::uintptr_t end;
-    };
-    /// Arenas allocated so far (never freed in Phase 1). Registrations let
-    /// patch_entry prove that an E9 at an entry is one of ours.
-    std::vector<arena_range> arenas_;
+  struct arena_range {
+    std::uintptr_t begin;
+    std::uintptr_t end;
+  };
+  /// Arenas allocated so far (never freed in Phase 1). Registrations let
+  /// patch_entry prove that an E9 at an entry is one of ours.
+  std::vector<arena_range> arenas_;
 };
 
 } // namespace neko::elf

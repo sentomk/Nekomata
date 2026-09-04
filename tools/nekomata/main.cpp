@@ -13,33 +13,33 @@
 namespace {
 
 void print_usage(std::FILE* out) {
-    std::fputs("nekomata — native hot-reload for C/C++\n\n"
-               "Usage: nekomata [options]\n\n"
-               "Options:\n"
-               "  --version  Print version and exit\n"
-               "  --help     Print this help and exit\n",
-               out);
+  std::fputs("nekomata — native hot-reload for C/C++\n\n"
+             "Usage: nekomata [options]\n\n"
+             "Options:\n"
+             "  --version  Print version and exit\n"
+             "  --help     Print this help and exit\n",
+             out);
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-    for (int i = 1; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--version") == 0) {
-            std::printf("nekomata %s\n", neko::version_string().c_str());
-            return 0;
-        }
-        if (std::strcmp(argv[i], "--help") == 0) {
-            print_usage(stdout);
-            return 0;
-        }
-        std::fprintf(stderr, "nekomata: unknown option '%s'\n\n", argv[i]);
-        print_usage(stderr);
-        return 2;
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--version") == 0) {
+      std::printf("nekomata %s\n", neko::version_string().c_str());
+      return 0;
     }
+    if (std::strcmp(argv[i], "--help") == 0) {
+      print_usage(stdout);
+      return 0;
+    }
+    std::fprintf(stderr, "nekomata: unknown option '%s'\n\n", argv[i]);
+    print_usage(stderr);
+    return 2;
+  }
 
-    std::printf("nekomata %s — hot reload core is not implemented yet "
-                "(phase 1 in progress).\n",
-                neko::version_string().c_str());
-    return 0;
+  std::printf("nekomata %s — hot reload core is not implemented yet "
+              "(phase 1 in progress).\n",
+              neko::version_string().c_str());
+  return 0;
 }

@@ -17,10 +17,10 @@ namespace neko {
 
 class patch_planner {
 public:
-    virtual ~patch_planner() = default;
+  virtual ~patch_planner() = default;
 
-    /// Compute the reload plan for a set of changed source files.
-    virtual std::vector<patch_plan> plan(const change_set& changes) const = 0;
+  /// Compute the reload plan for a set of changed source files.
+  virtual std::vector<patch_plan> plan(const change_set& changes) const = 0;
 };
 
 } // namespace neko

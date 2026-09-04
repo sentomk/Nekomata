@@ -80,17 +80,43 @@ jobs:
       - name: Test
         run: ctest --preset asan
 
+  tidy:
+    name: clang-tidy / LLVM 18
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 18 and Ninja
+        run: sudo apt-get update && sudo apt-get install -y clang-18 clang-tidy-18 ninja-build
+
+      - name: Verify clang-tidy configuration
+        run: |
+          clang-tidy-18 --version
+          clang-tidy-18 --verify-config --config-file=.clang-tidy
+
+      - name: Configure
+        env:
+          CC: clang-18
+          CXX: clang++-18
+        run: cmake --preset tidy -DNEKOMATA_CLANG_TIDY_EXECUTABLE=clang-tidy-18
+
+      - name: Build and analyze
+        run: cmake --build --preset tidy
+
+      - name: Test
+        run: ctest --preset tidy
+
   format:
     name: clang-format
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install clang-format 18
+        run: sudo apt-get update && sudo apt-get install -y clang-format-18
+
       - name: Check formatting
-        run: |
-          clang-format --version
-          find include src tests tools -type f \( -name '*.cpp' -o -name '*.hpp' \) -print0 \
-            | xargs -0 clang-format --dry-run --Werror
+        run: bash scripts/format.sh --check
 
   # Windows (PE/PDB backend, MSVC matrix) arrives with Phase 3 of the
   # roadmap. See docs/proposal.md, "阶段三 · Windows/PE/PDB".

@@ -16,11 +16,11 @@ namespace neko {
 
 class state_manager {
 public:
-    virtual ~state_manager() = default;
+  virtual ~state_manager() = default;
 
-    /// Existing storage for a mutable global/static variable, or nullptr if
-    /// the live process does not know it (fresh code introduced a new symbol).
-    virtual void* map_global(std::string_view name) = 0;
+  /// Existing storage for a mutable global/static variable, or nullptr if
+  /// the live process does not know it (fresh code introduced a new symbol).
+  virtual void* map_global(std::string_view name) = 0;
 };
 
 } // namespace neko

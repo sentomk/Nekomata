@@ -28,23 +28,23 @@ namespace neko::elf {
 
 class process_symbols final : public symbol_provider, public state_manager {
 public:
-    process_symbols();
+  process_symbols();
 
-    std::vector<function_info> all_functions() const override;
-    std::optional<function_info> function_by_name(std::string_view name) const override;
-    std::optional<global_variable> global_by_name(std::string_view name) const override;
-    type_layout layout_of(type_id id) const override;
+  std::vector<function_info> all_functions() const override;
+  std::optional<function_info> function_by_name(std::string_view name) const override;
+  std::optional<global_variable> global_by_name(std::string_view name) const override;
+  type_layout layout_of(type_id id) const override;
 
-    void* map_global(std::string_view name) override;
+  void* map_global(std::string_view name) override;
 
-    /// Resolve an external symbol (libc, libstdc++, ...) by name.
-    static void* resolve_external(std::string_view name);
+  /// Resolve an external symbol (libc, libstdc++, ...) by name.
+  static void* resolve_external(std::string_view name);
 
 private:
-    std::vector<function_info> functions_;
-    std::vector<global_variable> globals_;
-    std::unordered_map<std::string, std::size_t> function_index_;
-    std::unordered_map<std::string, std::size_t> global_index_;
+  std::vector<function_info> functions_;
+  std::vector<global_variable> globals_;
+  std::unordered_map<std::string, std::size_t> function_index_;
+  std::unordered_map<std::string, std::size_t> global_index_;
 };
 
 } // namespace neko::elf

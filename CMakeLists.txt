@@ -13,6 +13,11 @@ option(NEKOMATA_BUILD_TOOLS "Build nekomata command line tools" ON)
 option(NEKOMATA_BUILD_EXAMPLES "Build nekomata examples" ON)
 option(NEKOMATA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(NEKOMATA_ENABLE_SANITIZERS "Build with ASan+UBSan (Clang/GCC only)" OFF)
+option(NEKOMATA_ENABLE_CLANG_TIDY "Run clang-tidy on nekomata code during builds" OFF)
+
+if(NEKOMATA_ENABLE_CLANG_TIDY)
+  find_program(NEKOMATA_CLANG_TIDY_EXECUTABLE NAMES clang-tidy-18 clang-tidy REQUIRED)
+endif()
 
 # ---------------------------------------------------------------------------
 # Global compile settings
@@ -38,6 +43,16 @@ endif()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+function(nekomata_apply_clang_tidy target)
+  if(NEKOMATA_ENABLE_CLANG_TIDY)
+    set(tidy_command "${NEKOMATA_CLANG_TIDY_EXECUTABLE}"
+      "--config-file=${PROJECT_SOURCE_DIR}/.clang-tidy")
+    set_target_properties(${target} PROPERTIES
+      C_CLANG_TIDY "${tidy_command}"
+      CXX_CLANG_TIDY "${tidy_command}")
+  endif()
+endfunction()
+
 function(nekomata_apply_warnings target)
   if(MSVC)
     set(flags /W4 /permissive-)
@@ -89,6 +104,7 @@ target_include_directories(neko
 target_compile_features(neko PUBLIC cxx_std_20)
 nekomata_apply_warnings(neko)
 nekomata_apply_sanitizers(neko)
+nekomata_apply_clang_tidy(neko)
 
 # ---------------------------------------------------------------------------
 # Backends: platform-specific, each in its own directory with its own tests.
@@ -129,4 +145,5 @@ else()
   message(STATUS "  backends:   none for this platform; building kernel only")
 endif()
 message(STATUS "  sanitizers: ${NEKOMATA_ENABLE_SANITIZERS}")
+message(STATUS "  clang-tidy: ${NEKOMATA_ENABLE_CLANG_TIDY}")
 message(STATUS "  tests:      ${NEKOMATA_BUILD_TESTS}")

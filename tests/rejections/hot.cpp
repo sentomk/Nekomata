@@ -9,7 +9,7 @@ int g_counter = 0;
 static int s_calls = 0;
 
 void tick() {
-    ++g_counter;
-    ++s_calls;
-    std::printf("[hot] tick #%d, g_counter=%d\n", s_calls, g_counter);
+  ++g_counter;
+  ++s_calls;
+  std::printf("[hot] tick #%d, g_counter=%d\n", s_calls, g_counter);
 }

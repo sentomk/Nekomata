@@ -28,12 +28,18 @@
       "name": "asan",
       "inherits": "debug",
       "cacheVariables": { "NEKOMATA_ENABLE_SANITIZERS": "ON" }
+    },
+    {
+      "name": "tidy",
+      "inherits": "debug",
+      "cacheVariables": { "NEKOMATA_ENABLE_CLANG_TIDY": "ON" }
     }
   ],
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
-    { "name": "asan", "configurePreset": "asan" }
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "tidy", "configurePreset": "tidy" }
   ],
   "testPresets": [
     {
@@ -49,6 +55,11 @@
     {
       "name": "asan",
       "configurePreset": "asan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "tidy",
+      "configurePreset": "tidy",
       "output": { "outputOnFailure": true }
     }
   ]
