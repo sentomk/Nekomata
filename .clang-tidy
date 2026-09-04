@@ -1,5 +1,7 @@
 ---
 # Correctness first; formatting and naming are handled separately.
+# Integer addresses from ELF symbols and page calculations intentionally become
+# pointers at the runtime boundary; performance-no-int-to-ptr is not applicable.
 Checks: >-
   -*,
   clang-analyzer-*,
@@ -23,6 +25,7 @@ Checks: >-
   bugprone-use-after-move,
   bugprone-unused-raii,
   performance-*,
+  -performance-no-int-to-ptr,
   portability-*
 WarningsAsErrors: '*'
 HeaderFilterRegex: '(^|/)(include/neko|src|backends|tools)/'

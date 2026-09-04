@@ -127,7 +127,7 @@ object_file parse_object(const std::uint8_t* data, std::size_t size) {
         out.symbol_index = static_cast<std::uint32_t>(ELF64_R_SYM(rela.r_info));
         out.type = static_cast<std::uint32_t>(ELF64_R_TYPE(rela.r_info));
         out.addend = rela.r_addend;
-        obj.relocations.push_back(std::move(out));
+        obj.relocations.push_back(out);
       }
     }
   }

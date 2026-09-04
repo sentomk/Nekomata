@@ -28,6 +28,8 @@ std::uint64_t align_up(std::uint64_t v, std::uint64_t a) {
 }
 
 /// x86-64 relocation types this loader understands.
+// Keep the 32-bit type used by ELF64 relocation records.
+// NOLINTNEXTLINE(performance-enum-size)
 enum : std::uint32_t {
   kRelPc32 = R_X86_64_PC32,
   kRelPlt32 = R_X86_64_PLT32,
