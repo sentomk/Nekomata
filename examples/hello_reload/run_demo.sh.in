@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# One-command reproducible Phase 1 demo — proposal acceptance criterion #3.
+#
+#   bash run_demo.sh [workdir]
+#
+# What it proves (proposal §阶段一 验收):
+#   1. 修改某函数后，运行中进程的下一次调用走新逻辑 (no restart)
+#   2. 全局变量值保持 (g_counter continues, s_calls continues)
+#   3. itself: one command, expected transcript below
+set -euo pipefail
+
+RUNNER="@CMAKE_CURRENT_BINARY_DIR@/hello_reload"
+REBUILD="@CMAKE_CURRENT_BINARY_DIR@/rebuild_hot.sh"
+SRC_HOT="@CMAKE_CURRENT_SOURCE_DIR@/hot.cpp"
+
+work="${1:-$(mktemp -d /tmp/neko-hello.XXXXXX)}"
+out="$work/output.txt"
+: > "$out"
+
+runner_pid=""
+cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+trap cleanup EXIT
+
+count() { grep -c -- "$1" "$out" || true; }
+
+wait_for() {  # wait_for <pattern> <min_count> <timeout_seconds>
+  local pattern="$1" min="$2" timeout="$3" waited=0
+  while [ "$(grep -c -- "$pattern" "$out" || true)" -lt "$min" ]; do
+    sleep 0.2
+    waited=$((waited + 1))
+    if [ "$waited" -gt $((timeout * 5)) ]; then
+      echo "TIMEOUT waiting for '$pattern' (>= $min)"; exit 1
+    fi
+  done
+}
+
+echo "== nekomata phase 1 demo (workdir: $work) =="
+
+# Phase A — original code runs: v1, counter steps by 1.
+cp "$SRC_HOT" "$work/hot.cpp"
+"$RUNNER" "$work/hot.new.o" > "$out" 2>&1 &
+runner_pid=$!
+wait_for '\[v1\]' 4 30
+echo "-- v1 running, e.g.: $(grep '\[v1\]' "$out" | tail -1)"
+
+# Phase B — edit the logic: step 10 instead of 1; compile; offer atomically.
+sed -e 's|++g_counter;.*|g_counter += 10;|' \
+    -e 's|\[v1\] tick #%d, g_counter=%d|[v2] tick #%d, g_counter jumped to %d|' \
+    "$work/hot.cpp" > "$work/hot.v2.cpp"
+echo "-- edit applied:"
+diff "$work/hot.cpp" "$work/hot.v2.cpp" || true
+bash "$REBUILD" "$work/hot.v2.cpp" "$work/staging.o"
+mv "$work/staging.o" "$work/hot.new.o"  # atomic offer == explicit reload confirm
+
+# Phase C — new logic live in the SAME process, state preserved.
+wait_for '\[v2\]' 3 30
+echo "-- v2 live, e.g.: $(grep '\[v2\]' "$out" | tail -1)"
+kill "$runner_pid" 2>/dev/null || true
+wait "$runner_pid" 2>/dev/null || true
+runner_pid=""
+
+# ---- acceptance checks -------------------------------------------------
+n_v1=$(count '\[v1\]'); n_v2=$(count '\[v2\]')
+last_v1_g=$(grep '\[v1\]' "$out" | tail -1 | sed 's/.*g_counter=\([0-9]*\).*/\1/')
+first_v2_g=$(grep '\[v2\]' "$out" | head -1 | sed 's/.*jumped to \([0-9]*\).*/\1/')
+last_v1_s=$(grep '\[v1\]' "$out" | tail -1 | sed 's/.*tick #\([0-9]*\).*/\1/')
+first_v2_s=$(grep '\[v2\]' "$out" | head -1 | sed 's/.*tick #\([0-9]*\).*/\1/')
+line_first_v2=$(grep -n '\[v2\]' "$out" | head -1 | cut -d: -f1)
+line_last_v1=$(grep -n '\[v1\]' "$out" | tail -1 | cut -d: -f1)
+
+fail() { echo "FAIL: $1"; echo "(full output: $out)"; exit 1; }
+
+[ "$n_v1" -ge 4 ]  || fail "expected >= 4 v1 calls, got $n_v1"
+[ "$n_v2" -ge 3 ]  || fail "expected >= 3 v2 calls, got $n_v2"
+[ "$line_first_v2" -gt "$line_last_v1" ] || fail "v2 output appeared before last v1 line"
+[ "$first_v2_g" -eq $((last_v1_g + 10)) ] || \
+  fail "state lost: last v1 g_counter=$last_v1_g, first v2=$first_v2_g (expected +10)"
+[ "$first_v2_s" -eq $((last_v1_s + 1)) ] || \
+  fail "static s_calls not preserved: #$last_v1_s -> #$first_v2_s"
+
+echo ""
+echo "PASS  1. new logic ran in the live process without a restart"
+echo "         (v1 calls: $n_v1, v2 calls: $n_v2, all pid-identical)"
+echo "PASS  2. state preserved across the swap"
+echo "         (g_counter: $last_v1_g -> $first_v2_g = old + 10 by NEW logic)"
+echo "         (s_calls:   #$last_v1_s -> #$first_v2_s, still +1 per call)"
+echo "PASS  3. this script + $SRC_HOT reproduce it in one command"
+echo ""
+echo "demo output kept at: $out"

@@ -1,0 +1,36 @@
+Expected transcript of `bash run_demo.sh` (counts vary with timing; the
+structure and the acceptance relationships do not):
+
+    == nekomata phase 1 demo (workdir: /tmp/neko-hello.AbCdEf) ==
+    -- v1 running, e.g.: [v1] tick #5, g_counter=5
+    -- edit applied:
+    9c9
+    <   ++g_counter;  // v1: step by 1  (v2 edits this line)
+    ---
+    >   g_counter += 10;
+    12c12
+    <   std::printf("[v1] tick #%d, g_counter=%d\n", s_calls, g_counter);  // ...
+    ---
+    >   std::printf("[v2] tick #%d, g_counter jumped to %d\n", s_calls, g_counter);
+    [neko] reload applied: 1 function(s) redirected
+    [neko]   _Z4tickv -> 0x7f0ac1234000 (+0x0)
+    -- v2 live, e.g.: [v2] tick #9, g_counter jumped to 95
+
+    PASS  1. new logic ran in the live process without a restart
+             (v1 calls: 8, v2 calls: 3, all pid-identical)
+    PASS  2. state preserved across the swap
+             (g_counter: 85 -> 95 = old + 10 by NEW logic)
+             (s_calls:   #8 -> #9, still +1 per call)
+    PASS  3. this script + examples/hello_reload/hot.cpp reproduce it in one command
+
+What each phase proves:
+
+* v1 lines       — the original translation unit runs, mutating g_counter.
+* the sed edit   — a source-level logic change (step 10 instead of 1) plus a
+                   message change, i.e. "改函数", not a data tweak.
+* [neko] reload  — the fresh object file was picked up, relocated against the
+                   running process and tick()'s entry redirected; no restart,
+                   same pid throughout.
+* v2 lines       — new logic executes: the increment is now +10, the message
+                   changed, and BOTH counters continue from the old values:
+                   状态保留.
