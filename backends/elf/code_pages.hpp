@@ -10,12 +10,17 @@
 //     nothing branches into the first 8 bytes of an -O0 frame function
 //     (loop labels appear after the prologue);
 //   * or `endbr64; push rbp` (F3 0F 1E FA 55, -fcf-protection default) —
-//     5 bytes land exactly on an instruction boundary.
-// Both patterns require st_size >= 8, checked by the caller (loader).
+//     5 bytes land exactly on an instruction boundary;
+//   * or an entry WE patched before (E9 rel32 whose target lies inside one
+//     of our own arenas) — re-patching a previous redirect is how repeated
+//     reloads of the same function work. A genuine -O0 prologue never
+//     starts with a jmp, and nothing else jumps into our arenas.
+// All cases require st_size >= 8, checked by the caller (loader).
 
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include <neko/code_substituter.hpp>
 
@@ -28,6 +33,17 @@ public:
     void* reserve_code_near(std::uintptr_t hint, std::uint64_t bytes) override;
     bool commit_code(void* reservation, const void* image, std::uint64_t bytes) override;
     bool patch_entry(std::uintptr_t entry, void* target) override;
+
+private:
+    bool owns_address(std::uintptr_t address) const;
+
+    struct arena_range {
+        std::uintptr_t begin;
+        std::uintptr_t end;
+    };
+    /// Arenas allocated so far (never freed in Phase 1). Registrations let
+    /// patch_entry prove that an E9 at an entry is one of ours.
+    std::vector<arena_range> arenas_;
 };
 
 } // namespace neko::elf

@@ -55,35 +55,58 @@ mv "$work/staging.o" "$work/hot.new.o"  # atomic offer == explicit reload confir
 # Phase C — new logic live in the SAME process, state preserved.
 wait_for '\[v2\]' 3 30
 echo "-- v2 live, e.g.: $(grep '\[v2\]' "$out" | tail -1)"
+
+# Phase C2 — reload AGAIN (repeated reloads are the core use case; the
+# entry now already holds our own jmp, and re-patching must be recognized):
+# v3 keeps stepping by 10 but renames the message.
+sed -e 's|\[v2\] tick #%d, g_counter jumped to %d|[v3] tick #%d, third life, g_counter=%d|' \
+    "$work/hot.v2.cpp" > "$work/hot.v3.cpp"
+bash "$REBUILD" "$work/hot.v3.cpp" "$work/staging.o"
+mv "$work/staging.o" "$work/hot.new.o"
+wait_for '\[v3\]' 3 30
+echo "-- v3 live, e.g.: $(grep '\[v3\]' "$out" | tail -1)"
 kill "$runner_pid" 2>/dev/null || true
 wait "$runner_pid" 2>/dev/null || true
 runner_pid=""
 
 # ---- acceptance checks -------------------------------------------------
-n_v1=$(count '\[v1\]'); n_v2=$(count '\[v2\]')
+n_v1=$(count '\[v1\]'); n_v2=$(count '\[v2\]'); n_v3=$(count '\[v3\]')
 last_v1_g=$(grep '\[v1\]' "$out" | tail -1 | sed 's/.*g_counter=\([0-9]*\).*/\1/')
 first_v2_g=$(grep '\[v2\]' "$out" | head -1 | sed 's/.*jumped to \([0-9]*\).*/\1/')
+last_v2_g=$(grep '\[v2\]' "$out" | tail -1 | sed 's/.*jumped to \([0-9]*\).*/\1/')
+first_v3_g=$(grep '\[v3\]' "$out" | head -1 | sed 's/.*g_counter=\([0-9]*\).*/\1/')
 last_v1_s=$(grep '\[v1\]' "$out" | tail -1 | sed 's/.*tick #\([0-9]*\).*/\1/')
 first_v2_s=$(grep '\[v2\]' "$out" | head -1 | sed 's/.*tick #\([0-9]*\).*/\1/')
+last_v2_s=$(grep '\[v2\]' "$out" | tail -1 | sed 's/.*tick #\([0-9]*\).*/\1/')
+first_v3_s=$(grep '\[v3\]' "$out" | head -1 | sed 's/.*tick #\([0-9]*\).*/\1/')
 line_first_v2=$(grep -n '\[v2\]' "$out" | head -1 | cut -d: -f1)
 line_last_v1=$(grep -n '\[v1\]' "$out" | tail -1 | cut -d: -f1)
+line_first_v3=$(grep -n '\[v3\]' "$out" | head -1 | cut -d: -f1)
+line_last_v2=$(grep -n '\[v2\]' "$out" | tail -1 | cut -d: -f1)
 
 fail() { echo "FAIL: $1"; echo "(full output: $out)"; exit 1; }
 
 [ "$n_v1" -ge 4 ]  || fail "expected >= 4 v1 calls, got $n_v1"
 [ "$n_v2" -ge 3 ]  || fail "expected >= 3 v2 calls, got $n_v2"
+[ "$n_v3" -ge 3 ]  || fail "expected >= 3 v3 calls, got $n_v3 (second reload failed)"
 [ "$line_first_v2" -gt "$line_last_v1" ] || fail "v2 output appeared before last v1 line"
+[ "$line_first_v3" -gt "$line_last_v2" ] || fail "v3 output appeared before last v2 line"
 [ "$first_v2_g" -eq $((last_v1_g + 10)) ] || \
   fail "state lost: last v1 g_counter=$last_v1_g, first v2=$first_v2_g (expected +10)"
+[ "$first_v3_g" -eq $((last_v2_g + 10)) ] || \
+  fail "state lost on SECOND reload: last v2=$last_v2_g, first v3=$first_v3_g (expected +10)"
 [ "$first_v2_s" -eq $((last_v1_s + 1)) ] || \
   fail "static s_calls not preserved: #$last_v1_s -> #$first_v2_s"
+[ "$first_v3_s" -eq $((last_v2_s + 1)) ] || \
+  fail "static s_calls not preserved on second reload: #$last_v2_s -> #$first_v3_s"
 
 echo ""
 echo "PASS  1. new logic ran in the live process without a restart"
-echo "         (v1 calls: $n_v1, v2 calls: $n_v2, all pid-identical)"
-echo "PASS  2. state preserved across the swap"
-echo "         (g_counter: $last_v1_g -> $first_v2_g = old + 10 by NEW logic)"
-echo "         (s_calls:   #$last_v1_s -> #$first_v2_s, still +1 per call)"
-echo "PASS  3. this script + $SRC_HOT reproduce it in one command"
+echo "         (v1: $n_v1, v2: $n_v2, v3: $n_v3 calls, all pid-identical)"
+echo "PASS  2. state preserved across BOTH swaps"
+echo "         (g_counter: $last_v1_g -> $first_v2_g -> $last_v2_g -> $first_v3_g, +10 each)"
+echo "         (s_calls:   #$last_v1_s -> #$first_v2_s -> #$last_v2_s -> #$first_v3_s)"
+echo "PASS  3. REPEATED reload works: the second swap re-patched our own jmp"
+echo "PASS  4. this script + $SRC_HOT reproduce it in one command"
 echo ""
 echo "demo output kept at: $out"

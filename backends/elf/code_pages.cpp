@@ -51,13 +51,24 @@ void* code_pages::reserve_code_near(std::uintptr_t hint, std::uint64_t bytes) {
             if (mapping == MAP_FAILED) {
                 continue;
             }
-            if (within_rel32(reinterpret_cast<std::uintptr_t>(mapping), hint)) {
+            const auto begin = reinterpret_cast<std::uintptr_t>(mapping);
+            if (within_rel32(begin, hint)) {
+                arenas_.push_back({begin, begin + span});
                 return mapping;
             }
             munmap(mapping, span); // kernel placed it too far away
         }
     }
     return nullptr;
+}
+
+bool code_pages::owns_address(std::uintptr_t address) const {
+    for (const auto& arena : arenas_) {
+        if (address >= arena.begin && address < arena.end) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool code_pages::commit_code(void* reservation, const void* image, std::uint64_t bytes) {
@@ -81,8 +92,19 @@ bool code_pages::patch_entry(std::uintptr_t entry, void* target) {
         code[0] == 0x55 && code[1] == 0x48 && code[2] == 0x89 && code[3] == 0xE5;
     const bool prologue_endbr64 =
         code[0] == 0xF3 && code[1] == 0x0F && code[2] == 0x1E && code[3] == 0xFA && code[4] == 0x55;
-    if (!prologue_push_rbp && !prologue_endbr64) {
-        return false; // unknown prologue — refuse to overwrite blindly
+    bool patchable = prologue_push_rbp || prologue_endbr64;
+    if (!patchable && code[0] == 0xE9) {
+        // Possibly one of OUR previous redirects: an E9 whose target lands
+        // inside an arena we allocated can only have been written by us (a
+        // genuine -O0 prologue never starts with a jmp). Re-patching in
+        // place is what makes repeated reloads of the same function work.
+        std::int32_t previous_rel = 0;
+        std::memcpy(&previous_rel, code + 1, sizeof(previous_rel));
+        patchable = owns_address(
+            static_cast<std::uintptr_t>(static_cast<std::int64_t>(entry) + 5 + previous_rel));
+    }
+    if (!patchable) {
+        return false; // unknown entry contents — refuse to overwrite blindly
     }
 
     const std::uintptr_t dst = reinterpret_cast<std::uintptr_t>(target);
