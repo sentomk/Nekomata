@@ -10,6 +10,7 @@ project(nekomata
 # ---------------------------------------------------------------------------
 option(NEKOMATA_BUILD_TESTS "Build nekomata tests" ON)
 option(NEKOMATA_BUILD_TOOLS "Build nekomata command line tools" ON)
+option(NEKOMATA_BUILD_EXAMPLES "Build nekomata examples" ON)
 option(NEKOMATA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(NEKOMATA_ENABLE_SANITIZERS "Build with ASan+UBSan (Clang/GCC only)" OFF)
 
@@ -56,12 +57,17 @@ function(nekomata_apply_sanitizers target)
   if(NOT NEKOMATA_ENABLE_SANITIZERS)
     return()
   endif()
+  # Instrument the target's own TUs (PRIVATE), and make consumers link the
+  # runtime (INTERFACE) without instrumenting THEIR code. Full-project
+  # instrumentation would shift global layouts (ASan redzones) and break the
+  # reload demo's state anchoring — see docs/phase-1-notes.md.
   if(MSVC)
-    target_compile_options(${target} PUBLIC /fsanitize=address)
+    target_compile_options(${target} PRIVATE /fsanitize=address)
+    target_link_options(${target} INTERFACE /fsanitize=address)
   else()
-    target_compile_options(${target} PUBLIC -fsanitize=address,undefined
+    target_compile_options(${target} PRIVATE -fsanitize=address,undefined
                                             -fno-omit-frame-pointer)
-    target_link_options(${target} PUBLIC -fsanitize=address,undefined)
+    target_link_options(${target} INTERFACE -fsanitize=address,undefined)
   endif()
 endfunction()
 
@@ -72,7 +78,9 @@ endfunction()
 # ---------------------------------------------------------------------------
 configure_file(include/neko/version.hpp.in generated/neko/version.hpp @ONLY)
 
-add_library(neko STATIC src/version.cpp)
+add_library(neko STATIC
+  src/version.cpp
+  src/session.cpp)
 add_library(nekomata::neko ALIAS neko)
 target_include_directories(neko
   PUBLIC
@@ -88,14 +96,22 @@ nekomata_apply_sanitizers(neko)
 add_subdirectory(backends)
 
 # ---------------------------------------------------------------------------
-# Tools & tests
+# Tests, tools & examples
 # ---------------------------------------------------------------------------
+# enable_testing() must run before any subdirectory that calls add_test().
+if(NEKOMATA_BUILD_TESTS)
+  enable_testing()
+endif()
+
 if(NEKOMATA_BUILD_TOOLS)
   add_subdirectory(tools)
 endif()
 
+if(NEKOMATA_BUILD_EXAMPLES)
+  add_subdirectory(examples)
+endif()
+
 if(NEKOMATA_BUILD_TESTS)
-  enable_testing()
   add_subdirectory(tests)
 endif()
 

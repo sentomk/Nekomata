@@ -1,15 +1,22 @@
 // symbol_provider — symbols and debug information.
 //
 // Owns the "where is everything" knowledge of the live process: function
-// addresses and extents, type layouts, (Phase 4) inline units reconstructed
-// from DWARF `DW_TAG_inlined_subroutine`.
+// addresses and extents, global variable storage, (Phase 4) inline units
+// reconstructed from DWARF `DW_TAG_inlined_subroutine`.
 //
-// Backends: DWARF + ELF .symtab (Linux), PDB via MS DIA SDK (Windows).
+// Backends: ELF .symtab of /proc/self/exe (Linux, Phase 1), PDB via MS DIA
+// SDK (Windows, Phase 3).
+//
+// Phase 1 validation: all_functions() held; name lookups were missing from
+// the draft and have been added — the loader resolves fresh-code symbols
+// against process symbols by (mangled) name (see docs/phase-1-notes.md).
 
 #pragma once
 
 #include <neko/types.hpp>
 
+#include <optional>
+#include <string_view>
 #include <vector>
 
 namespace neko {
@@ -21,7 +28,14 @@ public:
     /// All functions known in the live process.
     virtual std::vector<function_info> all_functions() const = 0;
 
-    /// Layout of a user-defined type.
+    /// Look up one function by its mangled symbol name.
+    virtual std::optional<function_info> function_by_name(std::string_view name) const = 0;
+
+    /// Look up one global/static variable by its symbol name.
+    virtual std::optional<global_variable> global_by_name(std::string_view name) const = 0;
+
+    /// Layout of a user-defined type. Not exercised by Phase 1; Phase 5 will
+    /// drive its final shape (object layout migration).
     virtual type_layout layout_of(type_id id) const = 0;
 };
 

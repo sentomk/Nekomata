@@ -1,15 +1,18 @@
-// code_substituter — writing and redirecting machine code in the live process.
+// code_substituter — executable memory and entry redirection.
 //
-// Owns the executable-page playground: reserving RWX/RX memory close to the
-// target code, applying relocations to freshly compiled code ("runtime
-// mini-link"), and rewriting function entry points with a 5-byte `jmp rel32`.
+// Owns the executable-page playground: reserving code pages close enough to
+// existing code that a 5-byte `jmp rel32` reaches (±2 GiB), placing a
+// relocated image into them, and rewriting function entry points.
 //
-// Backends: in-process agent over mmap/mprotect (POSIX), VirtualProtect
-// (Windows). Relocation semantics are provided by the ELF / PE backends.
+// Backends: mmap/mprotect (POSIX, Phase 1), VirtualProtect (Windows, Phase 3).
+//
+// Phase 1 validation: the draft's reserve_code(bytes) could not know WHERE
+// to allocate — rel32 reachability requires a hint — so it became
+// reserve_code_near(hint, bytes). The draft's relocate() moved out entirely:
+// relocations belong to the object_loader, which has the symbol context.
+// See docs/phase-1-notes.md.
 
 #pragma once
-
-#include <neko/types.hpp>
 
 #include <cstdint>
 
@@ -19,17 +22,18 @@ class code_substituter {
 public:
     virtual ~code_substituter() = default;
 
-    /// Reserve `bytes` of executable memory for a freshly compiled function
-    /// body. Returns nullptr on failure.
-    virtual void* reserve_code(std::uint64_t bytes) = 0;
+    /// Reserve writable memory for a fresh code image, placed so that a
+    /// 5-byte `jmp rel32` from `hint` reaches it (within ±2 GiB). Returns
+    /// nullptr on failure.
+    virtual void* reserve_code_near(std::uintptr_t hint, std::uint64_t bytes) = 0;
 
-    /// Rewrite the entry point of `patch.target` so the next call lands in
-    /// `patch.new_code`. Must preserve in-flight executions of the old body
-    /// (trampoline or /hotpatch hole).
-    virtual bool patch_entry(const Patch& patch) = 0;
+    /// Copy `bytes` from `image` into the reservation and flip it to
+    /// read+execute. Invalidates instruction caches where required.
+    virtual bool commit_code(void* reservation, const void* image, std::uint64_t bytes) = 0;
 
-    /// Apply one relocation against the live process's real addresses.
-    virtual bool relocate(const Relocation& relocation) = 0;
+    /// Rewrite the function entry at `entry` so the next call lands in
+    /// `target`. Returns false if the entry cannot be patched safely.
+    virtual bool patch_entry(std::uintptr_t entry, void* target) = 0;
 };
 
 } // namespace neko

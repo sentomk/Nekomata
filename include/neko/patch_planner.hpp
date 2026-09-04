@@ -1,10 +1,11 @@
-// patch_planner — from changed files to a concrete reload plan.
+// patch_planner — from changed files to a reload plan.
 //
 // Answers "what does this change break?": which translation units must be
-// recompiled (dependency graph, seeded by compiler `.d` files) and which
-// functions must be replaced once fresh object files exist.
+// recompiled (dependency graph, seeded by compiler `.d` files — Phase 2)
+// before a reload can be offered.
 //
-// Inspiration: RuntimeCompiledCPlusPlus' dependency tracking.
+// Phase 1 validation: the interface shape held; the Phase 1 implementation
+// is the trivial_planner in src/ (every changed file is one TU to rebuild).
 
 #pragma once
 
