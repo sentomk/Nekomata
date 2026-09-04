@@ -35,8 +35,14 @@ enum : std::uint32_t {
     kRel64 = R_X86_64_64,
 };
 
-bool is_call_style(std::uint32_t type) {
-    return type == kRelPc32 || type == kRelPlt32;
+/// Only R_X86_64_PLT32 against an undefined symbol is (always) a call —
+/// route those through an in-arena trampoline, since libc lives far outside
+/// the ±2GiB reach of a `call rel32`. R_X86_64_PC32 against an undefined
+/// symbol is a DATA reference (e.g. `stdout`): conflating the two once made
+/// fflush(stdout) read trampoline bytes as a FILE* (SIGSEGV, caught by the
+/// playground demo).
+bool is_call_to_undefined(std::uint32_t type) {
+    return type == kRelPlt32;
 }
 
 /// movabs rax, imm64 ; jmp rax — a 10-byte PLT for out-of-range externals.
@@ -98,10 +104,10 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     }
     const auto base = reinterpret_cast<std::uintptr_t>(arena);
 
-    // ---- 3. externals used by call-style relocations get trampolines -----
+    // ---- 3. undefined-symbol CALLS get in-arena trampolines --------------
     std::unordered_map<std::uint32_t, std::uintptr_t> trampoline_for_symbol;
     for (const auto& rel : obj.relocations) {
-        if (!is_call_style(rel.type) || rel.symbol_index == 0 ||
+        if (!is_call_to_undefined(rel.type) || rel.symbol_index == 0 ||
             rel.symbol_index >= obj.symbols.size()) {
             continue;
         }
@@ -164,6 +170,18 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     // ---- 6. symbol resolution ---------------------------------------------
     auto resolve = [&](const symbol& sym) -> std::uintptr_t {
         if (sym.section_index == SHN_UNDEF) {
+            // Data/address references to undefined symbols resolve against
+            // the main executable first: the static linker already
+            // copy-relocated them (stdout et al.) into our own data segment,
+            // which is the only thing a rel32 can reach. Truly external
+            // targets fall through to dlsym — and may then legitimately fail
+            // the range check below (documented Phase 1 boundary).
+            if (auto existing = symbols_.global_by_name(sym.name)) {
+                return existing->address;
+            }
+            if (auto fn = symbols_.function_by_name(sym.name)) {
+                return fn->address;
+            }
             void* external = process_symbols::resolve_external(sym.name);
             if (external == nullptr) {
                 throw std::runtime_error("cannot resolve external symbol '" + sym.name + "'");
@@ -220,7 +238,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
         }
         const auto& sym = obj.symbols[rel.symbol_index];
         std::uintptr_t s = 0;
-        if (is_call_style(rel.type) && sym.section_index == SHN_UNDEF) {
+        if (is_call_to_undefined(rel.type) && sym.section_index == SHN_UNDEF) {
             const auto it = trampoline_for_symbol.find(rel.symbol_index);
             if (it == trampoline_for_symbol.end()) {
                 throw std::runtime_error("internal: missing trampoline");

@@ -63,6 +63,15 @@
    `F3 0F 1E FA 55`（endbr64; push rbp）。前者覆盖 5 字节会切断下一条指令的
    编码——安全的前提是 `-O0` 下函数前 8 字节内不会有内部跳转目标（循环标签
    出现在栈帧建立之后）。入口 patch 前校验两种模式 + `st_size ≥ 8`。
+6. **`PLT32` 是调用、`PC32` 对未定义符号是数据引用**（playground demo 实测
+   踩坑）：`fflush(stdout)` 中 `stdout` 编译为 `mov rdi,[rip+stdout]`
+   （R_X86_64_PC32），若与调用一并路由到 trampoline，新代码会把 trampoline
+   的机器码字节当 `FILE*` 解引用（`__GI__IO_fflush` 段错误）。规则修正为：
+   只有 `PLT32` 走 trampoline；`PC32` 数据引用必须解析到**主程序内**的
+   copy-relocation 拷贝（静态链接器早已把 `stdout` 等拷进可执行文件数据段，
+   这是 rel32 唯一可达的地址；libc 里的原件在 0x7f... 区，超射程）。
+   `hello_reload` 的 `tick()` 已加入 `fflush(stdout)` 作为该缺陷类的永久回归
+   防线。
 
 ## 已知边界（Phase 1 明确剪枝，运行时报错信息可见）
 
