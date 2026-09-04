@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include <neko/log.hpp>
+
 namespace neko::elf {
 namespace {
 
@@ -93,8 +95,8 @@ process_symbols::process_symbols() {
         }
     }
 
-    std::fprintf(stderr, "[neko] process symbols: %zu functions, %zu globals\n", functions_.size(),
-                 globals_.size());
+    std::fprintf(stderr, "%s process symbols: %zu functions, %zu globals\n", neko::kLogTag,
+                 functions_.size(), globals_.size());
 }
 
 std::vector<function_info> process_symbols::all_functions() const {

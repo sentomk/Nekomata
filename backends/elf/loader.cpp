@@ -14,6 +14,7 @@
 #include "object_file.hpp"
 #include "process_symbols.hpp"
 #include <neko/code_substituter.hpp>
+#include <neko/log.hpp>
 #include <neko/state_manager.hpp>
 #include <neko/symbol_provider.hpp>
 
@@ -314,7 +315,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
 
     for (const auto& repl : out.replacements) {
         std::fprintf(
-            stderr, "[neko]   %s -> %p (+0x%x)\n", repl.name.c_str(),
+            stderr, "%s   %s -> %p (+0x%x)\n", neko::kLogTag, repl.name.c_str(),
             static_cast<void*>(reinterpret_cast<std::uint8_t*>(out.code) + repl.offset_in_image),
             repl.offset_in_image);
     }

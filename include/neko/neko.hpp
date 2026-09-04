@@ -6,6 +6,7 @@
 #pragma once
 
 #include <neko/code_substituter.hpp>
+#include <neko/log.hpp>
 #include <neko/object_loader.hpp>
 #include <neko/patch_planner.hpp>
 #include <neko/session.hpp>

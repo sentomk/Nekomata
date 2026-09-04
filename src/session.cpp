@@ -1,3 +1,4 @@
+#include <neko/log.hpp>
 #include <neko/session.hpp>
 
 #include <cstdint>
@@ -98,7 +99,8 @@ bool reload_session::try_load(const std::filesystem::path& path) {
         ++redirected;
     }
 
-    std::fprintf(stderr, "[neko] reload applied: %zu function(s) redirected\n", redirected);
+    std::fprintf(stderr, "%s reload applied: %zu function(s) redirected\n", neko::kLogTag,
+                 redirected);
     return true;
 }
 
