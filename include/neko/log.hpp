@@ -1,6 +1,6 @@
 // log.hpp — nekomata's diagnostics: level cats, colored on a TTY.
 //
-//   (=･ω･=) or (ฅ´ω`ฅ)  info   alive, occasionally pawing  (default)
+//   (=･ω･=) or (ฅ´ω`ฅ)  info   alive, occasionally pawing  (cyan)
 //   (=^ω^=)             ok     content — reload applied     (green)
 //   (=¬ω¬=)             warn   side-eye — handled, grudgingly (yellow, reserved)
 //   (=×ω×=)             error  playing dead — rejected      (red)
@@ -43,8 +43,10 @@ inline const char* log_tag(log_level level) {
     const bool tty = detail::stderr_is_tty();
     switch (level) {
     case log_level::info: {
-        static const char* const faces[] = {"(ฅ´ω`ฅ)", "(=･ω･=)"};
-        return faces[std::rand() % 2]; // unseeded on purpose (see above)
+        static const char* const plain[] = {"(ฅ´ω`ฅ)", "(=･ω･=)"};
+        static const char* const cyan[] = {"\033[36m(ฅ´ω`ฅ)\033[0m", "\033[36m(=･ω･=)\033[0m"};
+        const int i = std::rand() % 2; // unseeded on purpose (see above)
+        return tty ? cyan[i] : plain[i];
     }
     case log_level::ok:
         return tty ? "\033[32m(=^ω^=)\033[0m" : "(=^ω^=)";
