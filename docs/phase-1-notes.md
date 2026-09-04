@@ -79,6 +79,21 @@
    `-O0` 序言不会以 jmp 开头，无人向我们的 arena 跳转。`run_demo.sh` 现做
    **两次**热替换（v1→v2→v3）作为该缺陷类的永久回归防线。
 
+## 边界的 CI 断言（`neko.rejections`，Tier 1 信任链）
+
+每条边界现在都有 ctest 断言"明确报错 + 进程存活 + 旧代码继续运行"：
+
+| 用例 | 注入 | 实测行为 |
+|---|---|---|
+| `pie_host` | PIE 宿主二进制 | 启动即拒："position-independent (PIE)…Phase 2" |
+| `garbage`/`empty`/`truncated` | 随机字节/空文件/截断 .o | "bad magic" / "truncated object file" |
+| `flags_o2` | `-O2` 编译的热区 TU | **意外发现：单文件自包含 TU 在 -O2 下能干净替换**——序言校验查的是旧入口（-O0 构建），新代码无需序言只需正确重定位。已钉住该行为（applied + 状态连续）；-O2 仍非支持配置，跨 TU 内联出现时会转为明确拒绝 |
+| `new_global` | 新增 `g_extra` | "new globals are Phase 2 territory" |
+| `cross_tu` | 调用宿主函数 | "cannot resolve … cross-TU references are Phase 2 territory" |
+| `size_change` | `int`→`long` | 被**数据段锚点一致性检查**拦截："inconsistent state anchors — layout changed (Phase 5)"——锚点算法顺带成为类型布局漂移的守门员 |
+| `got_style` | `-fpic` 热区 | "GOT-style relocs need -fno-pic" |
+| `valid_reload_after_abuse` | 八轮虐待后来一次正常 reload | 正常替换——错误输入不留后遗症 |
+
 ## 已知边界（Phase 1 明确剪枝，运行时报错信息可见）
 
 | 边界 | 行为 |

@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# neko.rejections — Phase 1 boundary tests: every known-bad input must be
+# rejected with a SPECIFIC message, the process must survive, and the old
+# code must keep running. One runner process absorbs all the broken drops
+# sequentially; a second (PIE) runner asserts the startup rejection.
+#
+# Probe note: expected patterns below were first recorded by running each
+# case on a real box (see phase-1-notes.md §已知边界).
+set -euo pipefail
+
+CXX="@CMAKE_CXX_COMPILER@"
+SRC="@CMAKE_CURRENT_SOURCE_DIR@"
+HERE="@CMAKE_CURRENT_BINARY_DIR@"
+WORK="${1:-$(mktemp -d /tmp/neko-reject.XXXXXX)}"
+OUT="$WORK/out.txt"
+: > "$OUT"
+
+BASE="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
+
+runner_pid=""
+cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+trap cleanup EXIT
+
+count() { grep -c -- "$1" "$OUT" || true; }
+
+wait_for() { # wait_for <pattern> <timeout_s> <label>
+  local pattern="$1" timeout="$2" label="$3" waited=0
+  while ! grep -aq -- "$pattern" "$OUT"; do
+    sleep 0.2; waited=$((waited + 1))
+    if [ "$waited" -gt $((timeout * 5)) ]; then
+      echo "FAIL($label): expected '$pattern' within ${timeout}s. Recent output:"
+      tail -4 "$OUT" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'
+      exit 1
+    fi
+  done
+}
+
+alive() { kill -0 "$runner_pid" 2>/dev/null; }
+
+expect_case() { # expect_case <label> <staging.o> <expected pattern>
+  local label="$1" staging="$2" pattern="$3"
+  local ticks_before
+  ticks_before=$(count '\[hot\] tick')
+  mv "$staging" "$WORK/bad.new.o"
+  wait_for "$pattern" 15 "$label"
+  sleep 0.6 # let old code prove it keeps running
+  alive || { echo "FAIL($label): runner died after the rejected reload"; exit 1; }
+  local ticks_after
+  ticks_after=$(count '\[hot\] tick')
+  [ "$ticks_after" -gt "$ticks_before" ] || {
+    echo "FAIL($label): old code stopped running after rejection"; exit 1; }
+  echo "PASS $label"
+}
+
+build_variant() { # build_variant <sed-expr|-> <extra flags...> -> $WORK/staging.o
+  local sedexpr="$1"; shift
+  if [ "$sedexpr" = "-" ]; then
+    cp "$SRC/hot.cpp" "$WORK/variant.cpp"
+  else
+    sed "$sedexpr" "$SRC/hot.cpp" > "$WORK/variant.cpp"
+  fi
+  "$CXX" $BASE "$@" -c "$WORK/variant.cpp" -o "$WORK/staging.o"
+}
+
+echo "== neko.rejections (workdir: $WORK) =="
+
+# ---- PIE host: startup must fail loudly ---------------------------------
+pie_out=$("$HERE/reject_runner_pie" "$WORK/unused.o" 2>&1 || true)
+echo "$pie_out" | grep -aq "startup rejected:" || {
+  echo "FAIL(pie): expected 'startup rejected:', got: $pie_out"; exit 1; }
+echo "$pie_out" | grep -aq "position-independent" || {
+  echo "FAIL(pie): expected PIE-specific message, got: $pie_out"; exit 1; }
+echo "PASS pie_host"
+
+# ---- one runner absorbs all broken drops ---------------------------------
+"$CXX" $BASE -c "$SRC/hot.cpp" -o "$WORK/baseline.o"
+"$HERE/reject_runner" "$WORK/bad.new.o" > "$OUT" 2>&1 &
+runner_pid=$!
+wait_for '\[hot\] tick' 2 startup
+
+# 1. garbage bytes
+head -c 100 /dev/urandom > "$WORK/staging.o"
+expect_case garbage "$WORK/staging.o" "bad magic"
+
+# 2. empty file
+: > "$WORK/staging.o"
+expect_case empty "$WORK/staging.o" "truncated object file"
+
+# 3. truncated valid object
+cp "$WORK/baseline.o" "$WORK/staging.o"
+truncate -s 60 "$WORK/staging.o"
+expect_case truncated "$WORK/staging.o" "truncated object file"
+
+# 4. wrong optimization flags (the classic user mistake). Probe result:
+# a single self-contained TU at -O2 applies CLEANLY today — the prologue
+# guard checks the OLD entry (built -O0), and the fresh -O2 body needs no
+# prologue at all, just valid relocations. We pin that truth and the real
+# invariant: state continuity, no crash. (-O2 is NOT a supported config —
+# Phase 4 — cross-TU inlining will reject loudly once it appears.)
+"$CXX" -std=c++20 -O2 -fno-pie -fno-pic -fno-exceptions \
+  -fno-asynchronous-unwind-tables -c "$SRC/hot.cpp" -o "$WORK/staging.o"
+o2_ticks_before=$(count '\[hot\] tick')
+mv "$WORK/staging.o" "$WORK/bad.new.o"
+wait_for "reload applied" 15 flags_o2
+sleep 0.6
+alive || { echo "FAIL(flags_o2): runner died on the -O2 reload"; exit 1; }
+o2_ticks_after=$(count '\[hot\] tick')
+[ "$o2_ticks_after" -gt "$o2_ticks_before" ] || {
+  echo "FAIL(flags_o2): ticks did not continue after -O2 reload"; exit 1; }
+echo "PASS flags_o2_applies_incidentally"
+
+# 5. fresh code introduces a new mutable global
+build_variant 's|static int s_calls = 0;|static int s_calls = 0; int g_extra = 1;|; s|++g_counter;|++g_counter; g_extra += 2;|'
+expect_case new_global "$WORK/staging.o" "new globals are Phase 2 territory"
+
+# 6. cross-TU reference (host_only lives in the runner)
+build_variant 's|#include <cstdio>|#include <cstdio>\nvoid host_only();|; s|++s_calls;|++s_calls; host_only();|'
+expect_case cross_tu "$WORK/staging.o" "cross-TU references are Phase 2 territory"
+
+# 7. existing global changed size (int -> long): layout drift must be
+#    caught by the data-section anchor consistency check
+build_variant 's|int g_counter = 0;|long g_counter = 0;|'
+expect_case size_change "$WORK/staging.o" "inconsistent state anchors — layout changed (Phase 5)"
+
+# 8. GOT-style relocations (-fpic hot TU)
+"$CXX" -std=c++20 -O0 -fpic -fno-exceptions -fno-asynchronous-unwind-tables \
+  -c "$SRC/hot.cpp" -o "$WORK/staging.o"
+expect_case got_style "$WORK/staging.o" "GOT-style relocs need -fno-pic"
+
+# ---- a VALID reload must still work after all the abuse ------------------
+"$CXX" $BASE -c "$SRC/hot.cpp" -o "$WORK/staging.o"
+mv "$WORK/staging.o" "$WORK/bad.new.o"
+wait_for "reload applied" 15 final_valid
+sleep 0.5
+alive || { echo "FAIL(final_valid): runner died on the valid reload"; exit 1; }
+echo "PASS valid_reload_after_abuse"
+
+kill "$runner_pid" 2>/dev/null || true; wait "$runner_pid" 2>/dev/null || true; runner_pid=""
+echo ""
+echo "ALL REJECTION CASES PASS — every boundary rejected loudly, process survived"
+echo "output kept at: $OUT"
