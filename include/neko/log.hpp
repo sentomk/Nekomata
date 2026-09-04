@@ -1,17 +1,23 @@
 // log.hpp — nekomata's diagnostics: level cats, colored on a TTY.
 //
-//   =^･ω･^= info    neutral, watching        (default)
-//   =^ω^=   ok      content — reload applied (green)
-//   =×ω×=   error   playing dead — rejected  (red)
+//   (=･ω･=) or (ฅ´ω`ฅ)  info   alive, occasionally pawing  (default)
+//   (=^ω^=)             ok     content — reload applied     (green)
+//   (=¬ω¬=)             warn   side-eye — handled, grudgingly (yellow, reserved)
+//   (=×ω×=)             error  playing dead — rejected      (red)
 //
-// When stderr is not a TTY (pipes, CI, captured demos) the tags fall back
-// to bracketed plain text so logs stay greppable and clean.
+// The info face is picked per line from two candidates — deliberately via
+// an UNSEEDED rand(): varied across lines, identical across runs, so
+// transcripts stay reproducible.
+//
+// When stderr is not a TTY (pipes, CI, captured demos) the same cats are
+// printed plain (no ANSI), keeping logs greppable.
 
 #pragma once
 
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <unistd.h>
 
 namespace neko {
@@ -19,9 +25,8 @@ namespace neko {
 enum class log_level : std::uint8_t {
     info,
     ok,
+    warn,
     error,
-    // warn — reserved for Phase 5 "layout drifted but migrated" style cases;
-    // design its cat when the first real use appears.
 };
 
 namespace detail {
@@ -33,28 +38,22 @@ inline bool stderr_is_tty() {
 
 } // namespace detail
 
-/// The level's cat, ANSI-colored on a TTY, bracketed when plain.
+/// The level's cat, ANSI-colored on a TTY, plain otherwise.
 inline const char* log_tag(log_level level) {
-    if (!detail::stderr_is_tty()) {
-        switch (level) {
-        case log_level::ok:
-            return "[=^ω^=]";
-        case log_level::error:
-            return "[=×ω×=]";
-        case log_level::info:
-            break;
-        }
-        return "[=^･ω･^=]";
-    }
+    const bool tty = detail::stderr_is_tty();
     switch (level) {
-    case log_level::ok:
-        return "\033[32m=^ω^=\033[0m";
-    case log_level::error:
-        return "\033[31m=×ω×=\033[0m";
-    case log_level::info:
-        break;
+    case log_level::info: {
+        static const char* const faces[] = {"(ฅ´ω`ฅ)", "(=･ω･=)"};
+        return faces[std::rand() % 2]; // unseeded on purpose (see above)
     }
-    return "=^･ω･^=";
+    case log_level::ok:
+        return tty ? "\033[32m(=^ω^=)\033[0m" : "(=^ω^=)";
+    case log_level::warn: // reserved — Phase 5 layout-migration cases
+        return tty ? "\033[33m(=¬ω¬=)\033[0m" : "(=¬ω¬=)";
+    case log_level::error:
+        return tty ? "\033[31m(=×ω×=)\033[0m" : "(=×ω×=)";
+    }
+    return "";
 }
 
 /// Log one diagnostic line to stderr: the cat, a space, then the message.
