@@ -1,4 +1,4 @@
-#include "elf/process_symbols.hpp"
+#include "process_symbols.hpp"
 
 #include <elf.h>
 

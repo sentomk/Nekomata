@@ -1,4 +1,4 @@
-#include "elf/loader.hpp"
+#include "loader.hpp"
 
 #include <elf.h>
 
@@ -10,9 +10,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "elf/code_pages.hpp"
-#include "elf/object_file.hpp"
-#include "elf/process_symbols.hpp"
+#include "code_pages.hpp"
+#include "object_file.hpp"
+#include "process_symbols.hpp"
 #include <neko/code_substituter.hpp>
 #include <neko/state_manager.hpp>
 #include <neko/symbol_provider.hpp>

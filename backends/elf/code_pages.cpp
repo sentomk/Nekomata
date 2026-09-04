@@ -1,4 +1,4 @@
-#include "elf/code_pages.hpp"
+#include "code_pages.hpp"
 
 #include <sys/mman.h>
 #include <unistd.h>

@@ -1,10 +1,10 @@
-#include "elf/elf.hpp"
+#include "elf.hpp"
 
 #include <memory>
 
-#include "elf/code_pages.hpp"
-#include "elf/loader.hpp"
-#include "elf/process_symbols.hpp"
+#include "code_pages.hpp"
+#include "loader.hpp"
+#include "process_symbols.hpp"
 
 namespace neko::elf {
 

@@ -1,4 +1,4 @@
-#include "elf/object_file.hpp"
+#include "object_file.hpp"
 
 #include <elf.h>
 
