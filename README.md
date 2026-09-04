@@ -15,17 +15,33 @@ redirects function entry points:
 
 [![CI](https://github.com/sentomk/Nekomata/actions/workflows/ci.yml/badge.svg)](https://github.com/sentomk/Nekomata/actions/workflows/ci.yml)
 
-## Status: pre-alpha (Phase 1 in progress)
+## Status: pre-alpha (Phase 1 prototype working)
 
-Nekomata cannot hot-reload anything yet. To set expectations honestly:
+The core mechanism is proven end-to-end on Linux/ELF: edit a function, drop a
+fresh object file, and the running process takes the new code on the next
+call — with globals and statics preserved. To set expectations honestly:
 
 | Capability | Today | Target |
 |---|---|---|
-| Hot reload | not yet | running process, no restart |
-| Platforms | kernel builds everywhere; backends pending | Linux/ELF first, then Windows/PE |
-| Compilers (as reload source) | — | Clang ≥ 14, then MSVC |
+| Hot reload | ✅ single TU, `-O0`, Linux/ELF (see the demo below) | whole programs, real projects |
+| Platforms | Linux/ELF (kernel builds everywhere) | then Windows/PE |
+| Compilers (as reload source) | GCC, Clang ≥ 14 | MSVC (Phase 3) |
+| PIE binaries | — (`-no-pie` for now) | Phase 2 |
 | Optimization (`-O2`) builds | — | late phase (inline handling) |
 | Class layout migration | — | late phase (Phase 5) |
+
+### Try it (Linux)
+
+```sh
+cmake --preset debug && cmake --build --preset debug
+bash build/debug/examples/hello_reload/run_demo.sh
+```
+
+The demo edits `tick()` from `++g_counter` to `g_counter += 10` while the
+process runs, and asserts the counter continues from its old value:
+state survives the swap, no restart. Expected transcript:
+`examples/hello_reload/expected_output.txt`; engineering notes:
+[docs/phase-1-notes.md](docs/phase-1-notes.md).
 
 ## What "true-native" means
 
@@ -50,15 +66,18 @@ edit .cpp
 
 ## Architecture
 
-A platform-neutral kernel behind four interfaces; everything platform-specific
-is a pluggable backend in its own directory with its own tests.
+A platform-neutral kernel behind five interfaces (the proposal's four, plus
+`object_loader`, split out during Phase 1 validation); everything
+platform-specific is a pluggable backend in its own directory with its own
+tests.
 
 ```
               +------------------------------------------+
    ChangedSet |  kernel (platform-neutral, include/neko)  |
- ------------->  patch_planner   what must be recompiled? |
+ ------------->  patch_planner    what must be recompiled? |
               |  symbol_provider where is everything?     |
-              |  code_substituter write + redirect code   |
+              |  object_loader    mini-link the fresh .o   |
+              |  code_substituter exec memory + redirect  |
               |  state_manager    keep state alive        |
               +--------------------+---------------------+
                                    |
@@ -74,8 +93,8 @@ is a pluggable backend in its own directory with its own tests.
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 · Single-function prototype | Linux/ELF, `-O0`, one TU, fixed-moment swap | 🚧 scaffolding |
-| 2 · Real-world usable | DWARF ranges, whole-TU reloads, dependency graph, safe points | ⏳ |
+| 1 · Single-function prototype | Linux/ELF, `-O0`, one TU, fixed-moment swap | ✅ done — [notes](docs/phase-1-notes.md) |
+| 2 · Real-world usable | DWARF ranges, whole-TU reloads, dependency graph, safe points, PIE | ⏳ next |
 | 3 · Windows | PE/PDB (DIA), MSVC + `/hotpatch` | ⏳ |
 | 4 · Optimized builds | `-O2` inline units (`DW_TAG_inlined_subroutine`), COMDAT folding | ⏳ high risk |
 | 5 · Class layout migration | object migration + vtable updates | ⏳ hardest |
