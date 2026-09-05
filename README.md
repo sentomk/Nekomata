@@ -68,11 +68,32 @@ lists are not supported yet. Declarations are skipped; definitions without
 emitted ranges are reported separately. Missing or unsupported information
 causes a diagnostic and nonzero exit instead of a partial successful listing.
 
+The inspector also associates DWARF functions with defined ELF `STT_FUNC`
+entries from `.symtab`, retaining table/entry identity, section, binding,
+visibility, address and size. It reads both through one open file descriptor;
+do not modify that file in place during inspection. A match requires a unique
+entry address on both sides, an exact nonzero size, and an equal linkage name
+when DWARF provides one. Missing linkage names remain unavailable, not guessed.
+Same-name local symbols stay distinct. Multiple symbols at an entry (including
+aliases), or multiple DWARF definitions there, remain `ambiguous` even if one
+name matches. Zero symbol size means unknown, not an empty function.
+
+Each emitted function reports `match=matched`, `missing-symtab`,
+`missing-symbol`, `ambiguous`, `unknown-size`, `range-mismatch`, or
+`linkage-mismatch`, followed by every candidate's ELF metadata. ELF functions
+without a DWARF entry (such as startup code) are listed separately. Missing
+`.symtab` is reported without substituting `.dynsym`; malformed tables fail
+inspection. Extended section numbering and special function section indexes
+are currently rejected. Symbol inspection limits each string table to 64 MiB
+and each symbol table to one million entries.
+
 This is an offline foundation, not an expansion of the runtime's hot-reload
-support. It does not yet join the index to `.symtab` or match old/new builds.
-Tests compare fixture ranges and available linkage names with GNU `nm`, and
-cover duplicate local names, overloads, out-of-line members, bad inputs and
-repeated inspection. `readelf --debug-dump=info <binary>` or
+support or a cross-build matching API. Exit code zero means inspection finished,
+**not** that every function is matched or safe to patch. The runtime still uses
+its original symbol lookup. Tests compare fixture ranges and linkage names
+with GNU `nm`, and cover duplicate local names, aliases, overloads, out-of-line
+members, malformed input, missing metadata and repeated inspection.
+`readelf --debug-dump=info <binary>` or
 `llvm-dwarfdump --debug-info <binary>` can provide another independent reference.
 
 Linux inspection builds fetch checksum-pinned **libdwarf 2.3.2**, built as a

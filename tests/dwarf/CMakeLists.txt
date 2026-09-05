@@ -63,6 +63,7 @@ if(TARGET nekomata)
       "-DNO_DEBUG=$<TARGET_FILE:neko_dwarf_no_debug>"
       "-DDWARF5=$<TARGET_FILE:neko_dwarf_dwarf5>"
       "-DPIE=$<TARGET_FILE:neko_dwarf_pie>"
+      "-DALIASES=$<TARGET_FILE:neko_index_alias_fixture>"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/cli.cmake")
   set_tests_properties(neko.dwarf.cli PROPERTIES TIMEOUT 30)
 endif()
