@@ -4,12 +4,13 @@
 #include "binary_file.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <vector>
 
 namespace neko::elf {
 
-enum class match_status {
+enum class match_status : std::uint8_t {
   matched,
   missing_symtab,
   missing_symbol,
