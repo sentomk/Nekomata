@@ -12,17 +12,19 @@ concurrency:
 
 jobs:
   build:
-    name: ${{ matrix.os }} / ${{ matrix.cc }}
+    name: ${{ matrix.os }} / ${{ matrix.cc }} / ${{ matrix.preset }} / dwarf=${{ matrix.dwarf }}
     strategy:
       fail-fast: false
       matrix:
         include:
           # ubuntu-22.04 defaults: GCC 11 / Clang 14 — Clang 14 is the floor
           # required of the compiler frontend backend.
-          - { os: ubuntu-22.04, cc: gcc, cxx: g++ }
-          - { os: ubuntu-22.04, cc: clang, cxx: clang++ }
-          - { os: ubuntu-24.04, cc: gcc, cxx: g++ }
-          - { os: ubuntu-24.04, cc: clang, cxx: clang++ }
+          - { os: ubuntu-22.04, cc: gcc, cxx: g++, preset: debug, dwarf: "ON" }
+          - { os: ubuntu-22.04, cc: clang, cxx: clang++, preset: debug, dwarf: "ON" }
+          - { os: ubuntu-24.04, cc: gcc, cxx: g++, preset: debug, dwarf: "ON" }
+          - { os: ubuntu-24.04, cc: clang, cxx: clang++, preset: debug, dwarf: "ON" }
+          - { os: ubuntu-24.04, cc: gcc, cxx: g++, preset: release, dwarf: "ON" }
+          - { os: ubuntu-24.04, cc: clang, cxx: clang++, preset: debug, dwarf: "OFF" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -34,13 +36,13 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
-        run: cmake --preset debug
+        run: cmake --preset ${{ matrix.preset }} -DNEKOMATA_ENABLE_DWARF_INSPECTION=${{ matrix.dwarf }}
 
       - name: Build
-        run: cmake --build --preset debug
+        run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Test
-        run: ctest --preset debug
+        run: ctest --preset ${{ matrix.preset }}
 
   # The kernel is platform-neutral; building it on macOS keeps it honest.
   # Backend directories are skipped by design on this platform.

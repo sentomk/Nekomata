@@ -45,21 +45,25 @@
     {
       "name": "debug",
       "configurePreset": "debug",
+      "execution": { "noTestsAction": "error" },
       "output": { "outputOnFailure": true }
     },
     {
       "name": "release",
       "configurePreset": "release",
+      "execution": { "noTestsAction": "error" },
       "output": { "outputOnFailure": true }
     },
     {
       "name": "asan",
       "configurePreset": "asan",
+      "execution": { "noTestsAction": "error" },
       "output": { "outputOnFailure": true }
     },
     {
       "name": "tidy",
       "configurePreset": "tidy",
+      "execution": { "noTestsAction": "error" },
       "output": { "outputOnFailure": true }
     }
   ]

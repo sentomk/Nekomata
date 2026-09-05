@@ -21,7 +21,26 @@ set_tests_properties(neko.public_api PROPERTIES
 
 add_subdirectory(headers)
 
+if(TARGET nekomata AND NOT TARGET neko_backend_dwarf)
+  add_test(NAME neko.cli.without_dwarf
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:nekomata>"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cli_without_dwarf.cmake")
+  set_tests_properties(neko.cli.without_dwarf PROPERTIES TIMEOUT 10)
+endif()
+
 if(NEKOMATA_TARGET_LINUX)
+  if(NEKOMATA_ENABLE_SANITIZERS)
+    # A canary for the sanitizer gate itself: reporting UB but returning zero
+    # must fail this test. Keep the intentionally invalid code out of fixtures.
+    add_executable(neko_sanitizer_probe sanitizer_probe.cpp)
+    target_link_libraries(neko_sanitizer_probe PRIVATE nekomata::neko)
+    nekomata_apply_warnings(neko_sanitizer_probe)
+    nekomata_apply_sanitizers(neko_sanitizer_probe)
+    add_test(NAME neko.sanitizer.failure
+      COMMAND "${CMAKE_COMMAND}" "-DPROBE=$<TARGET_FILE:neko_sanitizer_probe>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/sanitizer.cmake")
+    set_tests_properties(neko.sanitizer.failure PROPERTIES TIMEOUT 10)
+  endif()
   add_subdirectory(elf)
   add_subdirectory(rejections)
   if(TARGET neko_backend_dwarf)

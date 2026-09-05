@@ -82,6 +82,7 @@ function(nekomata_apply_sanitizers target)
     target_link_options(${target} INTERFACE /fsanitize=address)
   else()
     target_compile_options(${target} PRIVATE -fsanitize=address,undefined
+                                            -fno-sanitize-recover=all
                                             -fno-omit-frame-pointer)
     target_link_options(${target} INTERFACE -fsanitize=address,undefined)
   endif()
