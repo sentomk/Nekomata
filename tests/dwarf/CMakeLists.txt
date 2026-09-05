@@ -5,6 +5,22 @@ target_compile_options(neko_dwarf_fixture PRIVATE
 target_link_options(neko_dwarf_fixture PRIVATE -no-pie -fno-lto)
 nekomata_apply_warnings(neko_dwarf_fixture)
 
+add_executable(neko_index_alias_fixture fixtures/aliases.cpp)
+target_compile_options(neko_index_alias_fixture PRIVATE
+  -O0 -g -gdwarf-4 -fno-inline -fno-pie -fno-lto)
+target_link_options(neko_index_alias_fixture PRIVATE -no-pie -fno-lto)
+nekomata_apply_warnings(neko_index_alias_fixture)
+
+add_executable(neko_function_index_tests function_index.cpp)
+target_include_directories(neko_function_index_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/elf")
+target_link_libraries(neko_function_index_tests PRIVATE neko_function_index)
+nekomata_apply_warnings(neko_function_index_tests)
+nekomata_apply_sanitizers(neko_function_index_tests)
+add_test(NAME neko.elf.function_index COMMAND neko_function_index_tests
+  $<TARGET_FILE:neko_dwarf_fixture> $<TARGET_FILE:neko_index_alias_fixture>)
+set_tests_properties(neko.elf.function_index PROPERTIES TIMEOUT 30)
+
 foreach(kind IN ITEMS no_debug dwarf5 pie)
   add_executable(neko_dwarf_${kind} fixtures/bare.cpp)
   target_compile_options(neko_dwarf_${kind} PRIVATE -O0 -fno-lto)

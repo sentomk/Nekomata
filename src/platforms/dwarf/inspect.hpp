@@ -6,6 +6,10 @@
 #include <string>
 #include <vector>
 
+namespace neko::elf {
+class binary_file;
+}
+
 namespace neko::dwarf {
 
 // Link-time virtual addresses, not file offsets or live process addresses.
@@ -42,5 +46,7 @@ struct binary_info {
 // Throws std::runtime_error on malformed, missing, or unsupported information.
 // Records describe one file only; this is not a cross-version matching API.
 binary_info inspect(const std::filesystem::path& path);
+// Internal overload for ELF/DWARF inspection through one open descriptor.
+binary_info inspect(const elf::binary_file& file);
 
 } // namespace neko::dwarf
