@@ -83,6 +83,17 @@ TEST_CASE("multiple DWARF definitions sharing one ELF entry remain ambiguous") {
   }
 }
 
+TEST_CASE("candidate fanout is bounded before constructing a quadratic result") {
+  auto debug = debug_sample();
+  const auto function = debug.units.front().functions.front();
+  debug.units.front().functions.resize(1001, function);
+  auto symbols = symbol_sample();
+  const auto symbol = symbols.functions.front();
+  symbols.functions.resize(1000, symbol);
+  CHECK_THROWS_WITH(neko::elf::associate(debug, symbols),
+                    doctest::Contains("association exceeds candidate limit"));
+}
+
 TEST_CASE("missing and conflicting evidence is never replaced with a name guess") {
   auto debug = debug_sample();
   auto symbols = symbol_sample();

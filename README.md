@@ -84,8 +84,10 @@ Each emitted function reports `match=matched`, `missing-symtab`,
 without a DWARF entry (such as startup code) are listed separately. Missing
 `.symtab` is reported without substituting `.dynsym`; malformed tables fail
 inspection. Extended section numbering and special function section indexes
-are currently rejected. Symbol inspection limits each string table to 64 MiB
-and each symbol table to one million entries.
+are currently rejected. Per inspection, symbol-table entries and stored
+association candidates are each limited to one million; total string-table
+bytes and copied function-name bytes are each limited to 64 MiB. Inputs that
+exceed these limits fail explicitly rather than returning a partial index.
 
 This is an offline foundation, not an expansion of the runtime's hot-reload
 support or a cross-build matching API. Exit code zero means inspection finished,

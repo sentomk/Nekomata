@@ -240,6 +240,69 @@ TEST_CASE("reads stay on the opened file after pathname replacement") {
   CHECK_THROWS_AS(neko::elf::binary_file(input.path()), std::runtime_error);
 }
 
+TEST_CASE("repeated long symbol names cannot amplify memory without a total limit") {
+  const sample input;
+  auto bytes = fixture();
+  constexpr std::size_t count = 258, name_size = 256 * 1024;
+  const auto names = symbols_offset + count * sizeof(Elf64_Sym);
+  bytes.resize(names + name_size + 2, 0);
+  std::fill(bytes.begin() + static_cast<std::ptrdiff_t>(names + 1), bytes.end() - 1, 'x');
+  const auto strings = sections_offset + 2 * sizeof(Elf64_Shdr);
+  put(bytes, strings + 24, names, 8);
+  put(bytes, strings + 32, name_size + 2, 8);
+  put(bytes, sections_offset + 3 * sizeof(Elf64_Shdr) + 32, count * sizeof(Elf64_Sym), 8);
+  put(bytes, sections_offset + 3 * sizeof(Elf64_Shdr) + 44, count, 4);
+  for (std::size_t i = 1; i < count; ++i) {
+    const auto symbol = symbols_offset + i * sizeof(Elf64_Sym);
+    put(bytes, symbol, 1, 4);
+    put(bytes, symbol + 4, ELF64_ST_INFO(STB_LOCAL, STT_FUNC), 1);
+    put(bytes, symbol + 6, 1, 2);
+    put(bytes, symbol + 8, text_address, 8);
+    put(bytes, symbol + 16, 4, 8);
+  }
+  input.write(bytes);
+  CHECK_THROWS_WITH(neko::elf::binary_file(input.path()).symbols(),
+                    doctest::Contains("function names exceed inspection limits"));
+}
+
+TEST_CASE("inspection budgets apply across multiple symbol tables") {
+  std::size_t table_count = 2, symbol_count = 500001, string_size = 22;
+  SUBCASE("total entries") {}
+  SUBCASE("total string table reads") {
+    table_count = 17;
+    symbol_count = 5;
+    string_size = 4 * 1024 * 1024;
+  }
+  const auto original = fixture();
+  auto bytes = original;
+  const std::size_t sections = 1024;
+  const auto symbols = sections + (3 + table_count) * sizeof(Elf64_Shdr);
+  const auto strings = symbols + symbol_count * sizeof(Elf64_Sym);
+  bytes.resize(strings + string_size, 0);
+  std::copy(original.begin() + sections_offset, original.begin() + symbols_offset,
+            bytes.begin() + static_cast<std::ptrdiff_t>(sections));
+  std::copy(original.begin() + symbols_offset, original.end(),
+            bytes.begin() + static_cast<std::ptrdiff_t>(symbols));
+  std::copy(original.begin() + strings_offset, original.begin() + strings_offset + 22,
+            bytes.begin() + static_cast<std::ptrdiff_t>(strings));
+  put(bytes, 40, sections, 8);
+  put(bytes, 60, 3 + table_count, 2);
+  put(bytes, sections + 2 * sizeof(Elf64_Shdr) + 24, strings, 8);
+  put(bytes, sections + 2 * sizeof(Elf64_Shdr) + 32, string_size, 8);
+  for (std::size_t i = 0; i < table_count; ++i) {
+    const auto table = sections + (3 + i) * sizeof(Elf64_Shdr);
+    std::copy(original.begin() + sections_offset + 3 * sizeof(Elf64_Shdr),
+              original.begin() + symbols_offset,
+              bytes.begin() + static_cast<std::ptrdiff_t>(table));
+    put(bytes, table + 24, symbols, 8);
+    put(bytes, table + 32, symbol_count * sizeof(Elf64_Sym), 8);
+  }
+  const sample input;
+  input.write(bytes);
+  CHECK_THROWS_WITH(neko::elf::binary_file(input.path()).symbols(),
+                    doctest::Contains("symbol table exceeds inspection limits"));
+}
+
 TEST_CASE("invalid headers and non-regular paths are rejected") {
   const sample input;
   CHECK_THROWS_AS(neko::elf::binary_file(input.path()), std::runtime_error);

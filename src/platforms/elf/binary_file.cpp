@@ -162,6 +162,9 @@ function_symbols binary_file::symbols() const {
   const auto table = sections(*this);
   const auto executable = executable_ranges();
   function_symbols out;
+  constexpr std::uint64_t max_strings = 64 * 1024 * 1024;
+  constexpr std::uint64_t max_symbols = 1000000;
+  std::uint64_t string_bytes = 0, name_bytes = 0, symbol_count = 0;
   for (std::size_t t = 0; t < table.size(); ++t) {
     const auto& symtab = table[t];
     if (symtab.type != SHT_SYMTAB) {
@@ -175,12 +178,13 @@ function_symbols binary_file::symbols() const {
     }
     const auto& strtab = table[symtab.link];
     // Bound allocations/work even for deliberately enormous sparse inputs.
-    constexpr std::uint64_t max_strings = 64 * 1024 * 1024;
-    constexpr std::uint64_t max_symbols = 1000000;
     const auto count = symtab.size / sizeof(Elf64_Sym);
-    if (strtab.size == 0 || strtab.size > max_strings || count > max_symbols) {
+    if (strtab.size == 0 || strtab.size > max_strings - string_bytes ||
+        count > max_symbols - symbol_count) {
       throw std::runtime_error("ELF symbol table exceeds inspection limits");
     }
+    string_bytes += strtab.size;
+    symbol_count += count;
     std::vector<std::uint8_t> strings(static_cast<std::size_t>(strtab.size));
     read(strtab.offset, strings);
     if (strings.front() != 0 || strings.back() != 0) {
@@ -219,7 +223,15 @@ function_symbols binary_file::symbols() const {
         throw std::runtime_error("ELF function is outside executable code");
       }
       const auto first = strings.begin() + static_cast<std::ptrdiff_t>(name);
-      const auto last = std::find(first, strings.end(), std::uint8_t{0});
+      // The same long name may be referenced by many symbols. Bound both the
+      // scan and the owned copies, not just the input string table allocation.
+      const auto scan_size = std::min(strtab.size - name, max_strings - name_bytes + 1);
+      const auto scan_end = first + static_cast<std::ptrdiff_t>(scan_size);
+      const auto last = std::find(first, scan_end, std::uint8_t{0});
+      if (last == scan_end) {
+        throw std::runtime_error("ELF function names exceed inspection limits");
+      }
+      name_bytes += static_cast<std::uint64_t>(last - first);
       out.functions.push_back({static_cast<std::uint32_t>(t), i,
                                static_cast<std::uint32_t>(section_index), std::string(first, last),
                                address, size, static_cast<std::uint8_t>(ELF64_ST_BIND(raw[4])),

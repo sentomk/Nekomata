@@ -1,6 +1,7 @@
 #include "function_index.hpp"
 
 #include <map>
+#include <stdexcept>
 #include <utility>
 
 namespace neko::elf {
@@ -34,6 +35,8 @@ function_index associate(dwarf::binary_info debug, function_symbols symbols) {
     by_address[out.symbols.functions[i].address].push_back(i);
   }
   std::vector<bool> associated(out.symbols.functions.size(), false);
+  constexpr std::size_t max_candidates = 1000000;
+  std::size_t candidate_count = 0;
   // Multiple DWARF definitions at one entry are also ambiguous, even if ELF
   // has only one symbol there (e.g. linker folding or duplicate debug records).
   std::map<std::uint64_t, std::size_t> definition_count;
@@ -57,6 +60,12 @@ function_index associate(dwarf::binary_info debug, function_symbols symbols) {
       } else {
         const auto& range = function.ranges.front();
         if (const auto found = by_address.find(range.begin); found != by_address.end()) {
+          // Folded definitions and aliases can otherwise multiply N records by
+          // M symbols. Bound the complete result before copying each group.
+          if (found->second.size() > max_candidates - candidate_count) {
+            throw std::runtime_error("function association exceeds candidate limit");
+          }
+          candidate_count += found->second.size();
           match.candidates = found->second;
           for (const auto candidate : match.candidates) {
             associated[candidate] = true;
