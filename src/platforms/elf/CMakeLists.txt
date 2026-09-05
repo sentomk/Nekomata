@@ -22,3 +22,9 @@ target_link_libraries(neko_backend_elf
 nekomata_apply_warnings(neko_backend_elf)
 nekomata_apply_sanitizers(neko_backend_elf)
 nekomata_apply_clang_tidy(neko_backend_elf)
+
+# Offline file inspection is independent of the in-process backend and DWARF.
+add_library(neko_elf_file STATIC binary_file.cpp)
+nekomata_apply_warnings(neko_elf_file)
+nekomata_apply_sanitizers(neko_elf_file)
+nekomata_apply_clang_tidy(neko_elf_file)

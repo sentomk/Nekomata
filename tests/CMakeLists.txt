@@ -22,6 +22,7 @@ set_tests_properties(neko.public_api PROPERTIES
 add_subdirectory(headers)
 
 if(NEKOMATA_TARGET_LINUX)
+  add_subdirectory(elf)
   add_subdirectory(rejections)
   if(TARGET neko_backend_dwarf)
     add_subdirectory(dwarf)
