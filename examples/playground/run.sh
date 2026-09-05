@@ -14,7 +14,7 @@ HOT_FLAGS="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-un
 "$CXX" -std=c++20 -O0 -fno-pie -fno-pic $INC -c "$HERE/main.cpp" -o "$HERE/main.o"
 "$CXX" "$HERE/main.o" "$HERE/demo.orig.o" -no-pie \
   "$NEKO_ROOT/build/debug/src/libneko.a" \
-  "$NEKO_ROOT/build/debug/src/backends/elf/libneko_backend_elf.a" -ldl -lm \
+  "$NEKO_ROOT/build/debug/src/platforms/elf/libneko_backend_elf.a" -ldl -lm \
   -o "$HERE/demo"
 
 echo "[run.sh] starting demo — terminal >= 80x24 recommended"

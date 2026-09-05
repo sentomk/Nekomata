@@ -11,9 +11,9 @@
 #include <thread>
 #include <unistd.h>
 
-#include <neko/backends/elf.hpp>
-#include <neko/core/log.hpp>
-#include <neko/runtime/session.hpp>
+#include <neko/log.hpp>
+#include <neko/platforms/elf.hpp>
+#include <neko/session.hpp>
 
 void tick();
 

@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include <neko/core/log.hpp>
+#include <neko/log.hpp>
 
 namespace neko::elf {
 namespace {

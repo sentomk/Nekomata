@@ -1,5 +1,5 @@
-#include "neko/backends/elf.hpp"
-#include "neko/runtime/session.hpp"
+#include "neko/platforms/elf.hpp"
+#include "neko/session.hpp"
 
 int main() {
   neko::reload_session session{neko::elf::create_backend()};

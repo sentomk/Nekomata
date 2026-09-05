@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <neko/runtime/session.hpp>
+#include <neko/session.hpp>
 
 namespace neko::elf {
 

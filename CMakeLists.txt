@@ -90,7 +90,7 @@ endfunction()
 # Public generated headers and compiled implementation.
 # Runtime interfaces must not depend on platform backends.
 # ---------------------------------------------------------------------------
-configure_file(include/neko/core/version.hpp.in generated/neko/core/version.hpp @ONLY)
+configure_file(include/neko/version.hpp.in generated/neko/version.hpp @ONLY)
 
 # ---------------------------------------------------------------------------
 # Tests, tools & examples

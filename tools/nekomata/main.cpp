@@ -4,7 +4,7 @@
 // (attach to process, watch sources, trigger reloads) lands together with
 // the ELF backend.
 
-#include <neko/core/version.hpp>
+#include <neko/version.hpp>
 
 #include <cstdio>
 #include <cstring>

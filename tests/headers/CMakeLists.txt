@@ -3,7 +3,7 @@
 file(GLOB_RECURSE neko_public_headers CONFIGURE_DEPENDS
   RELATIVE "${PROJECT_SOURCE_DIR}/include"
   "${PROJECT_SOURCE_DIR}/include/neko/*.hpp")
-list(APPEND neko_public_headers "neko/core/version.hpp")
+list(APPEND neko_public_headers "neko/version.hpp")
 
 set(neko_header_sources fwd.cpp)
 foreach(header IN LISTS neko_public_headers)

@@ -1,5 +1,4 @@
-#include <neko/core/fwd.hpp>
-#include <neko/runtime/fwd.hpp>
+#include <neko/fwd.hpp>
 
 #include <type_traits>
 

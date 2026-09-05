@@ -1,4 +1,4 @@
-#include <neko/core/version.hpp>
+#include <neko/version.hpp>
 
 #include <string>
 
