@@ -16,6 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -62,7 +63,7 @@ std::vector<char> fixture_bytes() {
 }
 
 const neko::dwarf::compilation_unit& unit_named(const neko::dwarf::binary_info& binary,
-                                                const std::string& name) {
+                                                std::string_view name) {
   const auto found = std::find_if(binary.units.begin(), binary.units.end(), [&](const auto& unit) {
     return std::filesystem::path(unit.name).filename() == name;
   });
@@ -71,7 +72,7 @@ const neko::dwarf::compilation_unit& unit_named(const neko::dwarf::binary_info& 
 }
 
 const neko::dwarf::function_record& function_named(const neko::dwarf::compilation_unit& unit,
-                                                   const std::string& name) {
+                                                   std::string_view name) {
   const auto found = std::find_if(unit.functions.begin(), unit.functions.end(),
                                   [&](const auto& fn) { return fn.name == name; });
   REQUIRE(found != unit.functions.end());
