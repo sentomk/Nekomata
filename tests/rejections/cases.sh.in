@@ -5,7 +5,7 @@
 # sequentially; a second (PIE) runner asserts the startup rejection.
 #
 # Probe note: expected patterns below were first recorded by running each
-# case on a real box (see phase-1-notes.md §已知边界).
+# case on a real Linux machine.
 set -euo pipefail
 
 CXX="@CMAKE_CXX_COMPILER@"

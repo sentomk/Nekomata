@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# One-command reproducible Phase 1 demo — proposal acceptance criterion #3.
+# One-command reproducible hot-reload demo.
 #
 #   bash run_demo.sh [workdir]
 #
-# What it proves (proposal §阶段一 验收):
-#   1. 修改某函数后，运行中进程的下一次调用走新逻辑 (no restart)
-#   2. 全局变量值保持 (g_counter continues, s_calls continues)
+# What it proves:
+#   1. New function logic runs on the next call without restarting the process.
+#   2. Global and static state survives (g_counter continues, s_calls continues).
 #   3. itself: one command, expected transcript below
 set -euo pipefail
 

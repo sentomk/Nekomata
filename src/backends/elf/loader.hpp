@@ -1,6 +1,6 @@
 // loader — the ELF backend's "runtime mini-link" (Phase 1).
 //
-// Pipeline (proposal §实现机制):
+// Pipeline:
 //   1. parse the fresh .o                    (object_file)
 //   2. lay out its text/rodata into an arena (near the old code, for rel32)
 //   3. resolve symbols:

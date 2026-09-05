@@ -1,6 +1,6 @@
 # PE binary backend (Windows) — Phase 3.
 #
-# Scope (proposal §Detailed Design):
+# Planned scope:
 #   * PE relocation processing for freshly compiled code
 #   * /hotpatch (/FUNCTIONPADMIN) entry-rewrite convention
 #

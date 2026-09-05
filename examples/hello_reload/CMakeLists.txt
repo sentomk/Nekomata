@@ -1,4 +1,4 @@
-# hello_reload — the Phase 1 acceptance demo (proposal §阶段一).
+# hello_reload — the single-translation-unit hot-reload acceptance demo.
 #
 # hot.cpp is a translation unit with mutable global state (g_counter, plus a
 # file-static). run_demo.sh starts this runner, edits hot.cpp's logic, drops

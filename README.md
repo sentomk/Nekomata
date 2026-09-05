@@ -40,12 +40,11 @@ bash build/debug/examples/hello_reload/run_demo.sh
 The demo edits `tick()` from `++g_counter` to `g_counter += 10` while the
 process runs, and asserts the counter continues from its old value:
 state survives the swap, no restart. Expected transcript:
-`examples/hello_reload/expected_output.txt`; engineering notes:
-[docs/phase-1-notes.md](docs/phase-1-notes.md).
+`examples/hello_reload/expected_output.txt`.
 
 ## What "true-native" means
 
-Four acceptance criteria, from the [design proposal](docs/proposal.md):
+Four acceptance criteria guide the project:
 
 1. **Zero code changes** — no plugin/interface/function-pointer rewrites.
 2. **In-process replacement** — reload without restarting; next call runs new code.
@@ -66,8 +65,7 @@ edit .cpp
 
 ## Architecture
 
-A platform-neutral kernel behind five interfaces (the proposal's four, plus
-`object_loader`, split out during Phase 1 validation); everything
+A platform-neutral kernel sits behind five interfaces. Everything
 platform-specific is a pluggable backend in its own directory with its own
 tests.
 
@@ -142,13 +140,11 @@ alone do not establish ABI stability.
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 · Single-function prototype | Linux/ELF, `-O0`, one TU, fixed-moment swap | ✅ done — [notes](docs/phase-1-notes.md) |
+| 1 · Single-function prototype | Linux/ELF, `-O0`, one TU, fixed-moment swap | ✅ done |
 | 2 · Real-world usable | DWARF ranges, whole-TU reloads, dependency graph, safe points, PIE | ⏳ next |
 | 3 · Windows | PE/PDB (DIA), MSVC + `/hotpatch` | ⏳ |
 | 4 · Optimized builds | `-O2` inline units (`DW_TAG_inlined_subroutine`), COMDAT folding | ⏳ high risk |
 | 5 · Class layout migration | object migration + vtable updates | ⏳ hardest |
-
-Details and acceptance criteria per phase: [docs/proposal.md](docs/proposal.md).
 
 ## When you should NOT use nekomata
 
@@ -207,19 +203,11 @@ Platform notes:
 - **macOS / other** — kernel-only build, verified in CI, by design.
 - **Windows** — arrives with Phase 3.
 
-## Documentation
-
-- [docs/proposal.md](docs/proposal.md) — the full design proposal: motivation,
-  architecture, mechanisms, phased roadmap, risks, FAQ.
-- [docs/prerequisite-knowledge.md](docs/prerequisite-knowledge.md) — the
-  onboarding guide for the underlying domains (ELF, x86-64 patching, DWARF).
-
 ## Contributing
 
-The project is in its design/scaffolding phase; interfaces are explicitly
-marked as drafts that Phase 1 will validate. Reading the proposal first is the
-best way in — open an issue or discussion for anything from API shape to
-backend design.
+The project is pre-alpha and its interfaces are still evolving. Start with
+this README and the runnable examples, and open an issue or discussion for
+anything from API shape to backend design.
 
 Naming follows the C++ standard library style: `snake_case` everywhere, types
 included (like `std::string_view`). Commit messages use Conventional Commits,
@@ -227,8 +215,7 @@ with identifiers wrapped in backticks.
 
 ## License
 
-To be decided (MIT or Apache-2.0) before the first external contribution —
-tracked as an open item in the proposal.
+Nekomata is licensed under the [MIT License](LICENSE).
 
 ## Credits & prior art
 
@@ -242,10 +229,8 @@ tracked as an open item in the proposal.
 - [crosire/blink](https://github.com/crosire/blink),
   [fungos/cr](https://github.com/fungos/cr),
   [ddovod/jet-live](https://github.com/ddovod/jet-live) — the surveyed open-source
-  landscape this proposal positions against (see proposal, Motivation).
+  projects exploring native hot reload.
 - [Microsoft Detours](https://github.com/microsoft/Detours) — the classic
   reference for function interception and trampolines.
 - [LLVM ORC](https://llvm.org/docs/ORCv2.html) — kindred machinery for runtime
-  relocation and memory management.
-tml) — kindred machinery for runtime
   relocation and memory management.

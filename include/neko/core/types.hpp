@@ -1,8 +1,6 @@
 // Common types shared by the neko kernel interfaces.
 //
-// Phase 1 note: these shapes are no longer pure drafts — they have survived
-// one real end-to-end implementation (the Linux/ELF prototype). What changed
-// and why is recorded in docs/phase-1-notes.md.
+// These interfaces are exercised by the Linux/ELF hot-reload prototype.
 
 #pragma once
 

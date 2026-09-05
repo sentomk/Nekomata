@@ -1,7 +1,7 @@
 # nekomata backends.
 #
 # Backends carry all platform knowledge and are isolated in their own
-# directories with their own tests (proposal §Detailed Design):
+# directories with their own tests:
 #
 #   backend            Linux             Windows
 #   -----------------  ----------------  ------------------------------

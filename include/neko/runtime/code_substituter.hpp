@@ -6,11 +6,8 @@
 //
 // Backends: mmap/mprotect (POSIX, Phase 1), VirtualProtect (Windows, Phase 3).
 //
-// Phase 1 validation: the draft's reserve_code(bytes) could not know WHERE
-// to allocate — rel32 reachability requires a hint — so it became
-// reserve_code_near(hint, bytes). The draft's relocate() moved out entirely:
-// relocations belong to the object_loader, which has the symbol context.
-// See docs/phase-1-notes.md.
+// rel32 reachability requires an allocation hint, hence reserve_code_near(hint, bytes).
+// Relocations belong to the object_loader, which has the symbol context.
 
 #pragma once
 

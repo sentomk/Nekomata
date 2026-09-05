@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# 启动 playground：编译 demo.cpp/main.cpp 并以动画模式运行。
-# 依赖：~/Nekomata 已构建（cmake --preset debug）。
+# Build demo.cpp/main.cpp and start the playground animation.
+# Requires a Debug build of Nekomata at NEKO_ROOT (default: ~/Nekomata).
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 NEKO_ROOT="${NEKO_ROOT:-$HOME/Nekomata}"
 CXX="${CXX:-g++}"
 INC="-I$NEKO_ROOT/include"
-# 注意：demo.cpp 必须与当初链接进二进制的编译命令完全一致（build information）
+# Keep these demo.cpp flags identical to those in reload.sh.
 HOT_FLAGS="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
 
 "$CXX" $HOT_FLAGS $INC -c "$HERE/demo.cpp" -o "$HERE/demo.orig.o"

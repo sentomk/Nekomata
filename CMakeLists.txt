@@ -33,7 +33,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
 endif()
 
-# Platform gates for the pluggable backends (see docs/proposal.md).
+# Platform gates for the pluggable backends.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(NEKOMATA_TARGET_LINUX ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -75,7 +75,7 @@ function(nekomata_apply_sanitizers target)
   # Instrument the target's own TUs (PRIVATE), and make consumers link the
   # runtime (INTERFACE) without instrumenting THEIR code. Full-project
   # instrumentation would shift global layouts (ASan redzones) and break the
-  # reload demo's state anchoring — see docs/phase-1-notes.md.
+  # reload demo's state anchoring.
   if(MSVC)
     target_compile_options(${target} PRIVATE /fsanitize=address)
     target_link_options(${target} INTERFACE /fsanitize=address)

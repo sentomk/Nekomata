@@ -1,5 +1,5 @@
-// main.cpp —— playground 宿主。接入 nekomata 就是标了序号的三行。
-// 这个文件不需要热改；要改的都在 demo.cpp 里。
+// Playground host. The three numbered lines integrate Nekomata.
+// Keep this file unchanged while running; edit demo.cpp to reload behavior.
 
 #include <chrono>
 #include <cstdio>
@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
   neko::reload_session session{neko::elf::create_backend()}; // 1. agent
   session.watch(watched);                                    // 2. watch
 
-  std::printf("\033[2J\033[H"); // 清屏一次
+  std::printf("\033[2J\033[H"); // Clear the screen once.
   neko::log(neko::log_level::info,
             "playground running (pid %d) — edit demo.cpp, then run "
             "./reload.sh\n",
@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
     step_world();
     render_world();
     try {
-      session.update(); // 3. 每帧 tick：发现新 .o 就热替换
+      session.update(); // 3. Check for a fresh object file once per frame.
     } catch (const std::exception& e) {
       neko::log(neko::log_level::error, "reload rejected, old code keeps running: %s\n", e.what());
     }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 改完 demo.cpp 后执行：重编译并原子投递，动画立刻热替换。
-# 编译失败则什么都不投递，动画继续跑旧代码。
+# Run after editing demo.cpp: recompile and atomically offer the new object.
+# If compilation fails, offer nothing and keep the old animation running.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -10,7 +10,7 @@ CXX="${CXX:-g++}"
 if "$CXX" -std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions \
      -fno-asynchronous-unwind-tables -I"$NEKO_ROOT/include" \
      -c "$HERE/demo.cpp" -o "$HERE/demo.staging.o"; then
-    mv "$HERE/demo.staging.o" "$HERE/demo.new.o"  # 原子投递 = 显式确认
+    mv "$HERE/demo.staging.o" "$HERE/demo.new.o"  # Atomic delivery confirms the reload.
     echo "[reload.sh] fresh demo.o offered — next frame takes it"
 else
     echo "[reload.sh] compile failed — nothing offered, animation keeps old code"

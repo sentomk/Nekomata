@@ -1,6 +1,6 @@
 // Minimal ELF64 little-endian relocatable (.o) reader.
 //
-// Just enough for the Phase 1 prototype (proposal §阶段一): section
+// Just enough for the reload prototype: section
 // classification, the symbol table and relocations. Deliberately not a
 // general ELF parser — it rejects everything that is not an x86-64
 // relocatable object, and ignores anything it does not need (debug info,
@@ -21,7 +21,7 @@ enum class section_class : std::uint8_t {
   text,   // SHF_ALLOC | SHF_EXECINSTR — code, goes into the executable arena
   rodata, // SHF_ALLOC, read-only — string literals etc., arena too
   data,   // SHF_ALLOC | SHF_WRITE — .data/.bss; NOT loaded: existing state
-          // wins (proposal: 全局变量按既有地址重定位以保状态)
+          // wins: globals resolve to existing addresses to preserve state
   other,  // everything we do not load
 };
 

@@ -18,7 +18,7 @@ jobs:
       matrix:
         include:
           # ubuntu-22.04 defaults: GCC 11 / Clang 14 — Clang 14 is the floor
-          # required of the compiler frontend backend (proposal §Detailed Design).
+          # required of the compiler frontend backend.
           - { os: ubuntu-22.04, cc: gcc, cxx: g++ }
           - { os: ubuntu-22.04, cc: clang, cxx: clang++ }
           - { os: ubuntu-24.04, cc: gcc, cxx: g++ }
@@ -118,5 +118,4 @@ jobs:
       - name: Check formatting
         run: bash scripts/format.sh --check
 
-  # Windows (PE/PDB backend, MSVC matrix) arrives with Phase 3 of the
-  # roadmap. See docs/proposal.md, "阶段三 · Windows/PE/PDB".
+  # The Windows PE/PDB backend and MSVC build matrix are planned work.

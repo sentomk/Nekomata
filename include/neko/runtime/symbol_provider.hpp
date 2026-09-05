@@ -7,9 +7,7 @@
 // Backends: ELF .symtab of /proc/self/exe (Linux, Phase 1), PDB via MS DIA
 // SDK (Windows, Phase 3).
 //
-// Phase 1 validation: all_functions() held; name lookups were missing from
-// the draft and have been added — the loader resolves fresh-code symbols
-// against process symbols by (mangled) name (see docs/phase-1-notes.md).
+// The loader resolves fresh-code symbols against process symbols by mangled name.
 
 #pragma once
 

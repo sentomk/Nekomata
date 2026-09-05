@@ -1,10 +1,8 @@
 // object_loader — turning a fresh object file into executable code.
 //
-// This interface did not exist in the proposal's draft: the draft folded
-// "apply relocations" into code_substituter, but relocation is inherently
-// object-format work requiring symbol context (which symbol resolves to old
-// state, which to new code, which to an external trampoline). Phase 1 split
-// it out; see docs/phase-1-notes.md.
+// Relocation is object-format work requiring symbol context: which symbol
+// resolves to old state, new code, or an external trampoline. Keep it separate
+// from the executable-memory and entry-patching responsibilities of code_substituter.
 //
 // Backends: ELF64 relocatable objects (Linux, Phase 1), PE/COFF (Windows,
 // Phase 3).

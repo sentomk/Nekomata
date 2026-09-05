@@ -1,17 +1,17 @@
 // reload_session — the Live++-style in-process agent tick.
 //
-// Usage pattern (2–3 lines, matching the proposal's API choice):
+// Usage pattern:
 //
 //     neko::reload_session session{neko::elf::create_backend()};
 //     session.watch("hot.new.o");
 //     ... session.update() once per frame / loop iteration ...
 //
-// Trigger model (per proposal): compilation is the caller's business; a
+// Trigger model: compilation is the caller's business; a
 // reload is applied only when a complete object file appears at a watched
 // path. The file is claimed atomically (renamed away) before loading, so a
 // half-written object is never picked up.
 //
-// Phase 1 constraints (deliberate pruning, proposal §阶段一): single
+// Current constraints: single
 // thread, swap at a known-quiet point (between update() calls), no rollback.
 
 #pragma once

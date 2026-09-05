@@ -1,6 +1,6 @@
 # DWARF symbol backend (Linux) — Phase 2 (basic parsing may start in Phase 1).
 #
-# Scope (proposal §Detailed Design):
+# Planned scope:
 #   * function address/extents from DWARF + ELF .symtab
 #   * type layouts for Phase 5
 #   * (Phase 4) inline unit reconstruction from DW_TAG_inlined_subroutine
