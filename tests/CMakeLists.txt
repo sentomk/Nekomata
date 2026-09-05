@@ -23,4 +23,7 @@ add_subdirectory(headers)
 
 if(NEKOMATA_TARGET_LINUX)
   add_subdirectory(rejections)
+  if(TARGET neko_backend_dwarf)
+    add_subdirectory(dwarf)
+  endif()
 endif()

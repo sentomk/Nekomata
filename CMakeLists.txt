@@ -14,6 +14,7 @@ option(NEKOMATA_BUILD_EXAMPLES "Build nekomata examples" ON)
 option(NEKOMATA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(NEKOMATA_ENABLE_SANITIZERS "Build with ASan+UBSan (Clang/GCC only)" OFF)
 option(NEKOMATA_ENABLE_CLANG_TIDY "Run clang-tidy on nekomata code during builds" OFF)
+option(NEKOMATA_ENABLE_DWARF_INSPECTION "Build the Linux offline DWARF inspector" ON)
 
 if(NEKOMATA_ENABLE_CLANG_TIDY)
   find_program(NEKOMATA_CLANG_TIDY_EXECUTABLE NAMES clang-tidy-18 clang-tidy REQUIRED)

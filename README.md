@@ -42,6 +42,57 @@ process runs, and asserts the counter continues from its old value:
 state survives the swap, no restart. Expected transcript:
 `examples/hello_reload/expected_output.txt`.
 
+### Inspect a binary (Linux, read-only)
+
+```sh
+./build/debug/tools/nekomata/nekomata inspect \
+  ./build/debug/tests/dwarf/neko_dwarf_fixture
+ctest --test-dir build/debug -R 'neko.dwarf' --output-on-failure
+```
+
+`inspect` reads an existing binary without executing it, attaching to a process,
+or modifying the file. It reports compilation units, function names, optional
+linkage names, and half-open code ranges `[begin, end)`. Same-name local functions
+remain separate records under their own compilation units. Addresses are
+**link-time virtual addresses**, not file offsets or relocated process addresses.
+The binary plus CU/DIE offsets identify records within that file; offsets are
+not stable identities across rebuilds. Missing linkage names are printed as
+unavailable, never guessed from source names.
+
+The initial supported input is an x86-64 ELF `ET_EXEC` with embedded DWARF 4,
+DWARF32 offsets and 8-byte addresses, built with `-O0 -g -gdwarf-4`, `-fno-pie`
+and linked with `-no-pie`. These options belong to the **inspected project's**
+build, not to Nekomata itself. PIE/shared libraries, relocatable `.o` files,
+DWARF 5, split/compressed debug information, inline instances and function range
+lists are not supported yet. Declarations are skipped; definitions without
+emitted ranges are reported separately. Missing or unsupported information
+causes a diagnostic and nonzero exit instead of a partial successful listing.
+
+This is an offline foundation, not an expansion of the runtime's hot-reload
+support. It does not yet join the index to `.symtab` or match old/new builds.
+Tests compare fixture ranges and available linkage names with GNU `nm`, and
+cover duplicate local names, overloads, out-of-line members, bad inputs and
+repeated inspection. `readelf --debug-dump=info <binary>` or
+`llvm-dwarfdump --debug-info <binary>` can provide another independent reference.
+
+Linux inspection builds fetch checksum-pinned **libdwarf 2.3.2**, built as a
+shared library and linked only into the inspection tooling. Its headers do not
+enter Nekomata's public API or the runtime. The upstream library is LGPL-2.1;
+its license and notices remain in the fetched source tree. See
+[upstream licensing](https://github.com/davea42/libdwarf-code/blob/v2.3.2/COPYING).
+This build does not include `dwarfdump` or debug-section decompression libraries.
+
+For an offline build, supply an already extracted copy of that exact version:
+
+```sh
+cmake --preset debug \
+  -DFETCHCONTENT_SOURCE_DIR_LIBDWARF=/absolute/path/to/libdwarf-code-2.3.2
+```
+
+Alternatively, `-DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF` keeps the existing runtime
+and its tests buildable without downloading libdwarf. macOS/Windows builds do
+not fetch this dependency and report that `inspect` is unavailable.
+
 ## What "true-native" means
 
 Four acceptance criteria guide the project:
@@ -177,6 +228,9 @@ Being honest about the boundary is part of the design:
 
 Requirements: CMake ≥ 3.21, Ninja, a C++20 compiler (GCC ≥ 11 / Clang ≥ 14 /
 MSVC 2022).
+
+Linux inspection also needs a C compiler for libdwarf, and network access on
+first configuration unless its source directory is supplied as described above.
 
 ```sh
 cmake --preset debug          # configure (Ninja, build/debug)
