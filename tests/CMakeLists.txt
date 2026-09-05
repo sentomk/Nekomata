@@ -11,6 +11,8 @@ nekomata_apply_sanitizers(neko_smoke)
 
 add_test(NAME neko.smoke COMMAND neko_smoke)
 
+add_subdirectory(headers)
+
 if(NEKOMATA_TARGET_LINUX)
   add_subdirectory(rejections)
 endif()

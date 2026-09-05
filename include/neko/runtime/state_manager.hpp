@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <neko/runtime/fwd.hpp>
+
 #include <string_view>
 
 namespace neko {

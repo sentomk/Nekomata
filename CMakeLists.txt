@@ -87,29 +87,10 @@ function(nekomata_apply_sanitizers target)
 endfunction()
 
 # ---------------------------------------------------------------------------
-# Kernel: platform-neutral core.
-# The four interfaces (SymbolProvider / CodeSubstituter / PatchPlanner /
-# StateManager) live under include/neko/ and must not depend on any backend.
+# Public generated headers and compiled implementation.
+# Runtime interfaces must not depend on platform backends.
 # ---------------------------------------------------------------------------
-configure_file(include/neko/version.hpp.in generated/neko/version.hpp @ONLY)
-
-add_library(neko STATIC
-  src/version.cpp
-  src/session.cpp)
-add_library(nekomata::neko ALIAS neko)
-target_include_directories(neko
-  PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>)
-target_compile_features(neko PUBLIC cxx_std_20)
-nekomata_apply_warnings(neko)
-nekomata_apply_sanitizers(neko)
-nekomata_apply_clang_tidy(neko)
-
-# ---------------------------------------------------------------------------
-# Backends: platform-specific, each in its own directory with its own tests.
-# ---------------------------------------------------------------------------
-add_subdirectory(backends)
+configure_file(include/neko/core/version.hpp.in generated/neko/core/version.hpp @ONLY)
 
 # ---------------------------------------------------------------------------
 # Tests, tools & examples
@@ -118,6 +99,8 @@ add_subdirectory(backends)
 if(NEKOMATA_BUILD_TESTS)
   enable_testing()
 endif()
+
+add_subdirectory(src)
 
 if(NEKOMATA_BUILD_TOOLS)
   add_subdirectory(tools)

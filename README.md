@@ -89,6 +89,55 @@ tests.
    (mmap/mprotect)            (VirtualProtect)
 ```
 
+## Repository layout
+
+Nekomata is a compiled library, not a header-only library. Public headers are
+grouped by module; implementation files and private headers live under `src/`:
+
+```text
+include/neko/
+  neko.hpp             # convenience umbrella for core + runtime
+  core/                # common types, logging, generated version API, fwd.hpp
+  runtime/             # backend interfaces, reload session, fwd.hpp
+  backends/elf.hpp     # public Linux backend factory
+src/
+  core/                # compiled core implementation
+  runtime/             # compiled runtime implementation
+  backends/            # platform implementations and private headers
+tests/
+  headers/             # standalone public-header and forward-declaration checks
+  rejections/          # runtime rejection tests
+  vendor/              # third-party test dependencies
+examples/              # runnable consumers
+tools/                 # command-line programs
+```
+
+Use `<neko/runtime/session.hpp>` and `<neko/backends/elf.hpp>` for the Linux
+reload entry point. `<neko/neko.hpp>` remains the convenience include, but is
+not an amalgamated single-file distribution and still requires linking the
+library. CMake target names remain `nekomata::neko` and
+`nekomata::backends::elf`. The former flat header paths have moved into their
+modules; update granular includes when upgrading.
+
+Module `fwd.hpp` files hold forward declarations and lightweight type aliases.
+Use them when only names, pointers, or references are needed; include the
+defining header when a complete type is required. Do not duplicate declarations
+at call sites or create empty forward headers for factory-only directories.
+Public headers must be self-contained and must not include anything from
+`src/`. Implementation include paths must not leak through public CMake usage
+requirements. With tests enabled, the normal build compiles every public header
+independently, including the configured version header.
+
+New C++ sources use `.cpp`, C++ headers use `.hpp`, and generated header
+templates use `.hpp.in`. Reserve `.h` for headers that can be included from
+both C and C++, and `.c` for C implementations. A future C API belongs under
+`include/neko/c/`, with its C++ bridge under `src/c/`; no C API is exposed yet.
+Such headers must guard `extern "C"` with `#ifdef __cplusplus`, expose C-compatible
+types, and keep C++ exceptions, containers, and ownership details behind the
+boundary. When that API is introduced, compile its headers as both C and C++
+and test a C consumer linked to the bridge; file extensions or `extern "C"`
+alone do not establish ABI stability.
+
 ## Roadmap
 
 | Phase | Scope | Status |

@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <neko/core/fwd.hpp>
+
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>

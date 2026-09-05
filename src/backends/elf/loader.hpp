@@ -21,15 +21,8 @@
 #include <cstdint>
 #include <memory>
 
-#include <neko/object_loader.hpp>
-
-namespace neko {
-
-class code_substituter;
-class state_manager;
-class symbol_provider;
-
-} // namespace neko
+#include <neko/runtime/fwd.hpp>
+#include <neko/runtime/object_loader.hpp>
 
 namespace neko::elf {
 

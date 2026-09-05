@@ -28,7 +28,7 @@ Checks: >-
   -performance-no-int-to-ptr,
   portability-*
 WarningsAsErrors: '*'
-HeaderFilterRegex: '(^|/)(include/neko|src|backends|tools)/'
+HeaderFilterRegex: '(^|/)(include/neko|src|tools)/'
 SystemHeaders: false
 InheritParentConfig: false
 FormatStyle: file

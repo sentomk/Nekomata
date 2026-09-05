@@ -21,8 +21,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include <neko/state_manager.hpp>
-#include <neko/symbol_provider.hpp>
+#include <neko/runtime/state_manager.hpp>
+#include <neko/runtime/symbol_provider.hpp>
 
 namespace neko::elf {
 

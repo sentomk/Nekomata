@@ -1,5 +1,9 @@
-#include <neko/log.hpp>
-#include <neko/session.hpp>
+#include <neko/runtime/session.hpp>
+
+#include <neko/core/log.hpp>
+#include <neko/runtime/code_substituter.hpp>
+#include <neko/runtime/object_loader.hpp>
+#include <neko/runtime/patch_planner.hpp>
 
 #include <cstdint>
 #include <cstdio>

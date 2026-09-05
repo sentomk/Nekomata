@@ -16,7 +16,7 @@ target_link_libraries(neko_backend_elf
   PUBLIC nekomata::neko
   PRIVATE ${CMAKE_DL_LIBS})
 
-# Public entry point is <neko/elf.hpp> (include/neko/, via neko::neko);
+# Public entry point is <neko/backends/elf.hpp> (via nekomata::neko);
 # internal headers use same-directory relative includes.
 
 nekomata_apply_warnings(neko_backend_elf)

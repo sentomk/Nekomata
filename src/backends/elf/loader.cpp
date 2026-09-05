@@ -13,10 +13,10 @@
 #include "code_pages.hpp"
 #include "object_file.hpp"
 #include "process_symbols.hpp"
-#include <neko/code_substituter.hpp>
-#include <neko/log.hpp>
-#include <neko/state_manager.hpp>
-#include <neko/symbol_provider.hpp>
+#include <neko/core/log.hpp>
+#include <neko/runtime/code_substituter.hpp>
+#include <neko/runtime/state_manager.hpp>
+#include <neko/runtime/symbol_provider.hpp>
 
 namespace neko::elf {
 namespace {

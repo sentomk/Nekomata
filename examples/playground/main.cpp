@@ -1,5 +1,5 @@
-// main.cc —— playground 宿主。接入 nekomata 就是标了序号的三行。
-// 这个文件不需要热改；要改的都在 demo.cc 里。
+// main.cpp —— playground 宿主。接入 nekomata 就是标了序号的三行。
+// 这个文件不需要热改；要改的都在 demo.cpp 里。
 
 #include <chrono>
 #include <cstdio>
@@ -7,9 +7,9 @@
 #include <thread>
 #include <unistd.h>
 
-#include <neko/elf.hpp>
-#include <neko/log.hpp>
-#include <neko/session.hpp>
+#include <neko/backends/elf.hpp>
+#include <neko/core/log.hpp>
+#include <neko/runtime/session.hpp>
 
 void step_world();
 void render_world();
@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
 
   std::printf("\033[2J\033[H"); // 清屏一次
   neko::log(neko::log_level::info,
-            "playground running (pid %d) — edit demo.cc, then run "
+            "playground running (pid %d) — edit demo.cpp, then run "
             "./reload.sh\n",
             static_cast<int>(getpid()));
 

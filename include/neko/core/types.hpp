@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <neko/core/fwd.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -14,10 +16,6 @@
 #include <vector>
 
 namespace neko {
-
-/// Opaque handle for a user-defined type known to the symbol backend.
-/// Phase 5 territory (class layout migration); Phase 1 does not exercise it.
-using type_id = std::uint32_t;
 
 /// Address and extent of a function inside the live process.
 struct function_info {

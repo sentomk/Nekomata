@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <neko/runtime/fwd.hpp>
+
 #include <cstdint>
 
 namespace neko {

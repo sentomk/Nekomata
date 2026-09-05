@@ -19,11 +19,11 @@
 
 | 模块 | 文件 | 说明 |
 |---|---|---|
-| 内核编排 | `include/neko/session.hpp`, `src/session.cpp` | Live++ 式 3 行接入：创建会话、`watch()`、每帧 `update()` |
-| ELF 解析 | `backends/elf/object_file.*` | 最小 ELF64 relocatable 读取器（sections/symbols/rela，无外部依赖） |
-| 进程符号 | `backends/elf/process_symbols.*` | `/proc/self/exe` 的 `.symtab`（`-no-pie`：链接期地址即运行期地址）；同时实现 `symbol_provider` + `state_manager` |
-| 代码页 | `backends/elf/code_pages.*` | 就近 mmap（±2GB rel32 约束）、先写后改 RX、入口 `E9 rel32` 改写（带 `-O0` 序言模式校验） |
-| 运行时迷你链接 | `backends/elf/loader.*` | 布局、符号三级解析（旧状态 > arena > 外部）、重定位应用、重定向清单 |
+| 内核编排 | `include/neko/runtime/session.hpp`, `src/runtime/session.cpp` | Live++ 式 3 行接入：创建会话、`watch()`、每帧 `update()` |
+| ELF 解析 | `src/backends/elf/object_file.*` | 最小 ELF64 relocatable 读取器（sections/symbols/rela，无外部依赖） |
+| 进程符号 | `src/backends/elf/process_symbols.*` | `/proc/self/exe` 的 `.symtab`（`-no-pie`：链接期地址即运行期地址）；同时实现 `symbol_provider` + `state_manager` |
+| 代码页 | `src/backends/elf/code_pages.*` | 就近 mmap（±2GB rel32 约束）、先写后改 RX、入口 `E9 rel32` 改写（带 `-O0` 序言模式校验） |
+| 运行时迷你链接 | `src/backends/elf/loader.*` | 布局、符号三级解析（旧状态 > arena > 外部）、重定位应用、重定向清单 |
 | 演示 | `examples/hello_reload/` | hot.cpp + runner + 一键脚本 + 预期输出；同时是 ctest 集成测试 |
 
 ## 接口形状验证结论（"验证四个接口的形状"交付物）

@@ -13,7 +13,8 @@
 
 #pragma once
 
-#include <neko/types.hpp>
+#include <neko/core/types.hpp>
+#include <neko/runtime/fwd.hpp>
 
 #include <optional>
 #include <string_view>

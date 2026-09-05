@@ -5,11 +5,12 @@
 // before a reload can be offered.
 //
 // Phase 1 validation: the interface shape held; the Phase 1 implementation
-// is the trivial_planner in src/ (every changed file is one TU to rebuild).
+// is the trivial_planner in src/runtime/ (every changed file is one TU to rebuild).
 
 #pragma once
 
-#include <neko/types.hpp>
+#include <neko/core/types.hpp>
+#include <neko/runtime/fwd.hpp>
 
 #include <vector>
 

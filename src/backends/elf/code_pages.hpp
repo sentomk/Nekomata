@@ -22,7 +22,7 @@
 #include <cstdint>
 #include <vector>
 
-#include <neko/code_substituter.hpp>
+#include <neko/runtime/code_substituter.hpp>
 
 namespace neko::elf {
 

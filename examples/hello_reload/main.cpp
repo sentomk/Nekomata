@@ -8,9 +8,9 @@
 #include <thread>
 #include <unistd.h>
 
-#include <neko/elf.hpp>
-#include <neko/log.hpp>
-#include <neko/session.hpp>
+#include <neko/backends/elf.hpp>
+#include <neko/core/log.hpp>
+#include <neko/runtime/session.hpp>
 
 void tick(); // defined in hot.cpp — swapped live by nekomata
 

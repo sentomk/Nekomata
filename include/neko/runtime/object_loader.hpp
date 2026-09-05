@@ -11,6 +11,9 @@
 
 #pragma once
 
+#include <neko/runtime/fwd.hpp>
+
+#include <cstddef>
 #include <cstdint>
 
 #include <string>

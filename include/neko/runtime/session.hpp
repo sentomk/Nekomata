@@ -22,11 +22,7 @@
 #include <string>
 #include <vector>
 
-#include <neko/code_substituter.hpp>
-#include <neko/object_loader.hpp>
-#include <neko/patch_planner.hpp>
-#include <neko/state_manager.hpp>
-#include <neko/symbol_provider.hpp>
+#include <neko/runtime/fwd.hpp>
 
 namespace neko {
 
