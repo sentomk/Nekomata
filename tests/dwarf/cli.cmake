@@ -11,6 +11,13 @@ if(NOT matched_count EQUAL 10 OR
    NOT output MATCHES "candidate symbol table=[0-9]+ index=[0-9]+ section=[0-9]+")
   message(FATAL_ERROR "missing or incorrect ELF associations:\n${output}")
 endif()
+string(REGEX MATCHALL "declaration file=" declarations "${output}")
+list(LENGTH declarations declaration_count)
+if(NOT declaration_count EQUAL 10 OR
+   NOT output MATCHES "declaration file=\"[^\"\n]*/a.cpp\" line=3 column=" OR
+   NOT output MATCHES "declaration file=\"[^\"\n]*/b.cpp\" line=3 column=")
+  message(FATAL_ERROR "missing or incorrect declaration coordinates:\n${output}")
+endif()
 file(SHA256 "${FIXTURE}" after)
 if(NOT before STREQUAL after)
   message(FATAL_ERROR "inspect modified the binary")

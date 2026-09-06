@@ -59,6 +59,25 @@ The binary plus CU/DIE offsets identify records within that file; offsets are
 not stable identities across rebuilds. Missing linkage names are printed as
 unavailable, never guessed from source names.
 
+Functions also report declaration file, line and column from `DW_AT_decl_*`.
+Missing attributes and explicitly unspecified (zero) coordinates are printed
+as `<unavailable>`. `DW_AT_specification` / `DW_AT_abstract_origin` inheritance
+is followed, with direct values taking precedence. An inherited file index is
+resolved against the **originating DIE's** compilation unit, including references
+across CUs. This describes the declaration recorded by the compiler, not the
+function's full source extent, an address-to-line map, or a stable identity
+across rebuilds. It may refer to a header rather than the CU's main source.
+
+File paths combine the DWARF 4 line-table header's filename/include directory
+with the recorded compilation directory. Absolute paths stay absolute; relative
+paths stay relative if the recorded directories are relative or missing.
+No source file is opened, and paths are not canonicalized against the machine
+running the inspector. Missing line tables leave the file unknown without
+discarding independently known line/column values. Invalid indexes, malformed
+coordinates and unsupported line-table formats fail inspection. Dynamically
+added file entries (`DW_LNE_define_file`) are not resolved by this header-only
+file-table reader; references beyond the header's entries are rejected.
+
 The initial supported input is an x86-64 ELF `ET_EXEC` with embedded DWARF 4,
 DWARF32 offsets and 8-byte addresses, built with `-O0 -g -gdwarf-4`, `-fno-pie`
 and linked with `-no-pie`. These options belong to the **inspected project's**
@@ -88,6 +107,15 @@ are currently rejected. Per inspection, symbol-table entries and stored
 association candidates are each limited to one million; total string-table
 bytes and copied function-name bytes are each limited to 64 MiB. Inputs that
 exceed these limits fail explicitly rather than returning a partial index.
+DWARF inspection additionally budgets 64 MiB each for cumulative copied string
+bytes (including temporary path assembly) and source-table headers, one million
+source file/directory entries across loaded CU tables, and eight million
+attribute-reference traversal steps. Source-table entries use direct indexing;
+resolved paths are cached per CU/index. Budget failures produce no partial listing.
+libdwarf 2.3.2 expands line-program rows when opening a line context, so this
+inspector decodes only the bounded DWARF 4 header from the same ELF descriptor.
+It does not read, execute or validate the line program. libdwarf remains the
+reader for compilation units, DIEs and attributes.
 
 This is an offline foundation, not an expansion of the runtime's hot-reload
 support or a cross-build matching API. Exit code zero means inspection finished,

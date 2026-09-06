@@ -1,8 +1,10 @@
 #include "function_index.hpp"
 
+#include <cstdint>
 #include <exception>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <string>
 
 namespace {
@@ -13,6 +15,15 @@ void print_symbol(const neko::elf::function_symbol& symbol, const char* prefix) 
             << " binding=" << static_cast<unsigned>(symbol.binding)
             << " visibility=" << static_cast<unsigned>(symbol.visibility) << " address=0x"
             << std::hex << symbol.address << " size=0x" << symbol.size << std::dec << '\n';
+}
+
+void print_coordinate(const char* label, const std::optional<std::uint64_t>& value) {
+  std::cout << label;
+  if (value) {
+    std::cout << *value;
+  } else {
+    std::cout << "<unavailable>";
+  }
 }
 
 } // namespace
@@ -45,6 +56,15 @@ int inspect_binary(const char* path) {
         }
         const auto& association = index.functions[functions];
         std::cout << " match=" << neko::elf::status_name(association.status) << '\n';
+        std::cout << "    declaration file=";
+        if (function.declaration.file) {
+          std::cout << std::quoted(*function.declaration.file);
+        } else {
+          std::cout << "<unavailable>";
+        }
+        print_coordinate(" line=", function.declaration.line);
+        print_coordinate(" column=", function.declaration.column);
+        std::cout << '\n';
         if (association.status == neko::elf::match_status::matched) {
           ++matched;
         }
