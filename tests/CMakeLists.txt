@@ -15,11 +15,14 @@ add_executable(neko_public_api public_api.cpp)
 target_link_libraries(neko_public_api PRIVATE nekomata::neko)
 nekomata_apply_warnings(neko_public_api)
 nekomata_apply_sanitizers(neko_public_api)
-add_test(NAME neko.public_api COMMAND neko_public_api)
-set_tests_properties(neko.public_api PROPERTIES
-  PASS_REGULAR_EXPRESSION "public API linked: ${PROJECT_VERSION} \\(42\\)")
+add_test(NAME neko.public_api
+  COMMAND "${CMAKE_COMMAND}" "-DPROGRAM=$<TARGET_FILE:neko_public_api>"
+    "-DEXPECTED=public API linked: ${PROJECT_VERSION} (42)"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_output.cmake")
+set_tests_properties(neko.public_api PROPERTIES TIMEOUT 15)
 
 add_subdirectory(headers)
+add_subdirectory(harness)
 
 if(TARGET nekomata AND NOT TARGET neko_backend_dwarf)
   add_test(NAME neko.cli.without_dwarf
