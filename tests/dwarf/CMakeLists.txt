@@ -21,6 +21,17 @@ add_test(NAME neko.elf.function_index COMMAND neko_function_index_tests
   $<TARGET_FILE:neko_dwarf_fixture> $<TARGET_FILE:neko_index_alias_fixture>)
 set_tests_properties(neko.elf.function_index PROPERTIES TIMEOUT 30)
 
+add_executable(neko_dwarf_source_tests source_locations.cpp)
+target_include_directories(neko_dwarf_source_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/dwarf")
+target_include_directories(neko_dwarf_source_tests SYSTEM PRIVATE
+  $<TARGET_PROPERTY:libdwarf::dwarf-shared,INTERFACE_INCLUDE_DIRECTORIES>)
+target_link_libraries(neko_dwarf_source_tests PRIVATE nekomata::backends::dwarf)
+nekomata_apply_warnings(neko_dwarf_source_tests)
+nekomata_apply_sanitizers(neko_dwarf_source_tests)
+add_test(NAME neko.dwarf.source_locations COMMAND neko_dwarf_source_tests)
+set_tests_properties(neko.dwarf.source_locations PROPERTIES TIMEOUT 30)
+
 foreach(kind IN ITEMS no_debug dwarf5 pie)
   add_executable(neko_dwarf_${kind} fixtures/bare.cpp)
   target_compile_options(neko_dwarf_${kind} PRIVATE -O0 -fno-lto)

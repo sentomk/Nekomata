@@ -2,14 +2,17 @@
 #include "../elf/binary_file.hpp"
 
 #include <dwarf.h>
+#include <elf.h>
 #include <libdwarf.h>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -32,6 +35,77 @@ struct error_deleter {
 using debug_ptr = std::unique_ptr<std::remove_pointer_t<Dwarf_Debug>, debug_deleter>;
 using die_ptr = std::unique_ptr<std::remove_pointer_t<Dwarf_Die>, die_deleter>;
 using attribute_ptr = std::unique_ptr<std::remove_pointer_t<Dwarf_Attribute>, attribute_deleter>;
+
+constexpr std::size_t kStringBudget = 64 * 1024 * 1024;
+constexpr std::uint64_t kFileEntryBudget = 1000000;
+constexpr std::uint64_t kLookupBudget = 8000000;
+
+struct inherited_value {
+  attribute_ptr attribute;
+  std::uint64_t unit = 0; // File indexes belong to the attribute's own CU.
+};
+
+struct source_table {
+  // Views point into header, which moves with this table and is never resized.
+  std::vector<std::uint8_t> header;
+  std::string directory;
+  std::vector<std::string_view> directories;
+  std::vector<std::pair<std::string_view, std::uint64_t>> files;
+  std::unordered_map<std::uint64_t, std::string> paths;
+};
+
+class source_cursor {
+public:
+  explicit source_cursor(std::span<const std::uint8_t> data) : data_(data) {}
+
+  std::uint64_t number(std::size_t width) {
+    const auto bytes = take(width);
+    std::uint64_t value = 0;
+    for (std::size_t i = 0; i < bytes.size(); ++i) {
+      value |= static_cast<std::uint64_t>(bytes[i]) << (i * 8);
+    }
+    return value;
+  }
+
+  std::uint64_t leb() {
+    std::uint64_t value = 0;
+    for (unsigned shift = 0; shift <= 63; shift += 7) {
+      const auto byte = number(1);
+      if (shift == 63 && byte > 1) {
+        break;
+      }
+      value |= (byte & 0x7f) << shift;
+      if (!(byte & 0x80)) {
+        return value;
+      }
+    }
+    throw std::runtime_error("overflow in source table ULEB128");
+  }
+
+  std::string_view string() {
+    const auto end = std::find(data_.begin(), data_.end(), std::uint8_t{0});
+    if (end == data_.end()) {
+      throw std::runtime_error("unterminated source table string");
+    }
+    const auto size = static_cast<std::size_t>(end - data_.begin());
+    const auto bytes = take(size + 1);
+    return {reinterpret_cast<const char*>(bytes.data()), size};
+  }
+
+  std::span<const std::uint8_t> take(std::size_t count) {
+    if (count > data_.size()) {
+      throw std::runtime_error("truncated source table header");
+    }
+    const auto result = data_.first(count);
+    data_ = data_.subspan(count);
+    return result;
+  }
+
+  bool empty() const { return data_.empty(); }
+
+private:
+  std::span<const std::uint8_t> data_;
+};
 
 template <typename Call>
 bool checked_call(Dwarf_Debug debug, std::string_view operation, Call&& call) {
@@ -106,6 +180,14 @@ public:
   }
 
 private:
+  std::string copy_string(std::string_view value) const {
+    if (value.size() > kStringBudget - string_bytes_) {
+      throw std::runtime_error("DWARF strings exceed inspection byte limit");
+    }
+    string_bytes_ += value.size();
+    return std::string(value);
+  }
+
   template <typename Call>
   bool call(std::string_view operation, Call&& action) const {
     return checked_call(debug_.get(), operation, std::forward<Call>(action));
@@ -128,44 +210,269 @@ private:
         value == nullptr) {
       throw std::runtime_error("missing DWARF string value");
     }
-    return std::string(value);
+    return copy_string(value);
   }
 
-  std::optional<std::string> inherited_string(Dwarf_Die die, Dwarf_Half kind,
-                                              unsigned depth = 0) const {
+  inherited_value inherited_attribute(Dwarf_Die die, Dwarf_Half kind, unsigned depth = 0) const {
     if (depth > 32) {
-      throw std::runtime_error("cyclic or excessively deep DWARF name reference");
+      throw std::runtime_error("cyclic or excessively deep DWARF attribute reference");
     }
-    if (auto value = string_attribute(die, kind)) {
-      return value;
+    if (auto value = attribute(die, kind)) {
+      Dwarf_Off unit = 0;
+      if (!call("read attribute compilation unit", [&](Dwarf_Error* error) {
+            return dwarf_CU_dieoffset_given_die(die, &unit, error);
+          })) {
+        throw std::runtime_error("missing attribute compilation unit");
+      }
+      return {std::move(value), unit};
     }
     for (const auto reference : {DW_AT_specification, DW_AT_abstract_origin}) {
       const auto attr = attribute(die, reference);
       if (!attr) {
         continue;
       }
+      if (++reference_steps_ > kLookupBudget) {
+        throw std::runtime_error("DWARF attribute references exceed inspection work limit");
+      }
       Dwarf_Off offset = 0;
       Dwarf_Bool is_info = false;
-      if (!call("read name reference",
+      if (!call("read attribute reference",
                 [&](Dwarf_Error* error) {
                   return dwarf_global_formref_b(attr.get(), &offset, &is_info, error);
                 }) ||
           !is_info) {
-        throw std::runtime_error("unsupported DWARF name reference");
+        throw std::runtime_error("unsupported DWARF attribute reference");
       }
       Dwarf_Die raw = nullptr;
-      const bool found = call("follow name reference", [&](Dwarf_Error* error) {
+      const bool found = call("follow attribute reference", [&](Dwarf_Error* error) {
         return dwarf_offdie_b(debug_.get(), offset, true, &raw, error);
       });
       const die_ptr origin(raw);
       if (!found) {
-        throw std::runtime_error("dangling DWARF name reference");
+        throw std::runtime_error("dangling DWARF attribute reference");
       }
-      if (auto value = inherited_string(origin.get(), kind, depth + 1)) {
+      if (auto value = inherited_attribute(origin.get(), kind, depth + 1); value.attribute) {
         return value;
       }
     }
-    return std::nullopt;
+    return {};
+  }
+
+  std::optional<std::string> inherited_string(Dwarf_Die die, Dwarf_Half kind) const {
+    const auto value = inherited_attribute(die, kind);
+    if (!value.attribute) {
+      return std::nullopt;
+    }
+    char* text = nullptr;
+    if (!call("read inherited string",
+              [&](Dwarf_Error* error) {
+                return dwarf_formstring(value.attribute.get(), &text, error);
+              }) ||
+        !text) {
+      throw std::runtime_error("missing DWARF string value");
+    }
+    return copy_string(text);
+  }
+
+  std::uint64_t unsigned_value(Dwarf_Attribute attr) const {
+    Dwarf_Half form = 0;
+    if (!call("read coordinate form",
+              [&](Dwarf_Error* error) { return dwarf_whatform(attr, &form, error); })) {
+      throw std::runtime_error("missing declaration coordinate form");
+    }
+    if (form == DW_FORM_sdata) {
+      Dwarf_Signed value = 0;
+      if (!call("read signed coordinate",
+                [&](Dwarf_Error* error) { return dwarf_formsdata(attr, &value, error); }) ||
+          value < 0) {
+        throw std::runtime_error("negative or missing declaration coordinate");
+      }
+      return static_cast<std::uint64_t>(value);
+    }
+    if (form != DW_FORM_data1 && form != DW_FORM_data2 && form != DW_FORM_data4 &&
+        form != DW_FORM_data8 && form != DW_FORM_udata) {
+      throw std::runtime_error("unsupported declaration coordinate form");
+    }
+    Dwarf_Unsigned value = 0;
+    if (!call("read declaration coordinate",
+              [&](Dwarf_Error* error) { return dwarf_formudata(attr, &value, error); })) {
+      throw std::runtime_error("missing declaration coordinate");
+    }
+    return value;
+  }
+
+  source_table& source_files(std::uint64_t offset) {
+    if (const auto found = source_tables_.find(offset); found != source_tables_.end()) {
+      return found->second;
+    }
+    Dwarf_Die raw = nullptr;
+    const bool found = call("read source compilation unit", [&](Dwarf_Error* error) {
+      return dwarf_offdie_b(debug_.get(), offset, true, &raw, error);
+    });
+    die_ptr unit(raw);
+    if (!found || tag(unit.get()) != DW_TAG_compile_unit) {
+      throw std::runtime_error("invalid source compilation unit");
+    }
+    source_table table;
+    if (const auto stmt = attribute(unit.get(), DW_AT_stmt_list)) {
+      table.header = source_header(stmt.get());
+      if (table.header.empty()) {
+        return source_tables_.emplace(offset, std::move(table)).first->second;
+      }
+      table.directory = string_attribute(unit.get(), DW_AT_comp_dir).value_or("");
+      source_cursor cursor(table.header);
+      const auto instruction_size = cursor.number(1);
+      const auto operations = cursor.number(1);
+      const auto default_statement = cursor.number(1);
+      cursor.take(1); // signed line_base is irrelevant without interpreting rows.
+      const auto line_range = cursor.number(1);
+      const auto opcode_base = cursor.number(1);
+      if (!instruction_size || !operations || default_statement > 1 || !line_range ||
+          !opcode_base) {
+        throw std::runtime_error("invalid source table parameters");
+      }
+      cursor.take(static_cast<std::size_t>(opcode_base - 1));
+      for (auto directory = cursor.string(); !directory.empty(); directory = cursor.string()) {
+        source_entry();
+        table.directories.push_back(directory);
+      }
+      for (auto name = cursor.string(); !name.empty(); name = cursor.string()) {
+        source_entry();
+        const auto directory = cursor.leb();
+        cursor.leb(); // modification time
+        cursor.leb(); // file size
+        if (directory > table.directories.size()) {
+          throw std::runtime_error("invalid source directory index");
+        }
+        table.files.emplace_back(name, directory);
+      }
+      if (!cursor.empty()) {
+        throw std::runtime_error("unexpected data in source table header");
+      }
+    }
+    return source_tables_.emplace(offset, std::move(table)).first->second;
+  }
+
+  void source_entry() {
+    if (++file_entries_ > kFileEntryBudget) {
+      throw std::runtime_error("DWARF source tables exceed inspection entry limit");
+    }
+  }
+
+  std::vector<std::uint8_t> source_header(Dwarf_Attribute stmt) {
+    Dwarf_Half form = 0;
+    Dwarf_Off offset = 0;
+    if (!call("read statement list form",
+              [&](Dwarf_Error* error) { return dwarf_whatform(stmt, &form, error); }) ||
+        form != DW_FORM_sec_offset || !call("read statement list offset", [&](Dwarf_Error* error) {
+          return dwarf_global_formref(stmt, &offset, error);
+        })) {
+      throw std::runtime_error("unsupported statement list offset");
+    }
+    if (!line_section_loaded_) {
+      Dwarf_Unsigned flags = 0;
+      const bool found = call("locate source section", [&](Dwarf_Error* error) {
+        return dwarf_get_section_info_by_name_a(debug_.get(), ".debug_line", nullptr, &line_size_,
+                                                &flags, &line_offset_, error);
+      });
+      if (!found && call("locate compressed source section", [&](Dwarf_Error* error) {
+            return dwarf_get_section_info_by_name_a(debug_.get(), ".zdebug_line", nullptr, nullptr,
+                                                    nullptr, nullptr, error);
+          })) {
+        throw std::runtime_error("compressed source section is unsupported");
+      }
+      if (found && ((flags & SHF_COMPRESSED) || !file_.contains(line_offset_, line_size_))) {
+        throw std::runtime_error("compressed or invalid source section");
+      }
+      line_section_loaded_ = true;
+    }
+    if (line_size_ == 0) {
+      return {}; // Stripped/missing line metadata does not invalidate other coordinates.
+    }
+    if (offset > line_size_ || line_size_ - offset < 10) {
+      throw std::runtime_error("truncated source table prefix");
+    }
+    std::array<std::uint8_t, 10> prefix{};
+    file_.read(line_offset_ + offset, prefix);
+    source_cursor cursor(prefix);
+    const auto length = cursor.number(4);
+    const auto version = cursor.number(2);
+    const auto header_length = cursor.number(4);
+    if (length >= 0xfffffff0 || version != 4) {
+      throw std::runtime_error("unsupported source file table; require DWARF 4 and DWARF32");
+    }
+    if (length < 6 || length > line_size_ - offset - 4 || header_length < 8 ||
+        header_length > length - 6) {
+      throw std::runtime_error("invalid source table length");
+    }
+    // libdwarf 2.3.2's dwarf_srclines_b expands the full row program. Read only
+    // the bounded DWARF 4 header here; DIEs/attributes still use libdwarf.
+    if (header_length > kStringBudget - source_header_bytes_) {
+      throw std::runtime_error("DWARF source headers exceed inspection byte limit");
+    }
+    source_header_bytes_ += static_cast<std::size_t>(header_length);
+    std::vector<std::uint8_t> header(static_cast<std::size_t>(header_length));
+    file_.read(line_offset_ + offset + 10, header);
+    return header;
+  }
+
+  std::string join_path(std::string_view directory, std::string_view file) const {
+    if (directory.empty() || file.starts_with('/')) {
+      return copy_string(file);
+    }
+    // Keep recorded components, including '..': resolving symlinks or relative
+    // paths against the inspector's current directory would invent provenance.
+    const std::size_t separator = directory.ends_with('/') ? 0 : 1;
+    if (directory.size() > kStringBudget - string_bytes_ ||
+        separator > kStringBudget - string_bytes_ - directory.size() ||
+        file.size() > kStringBudget - string_bytes_ - directory.size() - separator) {
+      throw std::runtime_error("DWARF strings exceed inspection byte limit");
+    }
+    string_bytes_ += directory.size() + separator + file.size();
+    std::string result(directory);
+    if (separator) {
+      result += '/';
+    }
+    result += file;
+    return result;
+  }
+
+  std::optional<std::string> source_file(std::uint64_t unit, std::uint64_t index) {
+    auto& table = source_files(unit);
+    if (table.header.empty()) {
+      return std::nullopt; // No line table: do not substitute the CU's filename.
+    }
+    if (index > table.files.size()) {
+      throw std::runtime_error("declaration file index is outside the source file table");
+    }
+    if (const auto found = table.paths.find(index); found != table.paths.end()) {
+      return copy_string(found->second);
+    }
+    const auto& [name, directory] = table.files[static_cast<std::size_t>(index - 1)];
+    const auto include =
+        directory ? table.directories[static_cast<std::size_t>(directory - 1)] : std::string_view{};
+    auto path = join_path(include, name);
+    path = join_path(table.directory, path);
+    auto result = copy_string(path);
+    table.paths.emplace(index, std::move(path));
+    return result;
+  }
+
+  source_location declaration(Dwarf_Die die) {
+    source_location location;
+    if (const auto value = inherited_attribute(die, DW_AT_decl_file); value.attribute) {
+      if (const auto index = unsigned_value(value.attribute.get()); index != 0) {
+        location.file = source_file(value.unit, index);
+      }
+    }
+    for (const auto kind : {DW_AT_decl_line, DW_AT_decl_column}) {
+      if (const auto value = inherited_attribute(die, kind); value.attribute) {
+        if (const auto number = unsigned_value(value.attribute.get()); number != 0) {
+          (kind == DW_AT_decl_line ? location.line : location.column) = number;
+        }
+      }
+    }
+    return location;
   }
 
   Dwarf_Half tag(Dwarf_Die die) const {
@@ -185,7 +492,7 @@ private:
     return value;
   }
 
-  void read_function(Dwarf_Die die, compilation_unit& unit) const {
+  void read_function(Dwarf_Die die, compilation_unit& unit) {
     if (const auto attr = attribute(die, DW_AT_declaration)) {
       Dwarf_Bool declaration = false;
       call("read declaration flag",
@@ -236,6 +543,7 @@ private:
       throw std::runtime_error("function with code has no source name");
     }
     function.ranges.push_back({low, high});
+    function.declaration = declaration(die);
     unit.functions.push_back(std::move(function));
   }
 
@@ -267,6 +575,13 @@ private:
   const elf::binary_file& file_;
   std::vector<elf::address_range> executable_;
   debug_ptr debug_; // the caller keeps the descriptor alive until inspection finishes
+  std::unordered_map<std::uint64_t, source_table> source_tables_;
+  mutable std::size_t string_bytes_ = 0;
+  mutable std::uint64_t reference_steps_ = 0;
+  std::uint64_t file_entries_ = 0;
+  std::size_t source_header_bytes_ = 0;
+  Dwarf_Unsigned line_offset_ = 0, line_size_ = 0;
+  bool line_section_loaded_ = false;
   std::unordered_set<std::uint64_t> visited_;
 };
 

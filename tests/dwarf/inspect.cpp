@@ -116,6 +116,35 @@ TEST_CASE("overloads and out-of-line member definitions retain linkage names") {
   CHECK(function_named(unit, "compute").linkage_name == "_ZNK6sample6widget7computeEv");
 }
 
+TEST_CASE("compiler-produced declaration coordinates distinguish sources and overloads") {
+  const auto binary = neko::dwarf::inspect(fixture_path);
+  const auto& a = unit_named(binary, "a.cpp");
+  const auto& b = unit_named(binary, "b.cpp");
+  for (const auto* unit : {&a, &b}) {
+    const auto& source = function_named(*unit, "helper").declaration;
+    REQUIRE(source.file.has_value());
+    CHECK(std::filesystem::path(*source.file).filename() ==
+          std::filesystem::path(unit->name).filename());
+    CHECK(source.line == 3);
+    // GCC emits columns here; Clang can omit them. Omission is not column 0.
+    if (source.column) {
+      CHECK(*source.column > 0);
+    }
+  }
+  const auto& member = function_named(a, "compute").declaration;
+  REQUIRE(member.file.has_value());
+  CHECK(std::filesystem::path(*member.file).filename() == "a.cpp");
+  CHECK(member.line == 21);
+  std::set<std::uint64_t> overload_lines;
+  for (const auto& function : a.functions) {
+    if (function.name == "overloaded") {
+      REQUIRE(function.declaration.line.has_value());
+      overload_lines.insert(*function.declaration.line);
+    }
+  }
+  CHECK(overload_lines == std::set<std::uint64_t>{13, 17});
+}
+
 TEST_CASE("every emitted function interval matches an independent ELF symbol") {
   std::ifstream input(reference_path);
   REQUIRE(input.good());

@@ -18,12 +18,21 @@ struct address_range {
   std::uint64_t end = 0; // exclusive
 };
 
+struct source_location {
+  // Declaration coordinates, not a function's full source extent or identity.
+  // Paths come only from DWARF; no filesystem lookup or canonicalization.
+  std::optional<std::string> file;
+  std::optional<std::uint64_t> line;
+  std::optional<std::uint64_t> column;
+};
+
 struct function_record {
   // A DIE in this binary's .debug_info; NOT an identity across rebuilds.
   std::uint64_t die_offset = 0;
   std::string name;
   std::optional<std::string> linkage_name;
   std::vector<address_range> ranges;
+  source_location declaration{};
 };
 
 struct compilation_unit {
