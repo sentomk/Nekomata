@@ -29,6 +29,9 @@ const char* status_name(match_status status) {
 }
 
 function_index associate(dwarf::binary_info debug, function_symbols symbols) {
+  if (symbols.kind == binary_kind::relocatable) {
+    throw std::runtime_error("relocatable association requires section-aware DWARF ranges");
+  }
   function_index out{std::move(debug), std::move(symbols), {}, {}};
   std::map<std::uint64_t, std::vector<std::size_t>> by_address;
   for (std::size_t i = 0; i < out.symbols.functions.size(); ++i) {

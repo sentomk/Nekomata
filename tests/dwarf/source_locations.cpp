@@ -55,6 +55,18 @@ TEST_CASE("declaration coordinates use recorded source paths without filesystem 
   CHECK(location.column == 4);
 }
 
+TEST_CASE("ELF object support does not enable virtual-address DWARF inspection") {
+  auto content = build({unit{}});
+  content.patch(16, ET_REL, 2);
+  content.patch(32, 0, 8);
+  content.patch(54, 0, 2);
+  content.patch(56, 0, 2);
+  content.patch(content.at_number(40, 8) + 64 + 16, 0, 8);
+  const sample input(content);
+  CHECK_THROWS_WITH(neko::dwarf::inspect(input.path()),
+                    doctest::Contains("relocatable DWARF inspection is not yet supported"));
+}
+
 TEST_CASE("missing and explicitly unspecified coordinates remain unknown") {
   unit input;
   SUBCASE("absent attributes") {

@@ -78,6 +78,19 @@ std::vector<std::uint8_t> fixture() {
   return bytes;
 }
 
+std::vector<std::uint8_t> object_fixture() {
+  auto bytes = fixture();
+  put(bytes, 16, ET_REL, 2);
+  put(bytes, 32, 0, 8);
+  put(bytes, 54, 0, 2);
+  put(bytes, 56, 0, 2);
+  put(bytes, sections_offset + sizeof(Elf64_Shdr) + 16, 0, 8);
+  for (std::size_t i = 1; i < 5; ++i) {
+    put(bytes, symbols_offset + i * sizeof(Elf64_Sym) + 8, i == 2 ? 4 : (i == 4 ? 8 : 0), 8);
+  }
+  return bytes;
+}
+
 class sample {
 public:
   sample() {
@@ -110,6 +123,8 @@ TEST_CASE("ELF functions retain duplicate names, aliases and unknown sizes") {
   input.write(fixture());
   const neko::elf::binary_file file(input.path());
   const auto symbols = file.symbols();
+  CHECK(file.kind() == neko::elf::binary_kind::executable);
+  CHECK(symbols.kind == neko::elf::binary_kind::executable);
   CHECK(symbols.has_symtab);
   REQUIRE(symbols.functions.size() == 4);
   const auto& first = symbols.functions[0];
@@ -127,6 +142,118 @@ TEST_CASE("ELF functions retain duplicate names, aliases and unknown sizes") {
   CHECK(symbols.functions[2].address == first.address);
   CHECK(symbols.functions[2].binding == STB_WEAK);
   CHECK(symbols.functions[3].size == 0);
+}
+
+TEST_CASE("relocatable functions keep section offsets, aliases and unknown sizes") {
+  const sample input;
+  input.write(object_fixture());
+  const neko::elf::binary_file file(input.path());
+  CHECK(file.kind() == neko::elf::binary_kind::relocatable);
+  CHECK_THROWS_WITH(file.executable_ranges(), doctest::Contains("section offsets"));
+  const auto symbols = file.symbols();
+  CHECK(symbols.kind == neko::elf::binary_kind::relocatable);
+  REQUIRE(symbols.has_symtab);
+  REQUIRE(symbols.functions.size() == 4);
+  CHECK(symbols.functions[0].address == 0);
+  CHECK(symbols.functions[1].address == 4);
+  CHECK(symbols.functions[0].name == symbols.functions[1].name);
+  CHECK(symbols.functions[0].section == 1);
+  CHECK(symbols.functions[0].table_section == 3);
+  CHECK(symbols.functions[0].table_index == 1);
+  CHECK(symbols.functions[2].address == symbols.functions[0].address);
+  CHECK(symbols.functions[2].name == "alias");
+  CHECK(symbols.functions[3].address == 8);
+  CHECK(symbols.functions[3].size == 0);
+}
+
+TEST_CASE("equal offsets in separate object sections retain distinct identities") {
+  auto bytes = object_fixture();
+  const auto new_sections = bytes.size();
+  bytes.resize(new_sections + 5 * sizeof(Elf64_Shdr));
+  std::copy_n(bytes.begin() + sections_offset, 4 * sizeof(Elf64_Shdr),
+              bytes.begin() + static_cast<std::ptrdiff_t>(new_sections));
+  std::copy_n(bytes.begin() + sections_offset + sizeof(Elf64_Shdr), sizeof(Elf64_Shdr),
+              bytes.begin() + static_cast<std::ptrdiff_t>(new_sections + 4 * sizeof(Elf64_Shdr)));
+  put(bytes, 40, new_sections, 8);
+  put(bytes, 60, 5, 2);
+  put(bytes, symbols_offset + 2 * sizeof(Elf64_Sym) + 6, 4, 2);
+  put(bytes, symbols_offset + 2 * sizeof(Elf64_Sym) + 8, 0, 8);
+  const sample input;
+  input.write(bytes);
+  const auto symbols = neko::elf::binary_file(input.path()).symbols();
+  REQUIRE(symbols.functions.size() == 4);
+  CHECK(symbols.functions[0].name == symbols.functions[1].name);
+  CHECK(symbols.functions[0].address == symbols.functions[1].address);
+  CHECK(symbols.functions[0].section == 1);
+  CHECK(symbols.functions[1].section == 4);
+  CHECK(symbols.functions[0].table_index != symbols.functions[1].table_index);
+}
+
+TEST_CASE("object symbol indexes do not require load segments or emitted code") {
+  auto bytes = object_fixture();
+  SUBCASE("missing symtab") {
+    put(bytes, sections_offset + 3 * sizeof(Elf64_Shdr) + 4, SHT_PROGBITS, 4);
+  }
+  SUBCASE("only data definitions and undefined function references") {
+    put(bytes, sections_offset + sizeof(Elf64_Shdr) + 8, SHF_ALLOC | SHF_WRITE, 8);
+    for (std::size_t i = 1; i < 5; ++i) {
+      put(bytes, symbols_offset + i * sizeof(Elf64_Sym) + 4, ELF64_ST_INFO(STB_LOCAL, STT_OBJECT),
+          1);
+    }
+    put(bytes, symbols_offset + sizeof(Elf64_Sym) + 4, ELF64_ST_INFO(STB_GLOBAL, STT_FUNC), 1);
+    put(bytes, symbols_offset + sizeof(Elf64_Sym) + 6, SHN_UNDEF, 2);
+  }
+  const sample input;
+  input.write(bytes);
+  const auto symbols = neko::elf::binary_file(input.path()).symbols();
+  CHECK(symbols.kind == neko::elf::binary_kind::relocatable);
+  CHECK(symbols.functions.empty());
+}
+
+TEST_CASE("invalid relocatable headers and section-relative functions fail closed") {
+  auto bytes = object_fixture();
+  const auto code = sections_offset + sizeof(Elf64_Shdr);
+  const auto symbol = symbols_offset + sizeof(Elf64_Sym);
+  SUBCASE("load address in object section") {
+    put(bytes, code + 16, text_address, 8);
+  }
+  SUBCASE("segment offset without entries") {
+    put(bytes, 32, sizeof(Elf64_Ehdr), 8);
+  }
+  SUBCASE("segment entries without offset") {
+    put(bytes, 56, 1, 2);
+  }
+  SUBCASE("invalid segment entry size") {
+    put(bytes, 54, 1, 2);
+  }
+  SUBCASE("missing section table") {
+    put(bytes, 40, 0, 8);
+    put(bytes, 60, 0, 2);
+  }
+  SUBCASE("function uses a virtual address") {
+    put(bytes, symbol + 8, text_address, 8);
+  }
+  SUBCASE("function at exclusive section end") {
+    put(bytes, symbol + 8, 16, 8);
+  }
+  SUBCASE("function crosses section end") {
+    put(bytes, symbol + 16, 17, 8);
+  }
+  SUBCASE("size overflow") {
+    put(bytes, symbol + 16, std::numeric_limits<std::uint64_t>::max(), 8);
+  }
+  SUBCASE("function in NOBITS section") {
+    put(bytes, code + 4, SHT_NOBITS, 4);
+  }
+  SUBCASE("function in non allocated section") {
+    put(bytes, code + 8, SHF_EXECINSTR, 8);
+  }
+  SUBCASE("invalid symbol section") {
+    put(bytes, symbol + 6, SHN_ABS, 2);
+  }
+  const sample input;
+  input.write(bytes);
+  CHECK_THROWS_AS(neko::elf::binary_file(input.path()).symbols(), std::runtime_error);
 }
 
 TEST_CASE("missing symtab differs from malformed symtab; dynsym is not a substitute") {
@@ -314,7 +441,7 @@ TEST_CASE("invalid headers and non-regular paths are rejected") {
   SUBCASE("PIE") {
     put(bytes, 16, ET_DYN, 2);
   }
-  SUBCASE("relocatable") {
+  SUBCASE("relocatable with executable layout") {
     put(bytes, 16, ET_REL, 2);
   }
   SUBCASE("wrong architecture") {

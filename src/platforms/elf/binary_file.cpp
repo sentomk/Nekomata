@@ -80,7 +80,7 @@ binary_file::binary_file(const std::filesystem::path& path)
     }
     size_ = static_cast<std::uint64_t>(status.st_size);
     // Validate before exposing a descriptor to another reader.
-    static_cast<void>(executable_ranges());
+    validate_header();
   } catch (...) {
     close(fd_);
     throw;
@@ -113,7 +113,7 @@ void binary_file::read(std::uint64_t offset, std::span<std::uint8_t> out) const 
   }
 }
 
-std::vector<address_range> binary_file::executable_ranges() const {
+void binary_file::validate_header() {
   const auto header = read_entry<sizeof(Elf64_Ehdr)>(*this, 0);
   if (std::memcmp(header.data(), ELFMAG, SELFMAG) != 0 || header[EI_CLASS] != ELFCLASS64 ||
       header[EI_DATA] != ELFDATA2LSB || header[EI_VERSION] != EV_CURRENT) {
@@ -123,14 +123,45 @@ std::vector<address_range> binary_file::executable_ranges() const {
   if (number(bytes.subspan(18, 2)) != EM_X86_64) {
     throw std::runtime_error("only x86-64 ELF inspection is supported");
   }
-  if (number(bytes.subspan(16, 2)) != ET_EXEC) {
+  const auto type = number(bytes.subspan(16, 2));
+  if (type != ET_EXEC && type != ET_REL) {
     throw std::runtime_error(
-        "expected ET_EXEC; PIE, shared libraries and .o files are unsupported");
+        "expected ET_EXEC or ET_REL; PIE and shared libraries are unsupported");
   }
   if (number(bytes.subspan(20, 4)) != EV_CURRENT ||
-      number(bytes.subspan(52, 2)) != sizeof(Elf64_Ehdr) ||
-      number(bytes.subspan(54, 2)) != sizeof(Elf64_Phdr)) {
+      number(bytes.subspan(52, 2)) != sizeof(Elf64_Ehdr)) {
     throw std::runtime_error("invalid ELF header sizes or version");
+  }
+  kind_ = type == ET_REL ? binary_kind::relocatable : binary_kind::executable;
+  if (kind_ == binary_kind::relocatable) {
+    const auto entry_size = number(bytes.subspan(54, 2));
+    if (number(bytes.subspan(32, 8)) != 0 || number(bytes.subspan(56, 2)) != 0 ||
+        (entry_size != 0 && entry_size != sizeof(Elf64_Phdr))) {
+      throw std::runtime_error("ET_REL with a segment table is unsupported");
+    }
+    const auto table = sections(*this);
+    if (table.empty()) {
+      throw std::runtime_error("ET_REL requires a section table");
+    }
+    // No load addresses have been assigned yet. Do not silently mix address
+    // models if a producer supplies an unusual relocatable layout.
+    if (std::any_of(table.begin(), table.end(),
+                    [](const auto& value) { return value.address != 0; })) {
+      throw std::runtime_error("ET_REL sections must have zero virtual addresses");
+    }
+    return;
+  }
+  static_cast<void>(executable_ranges());
+}
+
+std::vector<address_range> binary_file::executable_ranges() const {
+  if (kind_ != binary_kind::executable) {
+    throw std::runtime_error("ET_REL uses section offsets, not executable load segments");
+  }
+  const auto header = read_entry<sizeof(Elf64_Ehdr)>(*this, 0);
+  const std::span<const std::uint8_t> bytes(header);
+  if (number(bytes.subspan(54, 2)) != sizeof(Elf64_Phdr)) {
+    throw std::runtime_error("invalid ELF segment entry size");
   }
   const auto offset = number(bytes.subspan(32, 8));
   const auto count = number(bytes.subspan(56, 2));
@@ -160,8 +191,10 @@ std::vector<address_range> binary_file::executable_ranges() const {
 
 function_symbols binary_file::symbols() const {
   const auto table = sections(*this);
-  const auto executable = executable_ranges();
+  const bool relocatable = kind_ == binary_kind::relocatable;
+  const auto executable = relocatable ? std::vector<address_range>{} : executable_ranges();
   function_symbols out;
+  out.kind = kind_;
   constexpr std::uint64_t max_strings = 64 * 1024 * 1024;
   constexpr std::uint64_t max_symbols = 1000000;
   std::uint64_t string_bytes = 0, name_bytes = 0, symbol_count = 0;
@@ -214,12 +247,13 @@ function_symbols binary_file::symbols() const {
       const auto address = number(entry.subspan(8, 8));
       const auto size = number(entry.subspan(16, 8));
       const auto& code = table[section_index];
+      const auto base = relocatable ? 0 : code.address;
       if (code.type == SHT_NOBITS || !(code.flags & SHF_EXECINSTR) || !(code.flags & SHF_ALLOC) ||
-          address < code.address || address - code.address >= code.size ||
-          size > code.size - (address - code.address) ||
-          !std::any_of(executable.begin(), executable.end(), [&](const auto& range) {
-            return address >= range.begin && address < range.end && size <= range.end - address;
-          })) {
+          address < base || address - base >= code.size || size > code.size - (address - base) ||
+          (!relocatable &&
+           !std::any_of(executable.begin(), executable.end(), [&](const auto& range) {
+             return address >= range.begin && address < range.end && size <= range.end - address;
+           }))) {
         throw std::runtime_error("ELF function is outside executable code");
       }
       const auto first = strings.begin() + static_cast<std::ptrdiff_t>(name);

@@ -59,6 +59,13 @@ TEST_CASE("association retains distinct same-name local definitions and symbol i
   CHECK(index.unassociated_symbols.empty());
 }
 
+TEST_CASE("object offsets cannot be associated with virtual-address DWARF records") {
+  auto symbols = symbol_sample();
+  symbols.kind = neko::elf::binary_kind::relocatable;
+  CHECK_THROWS_WITH(neko::elf::associate(debug_sample(), symbols),
+                    doctest::Contains("section-aware DWARF"));
+}
+
 TEST_CASE("aliases stay ambiguous even when one linkage name matches") {
   auto symbols = symbol_sample();
   auto alias = symbols.functions.front();

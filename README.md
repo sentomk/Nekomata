@@ -87,6 +87,12 @@ lists are not supported yet. Declarations are skipped; definitions without
 emitted ranges are reported separately. Missing or unsupported information
 causes a diagnostic and nonzero exit instead of a partial successful listing.
 
+The internal ELF-only reader additionally indexes functions in x86-64 `ET_REL`
+objects, including separate function sections. Their symbol values are offsets
+within the recorded section, not virtual addresses. This does not yet enable
+`.o` input in `nekomata inspect`: relocatable DWARF reading and section-aware
+ELF/DWARF association remain unsupported, and runtime loading is unchanged.
+
 The inspector also associates DWARF functions with defined ELF `STT_FUNC`
 entries from `.symtab`, retaining table/entry identity, section, binding,
 visibility, address and size. It reads both through one open file descriptor;

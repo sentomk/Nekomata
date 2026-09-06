@@ -41,7 +41,8 @@ struct function_index {
   std::vector<std::size_t> unassociated_symbols;
 };
 
-// Pure association of already validated records FROM THE SAME BINARY.
+// Pure association of already validated records FROM THE SAME ET_EXEC BINARY.
+// ET_REL symbols are rejected until DWARF ranges retain section identity.
 // Only one exact, nonzero range and (when present) matching linkage name can
 // yield matched. Ambiguities are data, malformed file input is an exception.
 // This is not a replacement plan or a cross-build identity/matching API.

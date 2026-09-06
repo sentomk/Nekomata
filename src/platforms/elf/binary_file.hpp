@@ -8,6 +8,8 @@
 
 namespace neko::elf {
 
+enum class binary_kind : std::uint8_t { executable, relocatable };
+
 struct address_range {
   std::uint64_t begin = 0;
   std::uint64_t end = 0; // exclusive, link-time virtual addresses
@@ -19,6 +21,8 @@ struct function_symbol {
   std::uint64_t table_index = 0;
   std::uint32_t section = 0;
   std::string name;
+  // Link-time virtual address for ET_EXEC, offset within section for ET_REL.
+  // An offset alone never identifies code in a relocatable object.
   std::uint64_t address = 0;
   std::uint64_t size = 0; // zero means unknown; do not infer an end address
   std::uint8_t binding = 0;
@@ -28,9 +32,10 @@ struct function_symbol {
 struct function_symbols {
   bool has_symtab = false;
   std::vector<function_symbol> functions;
+  binary_kind kind = binary_kind::executable;
 };
 
-// Read-only ELF64 little-endian x86-64 ET_EXEC input. Keep this descriptor
+// Read-only ELF64 little-endian x86-64 ET_EXEC or ET_REL input. Keep this descriptor
 // open for both ELF and DWARF reads so replacing the path cannot mix files.
 // The caller must not modify the opened file in place during inspection.
 class binary_file {
@@ -42,17 +47,21 @@ public:
 
   int fd() const { return fd_; }
   const std::filesystem::path& path() const { return path_; }
+  binary_kind kind() const { return kind_; }
   bool contains(std::uint64_t offset, std::uint64_t size) const;
   void read(std::uint64_t offset, std::span<std::uint8_t> out) const;
+  // ET_EXEC only. ET_REL has section-relative code, not load segments.
   std::vector<address_range> executable_ranges() const;
   // Only defined STT_FUNC entries in SHT_SYMTAB, not duplicated .dynsym entries.
   // Missing .symtab is represented explicitly; malformed tables throw.
   function_symbols symbols() const;
 
 private:
+  void validate_header();
   std::filesystem::path path_;
   int fd_ = -1;
   std::uint64_t size_ = 0;
+  binary_kind kind_ = binary_kind::executable;
 };
 
 } // namespace neko::elf

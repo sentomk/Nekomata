@@ -592,6 +592,9 @@ binary_info inspect(const std::filesystem::path& path) {
 }
 
 binary_info inspect(const elf::binary_file& file) {
+  if (file.kind() == elf::binary_kind::relocatable) {
+    throw std::runtime_error("relocatable DWARF inspection is not yet supported");
+  }
   reader input(file);
   return {file.path(), input.read()};
 }
