@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <filesystem>
 #include <thread>
 #include <unistd.h>
 
@@ -16,6 +17,7 @@ void tick(); // defined in hot.cpp — swapped live by nekomata
 
 int main(int argc, char** argv) {
   const char* watched = argc > 1 ? argv[1] : "hot.new.o";
+  const char* stop_file = argc > 2 ? argv[2] : nullptr;
   std::setvbuf(stdout, nullptr, _IOLBF, 0);
 
   neko::reload_session session{neko::elf::create_backend()}; // 1. agent
@@ -24,7 +26,11 @@ int main(int argc, char** argv) {
             watched, static_cast<int>(getpid()));
 
   for (int i = 0; i < 2000; ++i) { // ~6.5 min at 200 ms; the demo exits sooner
-    tick();                        //    hot code
+    if (stop_file && std::filesystem::exists(stop_file)) {
+      std::printf("[harness] stopped\n");
+      return 0;
+    }
+    tick(); //    hot code
     try {
       session.update(); // 3. per-iteration tick
     } catch (const std::exception& e) {
@@ -32,5 +38,5 @@ int main(int argc, char** argv) {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
-  return 0;
+  return stop_file ? 1 : 0; // A harness run must acknowledge its stop request.
 }

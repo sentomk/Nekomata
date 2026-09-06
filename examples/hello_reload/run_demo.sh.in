@@ -12,33 +12,34 @@ set -euo pipefail
 RUNNER="@CMAKE_CURRENT_BINARY_DIR@/hello_reload"
 REBUILD="@CMAKE_CURRENT_BINARY_DIR@/rebuild_hot.sh"
 SRC_HOT="@CMAKE_CURRENT_SOURCE_DIR@/hot.cpp"
+source "@PROJECT_SOURCE_DIR@/scripts/test_helpers.sh"
 
 work="${1:-$(mktemp -d /tmp/neko-hello.XXXXXX)}"
 out="$work/output.txt"
+stop_file="$work/stop"
+if [ -e "$stop_file" ]; then echo "FAIL: use a fresh workdir"; exit 1; fi
 : > "$out"
 
 runner_pid=""
-cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+cleanup() {
+  if [ -n "$runner_pid" ]; then
+    kill "$runner_pid" 2>/dev/null || true
+    wait "$runner_pid" 2>/dev/null || true
+  fi
+}
 trap cleanup EXIT
 
 count() { grep -c -- "$1" "$out" || true; }
 
-wait_for() {  # wait_for <pattern> <min_count> <timeout_seconds>
-  local pattern="$1" min="$2" timeout="$3" waited=0
-  while [ "$(grep -c -- "$pattern" "$out" || true)" -lt "$min" ]; do
-    sleep 0.2
-    waited=$((waited + 1))
-    if [ "$waited" -gt $((timeout * 5)) ]; then
-      echo "TIMEOUT waiting for '$pattern' (>= $min)"; exit 1
-    fi
-  done
+wait_for() { # <pattern> <min_count> <timeout_seconds>
+  wait_for_new "$1" "$3" demo "$out" 0 "$2"
 }
 
 echo "== nekomata phase 1 demo (workdir: $work) =="
 
 # Phase A — original code runs: v1, counter steps by 1.
 cp "$SRC_HOT" "$work/hot.cpp"
-"$RUNNER" "$work/hot.new.o" > "$out" 2>&1 &
+"$RUNNER" "$work/hot.new.o" "$stop_file" > "$out" 2>&1 &
 runner_pid=$!
 wait_for '\[v1\]' 4 30
 echo "-- v1 running, e.g.: $(grep '\[v1\]' "$out" | tail -1)"
@@ -65,8 +66,7 @@ bash "$REBUILD" "$work/hot.v3.cpp" "$work/staging.o"
 mv "$work/staging.o" "$work/hot.new.o"
 wait_for '\[v3\]' 3 30
 echo "-- v3 live, e.g.: $(grep '\[v3\]' "$out" | tail -1)"
-kill "$runner_pid" 2>/dev/null || true
-wait "$runner_pid" 2>/dev/null || true
+finish_runner "$runner_pid" "$stop_file" "$out"
 runner_pid=""
 
 # ---- acceptance checks -------------------------------------------------

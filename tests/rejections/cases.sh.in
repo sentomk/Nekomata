@@ -11,38 +11,39 @@ set -euo pipefail
 CXX="@CMAKE_CXX_COMPILER@"
 SRC="@CMAKE_CURRENT_SOURCE_DIR@"
 HERE="@CMAKE_CURRENT_BINARY_DIR@"
+source "@PROJECT_SOURCE_DIR@/scripts/test_helpers.sh"
 WORK="${1:-$(mktemp -d /tmp/neko-reject.XXXXXX)}"
 OUT="$WORK/out.txt"
+STOP_FILE="$WORK/stop"
+if [ -e "$STOP_FILE" ]; then echo "FAIL: use a fresh workdir"; exit 1; fi
 : > "$OUT"
 
 BASE="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
 
 runner_pid=""
-cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+cleanup() {
+  if [ -n "$runner_pid" ]; then
+    kill "$runner_pid" 2>/dev/null || true
+    wait "$runner_pid" 2>/dev/null || true
+  fi
+}
 trap cleanup EXIT
 
 count() { grep -c -- "$1" "$OUT" || true; }
 
-wait_for() { # wait_for <pattern> <timeout_s> <label>
-  local pattern="$1" timeout="$2" label="$3" waited=0
-  while ! grep -aq -- "$pattern" "$OUT"; do
-    sleep 0.2; waited=$((waited + 1))
-    if [ "$waited" -gt $((timeout * 5)) ]; then
-      echo "FAIL($label): expected '$pattern' within ${timeout}s. Recent output:"
-      tail -4 "$OUT" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'
-      exit 1
-    fi
-  done
+wait_for() { # <pattern> <timeout_s> <label> <cursor>
+  wait_for_new "$1" "$2" "$3" "$OUT" "$4"
 }
 
 alive() { kill -0 "$runner_pid" 2>/dev/null; }
 
 expect_case() { # expect_case <label> <staging.o> <expected pattern>
   local label="$1" staging="$2" pattern="$3"
-  local ticks_before
-  ticks_before=$(count '\[hot\] tick')
+  local cursor ticks_before
+  cursor=$(log_cursor "$OUT")
   mv "$staging" "$WORK/bad.new.o"
-  wait_for "$pattern" 15 "$label"
+  wait_for "$pattern" 15 "$label" "$cursor"
+  ticks_before=$(count '\[hot\] tick')
   sleep 0.6 # let old code prove it keeps running
   alive || { echo "FAIL($label): runner died after the rejected reload"; exit 1; }
   local ticks_after
@@ -65,7 +66,12 @@ build_variant() { # build_variant <sed-expr|-> <extra flags...> -> $WORK/staging
 echo "== neko.rejections (workdir: $WORK) =="
 
 # ---- PIE host: startup must fail loudly ---------------------------------
-pie_out=$("$HERE/reject_runner_pie" "$WORK/unused.o" 2>&1 || true)
+pie_status=0
+pie_out=$("$HERE/reject_runner_pie" "$WORK/unused.o" 2>&1) || pie_status=$?
+[ "$pie_status" -eq 1 ] || {
+  echo "FAIL(pie): expected exit 1, got $pie_status: $pie_out"; exit 1; }
+printf '%s\n' "$pie_out" > "$WORK/pie.txt"
+check_clean_log "$WORK/pie.txt"
 echo "$pie_out" | grep -aq "startup rejected:" || {
   echo "FAIL(pie): expected 'startup rejected:', got: $pie_out"; exit 1; }
 echo "$pie_out" | grep -aq "position-independent" || {
@@ -74,9 +80,9 @@ echo "PASS pie_host"
 
 # ---- one runner absorbs all broken drops ---------------------------------
 "$CXX" $BASE -c "$SRC/hot.cpp" -o "$WORK/baseline.o"
-"$HERE/reject_runner" "$WORK/bad.new.o" > "$OUT" 2>&1 &
+"$HERE/reject_runner" "$WORK/bad.new.o" "$STOP_FILE" > "$OUT" 2>&1 &
 runner_pid=$!
-wait_for '\[hot\] tick' 2 startup
+wait_for '\[hot\] tick' 2 startup 0
 
 # 1. garbage bytes
 head -c 100 /dev/urandom > "$WORK/staging.o"
@@ -87,8 +93,7 @@ expect_case garbage "$WORK/staging.o" "bad magic"
 expect_case empty "$WORK/staging.o" "truncated object file"
 
 # 3. truncated valid object
-cp "$WORK/baseline.o" "$WORK/staging.o"
-truncate -s 60 "$WORK/staging.o"
+head -c 60 "$WORK/baseline.o" > "$WORK/staging.o"
 expect_case truncated "$WORK/staging.o" "truncated object file"
 
 # 4. wrong optimization flags (the classic user mistake). Probe result:
@@ -99,9 +104,10 @@ expect_case truncated "$WORK/staging.o" "truncated object file"
 # Phase 4 — cross-TU inlining will reject loudly once it appears.)
 "$CXX" -std=c++20 -O2 -fno-pie -fno-pic -fno-exceptions \
   -fno-asynchronous-unwind-tables -c "$SRC/hot.cpp" -o "$WORK/staging.o"
-o2_ticks_before=$(count '\[hot\] tick')
+o2_cursor=$(log_cursor "$OUT")
 mv "$WORK/staging.o" "$WORK/bad.new.o"
-wait_for "reload applied" 15 flags_o2
+wait_for "reload applied" 15 flags_o2 "$o2_cursor"
+o2_ticks_before=$(count '\[hot\] tick')
 sleep 0.6
 alive || { echo "FAIL(flags_o2): runner died on the -O2 reload"; exit 1; }
 o2_ticks_after=$(count '\[hot\] tick')
@@ -128,14 +134,32 @@ expect_case size_change "$WORK/staging.o" "inconsistent state anchors — layout
 expect_case got_style "$WORK/staging.o" "GOT-style relocs need -fno-pic"
 
 # ---- a VALID reload must still work after all the abuse ------------------
-"$CXX" $BASE -c "$SRC/hot.cpp" -o "$WORK/staging.o"
+build_variant 's|++g_counter;|g_counter += 10;|; s|\[hot\]|[recovered]|'
+final_cursor=$(log_cursor "$OUT")
 mv "$WORK/staging.o" "$WORK/bad.new.o"
-wait_for "reload applied" 15 final_valid
-sleep 0.5
+wait_for "reload applied" 15 final_valid "$final_cursor"
+wait_for_new '\[recovered\] tick' 15 final_valid "$OUT" "$final_cursor" 3
 alive || { echo "FAIL(final_valid): runner died on the valid reload"; exit 1; }
+
+finish_runner "$runner_pid" "$STOP_FILE" "$OUT"
+runner_pid=""
+
+# Check real execution and both state anchors, not just the reload message.
+awk '
+  /\[hot\] tick/ {
+    if (recovered) exit 1
+    split($3, call, "[# ,]"); split($4, counter, "=")
+    calls = call[2]; value = counter[2]; baseline = 1
+  }
+  /\[recovered\] tick/ {
+    split($3, call, "[# ,]"); split($4, counter, "=")
+    if (!baseline || call[2] != calls + 1 || counter[2] != value + 10) exit 1
+    calls = call[2]; value = counter[2]; recovered++
+  }
+  END { if (recovered < 3) exit 1 }
+' "$OUT" || { echo "FAIL(final_valid): new logic or state continuity is incorrect"; exit 1; }
 echo "PASS valid_reload_after_abuse"
 
-kill "$runner_pid" 2>/dev/null || true; wait "$runner_pid" 2>/dev/null || true; runner_pid=""
 echo ""
 echo "ALL REJECTION CASES PASS — every boundary rejected loudly, process survived"
 echo "output kept at: $OUT"

@@ -8,6 +8,8 @@
 #include <chrono>
 #include <cstdio>
 #include <exception>
+#include <filesystem>
+#include <memory>
 #include <thread>
 #include <unistd.h>
 
@@ -24,18 +26,23 @@ void host_only() {
 
 int main(int argc, char** argv) {
   const char* watched = argc > 1 ? argv[1] : "bad.new.o";
+  const char* stop_file = argc > 2 ? argv[2] : nullptr;
   std::setvbuf(stdout, nullptr, _IOLBF, 0);
 
-  neko::reload_session* session = nullptr;
+  std::unique_ptr<neko::reload_session> session;
   try {
-    session = new neko::reload_session{neko::elf::create_backend()};
+    session = std::make_unique<neko::reload_session>(neko::elf::create_backend());
   } catch (const std::exception& e) {
     std::printf("startup rejected: %s\n", e.what());
     return 1;
   }
   session->watch(watched);
 
-  for (int i = 0; i < 600; ++i) { // ~60 s ceiling; the script kills earlier
+  for (int i = 0; i < 600; ++i) { // ~60 s ceiling; the script requests an earlier stop
+    if (stop_file && std::filesystem::exists(stop_file)) {
+      std::printf("[harness] stopped\n");
+      return 0;
+    }
     tick();
     try {
       session->update();
@@ -45,5 +52,5 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   std::printf("[harness] survived\n");
-  return 0;
+  return stop_file ? 1 : 0;
 }
