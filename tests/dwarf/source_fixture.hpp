@@ -242,8 +242,8 @@ inline bytes build(const std::vector<unit>& units) {
     info.patch(begin, info.size() - begin - 4, 4);
   }
   abbrev.number(0, 1);
-  for (const auto& [offset, node] : references) {
-    info.patch(offset, node < nodes.size() ? nodes[node] : 0xfffffff0, 4);
+  for (const auto& [offset, node_index] : references) {
+    info.patch(offset, node_index < nodes.size() ? nodes[node_index] : 0xfffffff0, 4);
   }
   return elf(info, abbrev, lines);
 }
