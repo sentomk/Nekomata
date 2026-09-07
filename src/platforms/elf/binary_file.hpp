@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -35,6 +36,29 @@ struct function_symbols {
   binary_kind kind = binary_kind::executable;
 };
 
+struct debug_relocation {
+  std::uint32_t relocation_section = 0;
+  std::uint64_t relocation_index = 0;
+  std::uint64_t offset = 0; // Field offset within .debug_info.
+  std::uint32_t type = 0;
+  std::uint8_t width = 0;
+  std::uint32_t symbol_table = 0;
+  std::uint64_t symbol_index = 0;
+  std::uint32_t symbol_section = 0;
+  std::uint64_t symbol_value = 0;
+  std::int64_t addend = 0;
+  // S + A, relative to symbol_section, never a process/virtual address.
+  // May equal the section size (e.g. an exclusive high_pc endpoint).
+  std::uint64_t resolved_offset = 0;
+};
+
+struct debug_relocations {
+  // Missing .debug_info differs from a present section with no relocations.
+  std::optional<std::uint32_t> info_section;
+  // Sorted by field offset; overlapping/composed relocations are rejected.
+  std::vector<debug_relocation> entries;
+};
+
 // Read-only ELF64 little-endian x86-64 ET_EXEC or ET_REL input. Keep this descriptor
 // open for both ELF and DWARF reads so replacing the path cannot mix files.
 // The caller must not modify the opened file in place during inspection.
@@ -55,6 +79,10 @@ public:
   // Only defined STT_FUNC entries in SHT_SYMTAB, not duplicated .dynsym entries.
   // Missing .symtab is represented explicitly; malformed tables throw.
   function_symbols symbols() const;
+  // ET_REL only, uncompressed/ungrouped .debug_info, RELA absolute 32/64.
+  // Validates relocation metadata and referenced symbols without reading or
+  // modifying DWARF contents. Does not enable DWARF inspection or patching.
+  debug_relocations debug_info_relocations() const;
 
 private:
   void validate_header();

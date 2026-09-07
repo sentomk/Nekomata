@@ -93,6 +93,19 @@ within the recorded section, not virtual addresses. This does not yet enable
 `.o` input in `nekomata inspect`: relocatable DWARF reading and section-aware
 ELF/DWARF association remain unsupported, and runtime loading is unchanged.
 
+The ELF-only reader can also inspect relocations targeting `.debug_info` in
+`ET_REL` files. It follows section links rather than relocation-section names,
+retains relocation and symbol-table identities, and computes section-relative
+`S + A` offsets for `R_X86_64_32` and `R_X86_64_64` RELA entries. It does not
+apply relocations or decode DWARF. Missing `.debug_info` is distinct from a
+present section without relocations. Undefined/special symbol references,
+compressed/split/grouped debug information, other relocation types, overlapping
+fields, overflow and out-of-bounds references fail explicitly. An offset equal
+to the referenced section's size is retained as a possible exclusive endpoint;
+this is not approval of a function range. The reader limits total relocation
+entries and entries in referenced symbol tables to one million each, and total
+section-name/symbol string-table reads to 64 MiB per call.
+
 The inspector also associates DWARF functions with defined ELF `STT_FUNC`
 entries from `.symtab`, retaining table/entry identity, section, binding,
 visibility, address and size. It reads both through one open file descriptor;

@@ -7,10 +7,13 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cerrno>
 #include <cstring>
 #include <limits>
+#include <map>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace neko::elf {
@@ -34,6 +37,7 @@ std::array<std::uint8_t, Size> read_entry(const binary_file& file, std::uint64_t
 struct section {
   std::uint64_t type = 0, flags = 0, address = 0, offset = 0, size = 0;
   std::uint64_t link = 0, info = 0, entry_size = 0;
+  std::uint64_t name = 0;
 };
 
 std::vector<section> sections(const binary_file& file) {
@@ -53,16 +57,92 @@ std::vector<section> sections(const binary_file& file) {
   for (std::uint64_t i = 0; i < count; ++i) {
     const auto raw = read_entry<sizeof(Elf64_Shdr)>(file, offset + i * sizeof(Elf64_Shdr));
     const std::span<const std::uint8_t> entry(raw);
-    section value{number(entry.subspan(4, 4)),  number(entry.subspan(8, 8)),
-                  number(entry.subspan(16, 8)), number(entry.subspan(24, 8)),
-                  number(entry.subspan(32, 8)), number(entry.subspan(40, 4)),
-                  number(entry.subspan(44, 4)), number(entry.subspan(56, 8))};
+    section value{
+        number(entry.subspan(4, 4)),  number(entry.subspan(8, 8)),  number(entry.subspan(16, 8)),
+        number(entry.subspan(24, 8)), number(entry.subspan(32, 8)), number(entry.subspan(40, 4)),
+        number(entry.subspan(44, 4)), number(entry.subspan(56, 8)), number(entry.subspan(0, 4))};
     if (value.type != SHT_NOBITS && !file.contains(value.offset, value.size)) {
       throw std::runtime_error("ELF section is outside the file");
     }
     out.push_back(value);
   }
   return out;
+}
+
+constexpr std::uint64_t kRelocationLimit = 1000000;
+constexpr std::uint64_t kSymbolLimit = 1000000;
+constexpr std::uint64_t kStringLimit = 64 * 1024 * 1024;
+
+std::vector<std::uint8_t> read_strings(const binary_file& file, const section& value,
+                                       std::uint64_t& budget_used) {
+  if (value.type != SHT_STRTAB || (value.flags & SHF_COMPRESSED) || value.size == 0 ||
+      value.size > kStringLimit - budget_used) {
+    throw std::runtime_error("invalid or oversized relocation string table");
+  }
+  budget_used += value.size;
+  std::vector<std::uint8_t> bytes(static_cast<std::size_t>(value.size));
+  file.read(value.offset, bytes);
+  if (bytes.front() != 0 || bytes.back() != 0) {
+    throw std::runtime_error("relocation string table must start and end with NUL");
+  }
+  return bytes;
+}
+
+bool named(std::span<const std::uint8_t> strings, std::uint64_t offset, std::string_view name) {
+  // Fixed-size comparisons avoid repeatedly scanning enormous aliased names.
+  return name.size() < strings.size() - offset &&
+         std::memcmp(strings.data() + offset, name.data(), name.size()) == 0 &&
+         strings[static_cast<std::size_t>(offset) + name.size()] == 0;
+}
+
+struct relocation_symbols {
+  std::vector<std::uint8_t> bytes;
+  std::vector<std::uint8_t> strings;
+};
+
+relocation_symbols read_relocation_symbols(const binary_file& file,
+                                           const std::vector<section>& table, std::uint64_t index,
+                                           std::uint64_t& symbols_used,
+                                           std::uint64_t& strings_used) {
+  if (index >= table.size()) {
+    throw std::runtime_error("invalid relocation symbol table index");
+  }
+  const auto& value = table[index];
+  if (value.type != SHT_SYMTAB || (value.flags & SHF_COMPRESSED) ||
+      value.entry_size != sizeof(Elf64_Sym) || value.size == 0 ||
+      value.size % sizeof(Elf64_Sym) != 0 || value.link >= table.size() ||
+      value.info > value.size / sizeof(Elf64_Sym)) {
+    throw std::runtime_error("invalid relocation symbol table metadata");
+  }
+  const auto count = value.size / sizeof(Elf64_Sym);
+  if (count > kSymbolLimit - symbols_used) {
+    throw std::runtime_error("relocation symbol tables exceed inspection limits");
+  }
+  symbols_used += count;
+  relocation_symbols out;
+  out.strings = read_strings(file, table[value.link], strings_used);
+  out.bytes.resize(static_cast<std::size_t>(value.size));
+  file.read(value.offset, out.bytes);
+  if (std::any_of(out.bytes.begin(), out.bytes.begin() + sizeof(Elf64_Sym),
+                  [](auto byte) { return byte != 0; })) {
+    throw std::runtime_error("invalid relocation null symbol");
+  }
+  return out;
+}
+
+std::uint64_t add_offset(std::uint64_t value, std::int64_t addend) {
+  if (addend < 0) {
+    const auto magnitude = static_cast<std::uint64_t>(-(addend + 1)) + 1;
+    if (magnitude > value) {
+      throw std::runtime_error("debug relocation offset underflow");
+    }
+    return value - magnitude;
+  }
+  const auto positive = static_cast<std::uint64_t>(addend);
+  if (positive > std::numeric_limits<std::uint64_t>::max() - value) {
+    throw std::runtime_error("debug relocation offset overflow");
+  }
+  return value + positive;
 }
 
 } // namespace
@@ -187,6 +267,137 @@ std::vector<address_range> binary_file::executable_ranges() const {
     throw std::runtime_error("ELF has no executable load segment");
   }
   return ranges;
+}
+
+debug_relocations binary_file::debug_info_relocations() const {
+  if (kind_ != binary_kind::relocatable) {
+    throw std::runtime_error("debug relocations require ET_REL input");
+  }
+  const auto table = sections(*this);
+  const auto header = read_entry<sizeof(Elf64_Ehdr)>(*this, 0);
+  const auto names_index = number(std::span<const std::uint8_t>(header).subspan(62, 2));
+  if (names_index == SHN_UNDEF || names_index >= table.size()) {
+    throw std::runtime_error("missing or unsupported ELF section-name table");
+  }
+  std::uint64_t strings_used = 0, symbols_used = 0, relocations_used = 0;
+  const auto names = read_strings(*this, table[names_index], strings_used);
+  debug_relocations out;
+  for (std::size_t i = 0; i < table.size(); ++i) {
+    const auto& value = table[i];
+    if (value.name >= names.size()) {
+      throw std::runtime_error("invalid ELF section name index");
+    }
+    if (named(names, value.name, ".zdebug_info") || named(names, value.name, ".debug_info.dwo")) {
+      throw std::runtime_error("compressed or split debug relocations are unsupported");
+    }
+    if (!named(names, value.name, ".debug_info")) {
+      continue;
+    }
+    if (out.info_section || value.type != SHT_PROGBITS ||
+        (value.flags & (SHF_COMPRESSED | SHF_GROUP | SHF_ALLOC))) {
+      throw std::runtime_error("duplicate, compressed, grouped or invalid .debug_info section");
+    }
+    out.info_section = static_cast<std::uint32_t>(i);
+  }
+  if (!out.info_section) {
+    return out;
+  }
+  std::map<std::uint64_t, relocation_symbols> symbol_tables;
+  for (std::size_t i = 0; i < table.size(); ++i) {
+    const auto& relocations = table[i];
+    if (relocations.type != SHT_RELA && relocations.type != SHT_REL) {
+      continue;
+    }
+    if (relocations.info == 0 || relocations.info >= table.size()) {
+      throw std::runtime_error("invalid relocation target section index");
+    }
+    if (relocations.info != *out.info_section) {
+      continue; // Code/other debug relocations are outside this reader's scope.
+    }
+    if (relocations.type != SHT_RELA || (relocations.flags & (SHF_COMPRESSED | SHF_GROUP)) ||
+        relocations.entry_size != sizeof(Elf64_Rela) ||
+        relocations.size % sizeof(Elf64_Rela) != 0) {
+      throw std::runtime_error("unsupported or malformed .debug_info relocation table");
+    }
+    const auto count = relocations.size / sizeof(Elf64_Rela);
+    if (count > kRelocationLimit - relocations_used) {
+      throw std::runtime_error("debug relocations exceed inspection limits");
+    }
+    relocations_used += count;
+    auto found = symbol_tables.find(relocations.link);
+    if (found == symbol_tables.end()) {
+      found = symbol_tables
+                  .emplace(relocations.link, read_relocation_symbols(*this, table, relocations.link,
+                                                                     symbols_used, strings_used))
+                  .first;
+    }
+    const auto& symbols = found->second;
+    for (std::uint64_t r = 0; r < count; ++r) {
+      const auto raw =
+          read_entry<sizeof(Elf64_Rela)>(*this, relocations.offset + r * sizeof(Elf64_Rela));
+      const std::span<const std::uint8_t> entry(raw);
+      debug_relocation value;
+      value.relocation_section = static_cast<std::uint32_t>(i);
+      value.relocation_index = r;
+      value.offset = number(entry.first(8));
+      const auto info = number(entry.subspan(8, 8));
+      value.type = static_cast<std::uint32_t>(ELF64_R_TYPE(info));
+      if (value.type != R_X86_64_32 && value.type != R_X86_64_64) {
+        throw std::runtime_error("unsupported .debug_info relocation type");
+      }
+      value.width = value.type == R_X86_64_32 ? 4 : 8;
+      const auto info_size = table[*out.info_section].size;
+      if (value.offset > info_size || value.width > info_size - value.offset) {
+        throw std::runtime_error("debug relocation field is outside .debug_info");
+      }
+      value.symbol_table = static_cast<std::uint32_t>(relocations.link);
+      value.symbol_index = ELF64_R_SYM(info);
+      if (value.symbol_index == 0 ||
+          value.symbol_index >= symbols.bytes.size() / sizeof(Elf64_Sym)) {
+        throw std::runtime_error("invalid debug relocation symbol index");
+      }
+      const auto symbol =
+          std::span<const std::uint8_t>(symbols.bytes)
+              .subspan(static_cast<std::size_t>(value.symbol_index) * sizeof(Elf64_Sym),
+                       sizeof(Elf64_Sym));
+      value.symbol_section = static_cast<std::uint32_t>(number(symbol.subspan(6, 2)));
+      if (number(symbol.first(4)) >= symbols.strings.size() || value.symbol_section == SHN_UNDEF ||
+          value.symbol_section >= SHN_LORESERVE || value.symbol_section >= table.size()) {
+        throw std::runtime_error("undefined, special or invalid debug relocation symbol");
+      }
+      const auto type = ELF64_ST_TYPE(symbol[4]);
+      const auto& target = table[value.symbol_section];
+      if ((type != STT_SECTION && type != STT_NOTYPE && type != STT_FUNC && type != STT_OBJECT) ||
+          (target.type != SHT_PROGBITS && target.type != SHT_NOBITS) ||
+          (target.flags & SHF_COMPRESSED)) {
+        throw std::runtime_error("unsupported debug relocation symbol target");
+      }
+      value.symbol_value = number(symbol.subspan(8, 8));
+      const auto size = number(symbol.subspan(16, 8));
+      if (value.symbol_value > target.size || size > target.size - value.symbol_value) {
+        throw std::runtime_error("debug relocation symbol is outside its section");
+      }
+      value.addend = std::bit_cast<std::int64_t>(number(entry.subspan(16, 8)));
+      value.resolved_offset = add_offset(value.symbol_value, value.addend);
+      if (value.type == R_X86_64_32 &&
+          value.resolved_offset > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::runtime_error("debug relocation value does not fit 32 bits");
+      }
+      if (value.resolved_offset > target.size) {
+        throw std::runtime_error("debug relocation offset is outside its section");
+      }
+      out.entries.push_back(value);
+    }
+  }
+  std::sort(out.entries.begin(), out.entries.end(),
+            [](const auto& left, const auto& right) { return left.offset < right.offset; });
+  for (std::size_t i = 1; i < out.entries.size(); ++i) {
+    const auto& previous = out.entries[i - 1];
+    if (out.entries[i].offset - previous.offset < previous.width) {
+      throw std::runtime_error("overlapping or composed debug relocations are unsupported");
+    }
+  }
+  return out;
 }
 
 function_symbols binary_file::symbols() const {

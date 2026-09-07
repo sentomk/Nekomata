@@ -30,3 +30,18 @@ add_test(NAME neko.elf.object_symbols COMMAND neko_elf_object_tests
   $<TARGET_OBJECTS:neko_elf_object_plain> $<TARGET_OBJECTS:neko_elf_object_sections>
   COMMAND_EXPAND_LISTS)
 set_tests_properties(neko.elf.object_symbols PROPERTIES TIMEOUT 30)
+
+add_library(neko_elf_debug_objects OBJECT fixtures/a.cpp fixtures/b.cpp)
+target_compile_options(neko_elf_debug_objects PRIVATE
+  -O0 -g -gdwarf-4 -fno-inline -fno-pie -fno-lto -ffunction-sections)
+nekomata_apply_warnings(neko_elf_debug_objects)
+add_executable(neko_elf_relocation_tests debug_relocations.cpp)
+target_include_directories(neko_elf_relocation_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/elf")
+target_link_libraries(neko_elf_relocation_tests PRIVATE neko_elf_file)
+nekomata_apply_warnings(neko_elf_relocation_tests)
+nekomata_apply_sanitizers(neko_elf_relocation_tests)
+add_dependencies(neko_elf_relocation_tests neko_elf_debug_objects)
+add_test(NAME neko.elf.debug_relocations COMMAND neko_elf_relocation_tests
+  $<TARGET_OBJECTS:neko_elf_debug_objects> COMMAND_EXPAND_LISTS)
+set_tests_properties(neko.elf.debug_relocations PROPERTIES TIMEOUT 30)
