@@ -37,8 +37,10 @@ fi
 
 stage=0; calls=0; counter=0; recovered=0
 # The arena-boundary case runs a second, fresh runner watching boundary.new.o;
-# its single offer is a valid reload (stage 10), not a rejection.
-if [[ "$watched" == *boundary* ]]; then stage=9; fi
+# its single offer is a valid reload (stage 10), not a rejection. It must exit
+# cleanly regardless of the fault mode: the injected nonzero exit belongs to
+# the main runner, not to this boundary probe.
+if [[ "$watched" == *boundary* ]]; then stage=9; boundary=1; fi
 while [ ! -f "$stop_file" ]; do
   if [ -f "$watched" ]; then
     mv "$watched" "$watched.consumed"
@@ -74,4 +76,5 @@ while [ ! -f "$stop_file" ]; do
   sleep 0.05
 done
 echo "[harness] stopped"
+if [ "${boundary:-0}" = 1 ]; then exit 0; fi
 if [ "$mode" = reject_nonzero ]; then exit 42; fi

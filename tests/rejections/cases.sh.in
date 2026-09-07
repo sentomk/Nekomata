@@ -202,8 +202,12 @@ boundary_log="$WORK/boundary_out.txt"
 "$HERE/reject_runner" "$WORK/boundary.new.o" "$WORK/boundary_stop" >> "$boundary_log" 2>&1 &
 boundary_pid=$!
 wait_for_new '\[hot\] tick' 15 boundary_startup "$boundary_log" 0
+# Take the cursor BEFORE publishing the object: the runner may claim and
+# apply it immediately, and a cursor taken after the mv would already
+# include the "reload applied" line, waiting forever for a newer one.
+boundary_cursor=$(log_cursor "$boundary_log")
 mv "$WORK/boundary.o" "$WORK/boundary.new.o"
-wait_for_new "reload applied" 15 arena_boundary "$boundary_log" "$(log_cursor "$boundary_log")"
+wait_for_new "reload applied" 15 arena_boundary "$boundary_log" "$boundary_cursor"
 boundary_ticks=$(grep -c '\[hot\] tick' "$boundary_log" || true)
 sleep 0.6
 kill -0 "$boundary_pid" 2>/dev/null || {
