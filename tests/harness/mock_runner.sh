@@ -36,6 +36,9 @@ if [[ "$0" == *hello_reload ]]; then
 fi
 
 stage=0; calls=0; counter=0; recovered=0
+# The arena-boundary case runs a second, fresh runner watching boundary.new.o;
+# its single offer is a valid reload (stage 10), not a rejection.
+if [[ "$watched" == *boundary* ]]; then stage=9; fi
 while [ ! -f "$stop_file" ]; do
   if [ -f "$watched" ]; then
     mv "$watched" "$watched.consumed"
@@ -56,6 +59,7 @@ while [ ! -f "$stop_file" ]; do
         fi
         if [ "$mode" = reject_state_reset ]; then calls=0; counter=0; fi
         ;;
+      10) echo "reload applied" ;; # arena boundary: a valid reload that must apply
       *) echo "unexpected offer" >&2; exit 2 ;;
     esac
   fi

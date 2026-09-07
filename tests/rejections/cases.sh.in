@@ -63,6 +63,43 @@ build_variant() { # build_variant <sed-expr|-> <extra flags...> -> $WORK/staging
   "$CXX" $BASE "$@" -c "$WORK/variant.cpp" -o "$WORK/staging.o"
 }
 
+# build_arena_variant <page_size> <output> — compile hot.cpp with a .rodata
+# pad so the laid-out image ends within the same page as its start while at
+# least one trampoline follows (printf stays an undefined call). Section
+# sizes are read from the object the same compiler produces; readelf and
+# usable sizes are REQUIRED: silently skipping the pad would turn this case
+# into an ordinary reload that exercises nothing.
+build_arena_variant() { # build_arena_variant <page_size> <output>
+  local page="$1" output="$2"
+  cp "$SRC/hot.cpp" "$WORK/variant.cpp"
+  case "$CXX" in
+  *mock_compile.sh*)
+    # The mock harness consumes publication events, not machine code; there
+    # are no section sizes to read. Publish the unmodified source.
+    "$CXX" $BASE -c "$WORK/variant.cpp" -o "$output"
+    return 0
+    ;;
+  esac
+  command -v readelf >/dev/null 2>&1 || {
+    echo "FAIL(arena_boundary): readelf is required to size the boundary object"; exit 1; }
+  "$CXX" $BASE -c "$WORK/variant.cpp" -o "$WORK/arena_probe.o"
+  local text rodata pad
+  # Field position depends on the bracket width ("[ 1]" vs "[10]"); find the
+  # name column instead of assuming it, then Size is the 4th field after it.
+  text=$(readelf -SW "$WORK/arena_probe.o" |
+    awk '{for(i=1;i<=NF;i++) if($i==".text"){print $(i+4); exit}}')
+  rodata=$(readelf -SW "$WORK/arena_probe.o" |
+    awk '{for(i=1;i<=NF;i++) if($i==".rodata"){print $(i+4); exit}}')
+  [ -n "$text" ] && [ -n "$rodata" ] || {
+    echo "FAIL(arena_boundary): cannot read .text/.rodata sizes"; exit 1; }
+  text=$((16#$text)); rodata=$((16#$rodata))
+  local aligned=$(( (text + 15) / 16 * 16 ))
+  pad=$(( aligned + rodata < page ? page - aligned - rodata - 3 : 0 ))
+  printf '\nasm(".pushsection .rodata\\n.space %d\\n.popsection");\n' "$pad" \
+    >> "$WORK/variant.cpp"
+  "$CXX" $BASE -c "$WORK/variant.cpp" -o "$output"
+}
+
 echo "== neko.rejections (workdir: $WORK) =="
 
 # ---- PIE host: startup must fail loudly ---------------------------------
@@ -132,6 +169,33 @@ expect_case size_change "$WORK/staging.o" "inconsistent state anchors — layout
 "$CXX" -std=c++20 -O0 -fpic -fno-exceptions -fno-asynchronous-unwind-tables \
   -c "$SRC/hot.cpp" -o "$WORK/staging.o"
 expect_case got_style "$WORK/staging.o" "GOT-style relocs need -fno-pic"
+
+# 9. arena boundary: image sections sized so the laid-out image stays
+#    within one page while at least one trampoline slot follows (printf
+#    remains an undefined call). The reservation must cover the trampoline
+#    bytes; before the fix the commit wrote past the reserved page span.
+#    Runs in a FRESH runner process so the arena is the process's first
+#    mapping: its neighbor page is unmapped and the old out-of-span write
+#    faults (SIGSEGV in commit_code). In the long-lived runner above, prior
+#    arenas would neighbor the overflow and mask it. Regression gate: the
+#    reload must apply cleanly and state must continue, not just "not crash".
+build_arena_variant 4096 "$WORK/boundary.o"
+boundary_log="$WORK/boundary_out.txt"
+: > "$boundary_log"
+"$HERE/reject_runner" "$WORK/boundary.new.o" "$WORK/boundary_stop" >> "$boundary_log" 2>&1 &
+boundary_pid=$!
+wait_for_new '\[hot\] tick' 15 boundary_startup "$boundary_log" 0
+mv "$WORK/boundary.o" "$WORK/boundary.new.o"
+wait_for_new "reload applied" 15 arena_boundary "$boundary_log" "$(log_cursor "$boundary_log")"
+boundary_ticks=$(grep -c '\[hot\] tick' "$boundary_log" || true)
+sleep 0.6
+kill -0 "$boundary_pid" 2>/dev/null || {
+  echo "FAIL(arena_boundary): runner died on the boundary-sized reload"; exit 1; }
+boundary_after=$(grep -c '\[hot\] tick' "$boundary_log" || true)
+[ "$boundary_after" -gt "$boundary_ticks" ] || {
+  echo "FAIL(arena_boundary): ticks did not continue after the boundary reload"; exit 1; }
+finish_runner "$boundary_pid" "$WORK/boundary_stop" "$boundary_log"
+echo "PASS arena_boundary"
 
 # ---- a VALID reload must still work after all the abuse ------------------
 build_variant 's|++g_counter;|g_counter += 10;|; s|\[hot\]|[recovered]|'

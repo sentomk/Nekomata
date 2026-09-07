@@ -80,7 +80,35 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     throw std::runtime_error("object file carries no code");
   }
 
-  // ---- 2. arena near the code being replaced ---------------------------
+  // ---- 2. undefined-symbol CALLS get in-arena trampolines --------------
+  // Slot assignment happens before the arena is reserved: the trampolines
+  // are part of the image, so their bytes must be covered by the
+  // reservation. Growing image_size after reserve_code_near() would commit
+  // a memcpy past the reserved page span.
+  // Only the slot offsets are known here; resolve_external failures are
+  // rejections, so resolve before any memory is reserved.
+  std::unordered_map<std::uint32_t, std::uint64_t> trampoline_offset_for_symbol;
+  for (const auto& rel : obj.relocations) {
+    if (!is_call_to_undefined(rel.type) || rel.symbol_index == 0 ||
+        rel.symbol_index >= obj.symbols.size()) {
+      continue;
+    }
+    const auto& sym = obj.symbols[rel.symbol_index];
+    if (sym.section_index != SHN_UNDEF || trampoline_offset_for_symbol.count(rel.symbol_index)) {
+      continue;
+    }
+    void* target = process_symbols::resolve_external(sym.name);
+    if (target == nullptr) {
+      throw std::runtime_error("cannot resolve external symbol '" + sym.name +
+                               "' (cross-TU references are Phase 2 "
+                               "territory)");
+    }
+    image_size = align_up(image_size, kSectionAlign);
+    trampoline_offset_for_symbol[rel.symbol_index] = image_size;
+    image_size += 12; // movabs rax, imm64 (10) + jmp rax (2)
+  }
+
+  // ---- 3. arena near the code being replaced ---------------------------
   // Hint = the old entry of the first function we will redirect.
   std::uintptr_t hint = 0;
   for (const auto& sym : obj.symbols) {
@@ -106,28 +134,6 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
   }
   const auto base = reinterpret_cast<std::uintptr_t>(arena);
 
-  // ---- 3. undefined-symbol CALLS get in-arena trampolines --------------
-  std::unordered_map<std::uint32_t, std::uintptr_t> trampoline_for_symbol;
-  for (const auto& rel : obj.relocations) {
-    if (!is_call_to_undefined(rel.type) || rel.symbol_index == 0 ||
-        rel.symbol_index >= obj.symbols.size()) {
-      continue;
-    }
-    const auto& sym = obj.symbols[rel.symbol_index];
-    if (sym.section_index != SHN_UNDEF || trampoline_for_symbol.count(rel.symbol_index)) {
-      continue;
-    }
-    void* target = process_symbols::resolve_external(sym.name);
-    if (target == nullptr) {
-      throw std::runtime_error("cannot resolve external symbol '" + sym.name +
-                               "' (cross-TU references are Phase 2 "
-                               "territory)");
-    }
-    image_size = align_up(image_size, kSectionAlign);
-    trampoline_for_symbol[rel.symbol_index] = base + image_size;
-    image_size += 12; // movabs rax, imm64 (10) + jmp rax (2)
-  }
-
   // ---- 4. build the image ----------------------------------------------
   std::vector<std::uint8_t> image(image_size, 0);
   for (const auto& sec : obj.sections) {
@@ -136,8 +142,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     }
     std::memcpy(image.data() + section_offset[sec.index], sec.bytes.data(), sec.bytes.size());
   }
-  for (const auto& [sym_index, addr] : trampoline_for_symbol) {
-    const auto offset = static_cast<std::uint64_t>(addr - base);
+  for (const auto& [sym_index, offset] : trampoline_offset_for_symbol) {
     void* target = process_symbols::resolve_external(obj.symbols[sym_index].name);
     write_trampoline(image.data() + offset, reinterpret_cast<std::uintptr_t>(target));
   }
@@ -240,11 +245,11 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     const auto& sym = obj.symbols[rel.symbol_index];
     std::uintptr_t s = 0;
     if (is_call_to_undefined(rel.type) && sym.section_index == SHN_UNDEF) {
-      const auto it = trampoline_for_symbol.find(rel.symbol_index);
-      if (it == trampoline_for_symbol.end()) {
+      const auto it = trampoline_offset_for_symbol.find(rel.symbol_index);
+      if (it == trampoline_offset_for_symbol.end()) {
         throw std::runtime_error("internal: missing trampoline");
       }
-      s = it->second;
+      s = base + it->second;
     } else {
       s = resolve(sym);
     }
