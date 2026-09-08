@@ -10,7 +10,10 @@ namespace {
 
 const std::uint8_t* at(const std::uint8_t* base, std::size_t size, std::uint64_t offset,
                        std::uint64_t bytes, const char* what) {
-  if (offset + bytes > size) {
+  // Overflow-proof bounds check: the additive form (offset + bytes > size)
+  // wraps around uint64 on crafted headers and lets huge offsets through
+  // (found by libFuzzer). The subtractive form cannot wrap.
+  if (bytes > size || offset > size - bytes) {
     throw std::runtime_error(std::string("truncated object file: ") + what + " out of bounds");
   }
   return base + offset;
@@ -93,11 +96,14 @@ object_file parse_object(const std::uint8_t* data, std::size_t size) {
     const auto& sh = shdrs[i];
     if (sh.sh_type == SHT_SYMTAB) {
       require(sh.sh_link < shnum, "symtab strtab index out of bounds");
+      // Entry size is checked BEFORE dividing: a crafted header with
+      // sh_entsize == 0 is a division-by-zero crash otherwise (found by
+      // libFuzzer on its first run).
+      require(sh.sh_entsize == sizeof(Elf64_Sym), "unexpected symbol size");
       const auto& strhdr = shdrs[sh.sh_link];
       const char* strtab = reinterpret_cast<const char*>(
           at(data, size, strhdr.sh_offset, strhdr.sh_size, "symtab strtab"));
       const std::uint64_t count = sh.sh_size / sh.sh_entsize;
-      require(sh.sh_entsize == sizeof(Elf64_Sym), "unexpected symbol size");
       // Keep symbol index 0 (the null symbol): relocations reference
       // symbols by their table index, so the vector must line up with it.
       for (std::uint64_t s = 0; s < count; ++s) {
@@ -116,8 +122,8 @@ object_file parse_object(const std::uint8_t* data, std::size_t size) {
       }
     } else if (sh.sh_type == SHT_RELA) {
       require(sh.sh_info < shnum, "relocation target section out of bounds");
-      const std::uint64_t count = sh.sh_size / sh.sh_entsize;
       require(sh.sh_entsize == sizeof(Elf64_Rela), "unexpected relocation size");
+      const std::uint64_t count = sh.sh_size / sh.sh_entsize;
       for (std::uint64_t r = 0; r < count; ++r) {
         const auto& rela = *reinterpret_cast<const Elf64_Rela*>(
             at(data, size, sh.sh_offset + r * sh.sh_entsize, sizeof(Elf64_Rela), "relocation"));

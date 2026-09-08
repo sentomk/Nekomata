@@ -29,7 +29,8 @@ std::vector<std::uint8_t> read_whole_file(const char* path) {
 
 const std::uint8_t* bounds(const std::vector<std::uint8_t>& bytes, std::uint64_t offset,
                            std::uint64_t len, const char* what) {
-  if (offset + len > bytes.size()) {
+  // Overflow-proof bounds check (see object_file.cpp's at()).
+  if (len > bytes.size() || offset > bytes.size() - len) {
     throw std::runtime_error(std::string("corrupt ELF: ") + what + " out of bounds");
   }
   return bytes.data() + offset;
@@ -63,6 +64,9 @@ process_symbols::process_symbols() {
   for (const auto& sh : shdrs) {
     if (sh.sh_type != SHT_SYMTAB) {
       continue;
+    }
+    if (sh.sh_entsize != sizeof(Elf64_Sym)) {
+      throw std::runtime_error("corrupt ELF: unexpected symbol entry size");
     }
     const auto& strhdr = shdrs[sh.sh_link];
     const char* strtab = reinterpret_cast<const char*>(
