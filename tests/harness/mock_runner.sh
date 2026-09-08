@@ -7,12 +7,9 @@ watched="$1"
 stop_file="${2:-}"
 
 if [[ "$0" == *reject_runner_pie ]]; then
-  echo "startup rejected: position-independent executable"
-  case "$mode" in
-    pie_zero) exit 0 ;;
-    pie_nonzero) exit 42 ;;
-    *) exit 1 ;;
-  esac
+  echo "(=･ω･=) process symbols: 2438 functions, 150 globals"
+  echo "[hot] tick #1, g_counter=1"
+  echo "(=^ω^=) reload applied: 1 function(s) redirected"
 fi
 
 if [[ "$0" == *hello_reload ]]; then

@@ -1,5 +1,7 @@
 #include "process_symbols.hpp"
 
+#include <link.h>
+
 #include <elf.h>
 
 #include <cstdio>
@@ -12,6 +14,23 @@
 
 namespace neko::elf {
 namespace {
+
+/// The main executable's load base: the object whose dlpi_name is empty.
+/// For a PIE binary this is the ASLR slide that turns link-time symbol
+/// values into runtime addresses; for ET_EXEC it is zero.
+std::uintptr_t main_load_base() {
+  std::uintptr_t base = 0;
+  dl_iterate_phdr(
+      [](struct dl_phdr_info* info, std::size_t, void* data) {
+        if (info->dlpi_name != nullptr && info->dlpi_name[0] == '\0') {
+          *static_cast<std::uintptr_t*>(data) = info->dlpi_addr;
+          return 1; // found the main executable — stop iterating
+        }
+        return 0;
+      },
+      &base);
+  return base;
+}
 
 std::vector<std::uint8_t> read_whole_file(const char* path) {
   std::ifstream file(path, std::ios::binary | std::ios::ate);
@@ -46,9 +65,14 @@ process_symbols::process_symbols() {
   if (ehdr->e_ident[EI_CLASS] != ELFCLASS64 || ehdr->e_ident[EI_DATA] != ELFDATA2LSB) {
     throw std::runtime_error("/proc/self/exe: not ELF64 little-endian");
   }
+  std::uintptr_t base = 0;
   if (ehdr->e_type == ET_DYN) {
-    throw std::runtime_error("/proc/self/exe is position-independent (PIE), which is not "
-                             "supported yet — relink with -no-pie");
+    // PIE: every link-time symbol value needs the runtime load base.
+    base = main_load_base();
+    if (base == 0) {
+      throw std::runtime_error(
+          "/proc/self/exe is PIE but its load base cannot be determined (static PIE?)");
+    }
   }
 
   const std::uint16_t shnum = ehdr->e_shnum;
@@ -88,11 +112,11 @@ process_symbols::process_symbols() {
       }
       if (type == STT_FUNC) {
         function_index_[name].push_back(functions_.size());
-        functions_.push_back({name, static_cast<std::uintptr_t>(sym.st_value),
+        functions_.push_back({name, static_cast<std::uintptr_t>(sym.st_value) + base,
                               static_cast<std::size_t>(sym.st_size)});
       } else {
         global_index_[name].push_back(globals_.size());
-        globals_.push_back({name, static_cast<std::uintptr_t>(sym.st_value),
+        globals_.push_back({name, static_cast<std::uintptr_t>(sym.st_value) + base,
                             static_cast<std::size_t>(sym.st_size)});
       }
     }

@@ -15,6 +15,7 @@ if(NEKOMATA_TARGET_LINUX)
   # The same harness built PIE: process_symbols must refuse it at startup.
   add_executable(reject_runner_pie runner.cpp hot.cpp)
   target_link_libraries(reject_runner_pie PRIVATE nekomata::backends::elf)
+  target_compile_options(reject_runner_pie PRIVATE -O0)
   set_source_files_properties(hot.cpp PROPERTIES
     COMPILE_OPTIONS "-fno-exceptions;-fno-asynchronous-unwind-tables")
   nekomata_apply_warnings(reject_runner_pie)

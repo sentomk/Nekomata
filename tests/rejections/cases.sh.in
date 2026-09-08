@@ -119,18 +119,36 @@ build_arena_variant() { # build_arena_variant <page_size> <output>
 
 echo "== neko.rejections (workdir: $WORK) =="
 
-# ---- PIE host: startup must fail loudly ---------------------------------
-pie_status=0
-pie_out=$("$HERE/reject_runner_pie" "$WORK/unused.o" 2>&1) || pie_status=$?
-[ "$pie_status" -eq 1 ] || {
-  echo "FAIL(pie): expected exit 1, got $pie_status: $pie_out"; exit 1; }
-printf '%s\n' "$pie_out" > "$WORK/pie.txt"
-check_clean_log "$WORK/pie.txt"
-echo "$pie_out" | grep -aq "startup rejected:" || {
-  echo "FAIL(pie): expected 'startup rejected:', got: $pie_out"; exit 1; }
-echo "$pie_out" | grep -aq "position-independent" || {
-  echo "FAIL(pie): expected PIE-specific message, got: $pie_out"; exit 1; }
-echo "PASS pie_host"
+# ---- PIE host: fully supported — startup AND a live reload --------------
+# The hot TU recipe follows the host: PIE hosts need -fpie objects (the
+# linker rejects absolute relocations from -fno-pie code in a PIE link).
+PIE_OUT="$WORK/pie_out.txt"
+: > "$PIE_OUT"
+pie_pid=""
+"$HERE/reject_runner_pie" "$WORK/pie.new.o" > "$PIE_OUT" 2>&1 &
+pie_pid=$!
+pie_wait() { # pie_wait <pattern> <label>
+  local pattern="$1" label="$2" waited=0
+  while ! grep -aq -- "$pattern" "$PIE_OUT"; do
+    sleep 0.2; waited=$((waited + 1))
+    if [ "$waited" -gt 75 ]; then
+      echo "FAIL(pie-$label): '$pattern' missing"; tail -4 "$PIE_OUT"; exit 1; fi
+  done
+}
+if grep -aq "startup rejected" "$PIE_OUT"; then
+  echo "FAIL(pie): startup rejected a PIE host"; tail -3 "$PIE_OUT"; exit 1
+fi
+pie_wait '\[hot\] tick' startup
+"$CXX" -std=c++20 -O0 -fpie -fno-exceptions -fno-asynchronous-unwind-tables \
+  -c "$SRC/hot.cpp" -o "$WORK/pie.staging.o"
+mv "$WORK/pie.staging.o" "$WORK/pie.new.o"
+pie_wait "reload applied" reload
+sleep 0.5
+kill -0 "$pie_pid" 2>/dev/null || { echo "FAIL(pie): runner died after reload"; exit 1; }
+kill "$pie_pid" 2>/dev/null || true
+wait "$pie_pid" 2>/dev/null || true
+check_clean_log "$PIE_OUT"
+echo "PASS pie_host (startup + live reload under ASLR)"
 
 # ---- one runner absorbs all broken drops ---------------------------------
 "$CXX" $BASE -c "$SRC/hot.cpp" -o "$WORK/baseline.o"
