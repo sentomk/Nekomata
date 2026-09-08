@@ -12,6 +12,7 @@ structure and the acceptance relationships do not):
     <   std::printf("[v1] tick #%d, g_counter=%d\n", s_calls, g_counter);  // ...
     ---
     >   std::printf("[v2] tick #%d, g_counter jumped to %d\n", s_calls, g_counter);
+    (=･ω･=) plan covers 1 translation unit(s)
     (=･ω･=)   _Z4tickv -> 0x7f0ac1234000 (+0x0)   <- info: one of two random cat faces
     (=^ω^=) reload applied: 1 function(s) redirected
     -- v2 live, e.g.: [v2] tick #9, g_counter jumped to 95

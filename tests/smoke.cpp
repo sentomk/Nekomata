@@ -22,6 +22,10 @@ public:
     return std::nullopt;
   }
 
+  std::size_t count_functions(std::string_view) const override { return 0; }
+
+  std::size_t count_globals(std::string_view) const override { return 0; }
+
   std::optional<neko::global_variable> global_by_name(std::string_view) const override {
     return std::nullopt;
   }

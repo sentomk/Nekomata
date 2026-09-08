@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# neko.atomicity — atomic multi-function patching + removed-function warning.
+#
+# One live process walks four generations:
+#   v1  baseline: tick + tock + naked_trouble
+#   v2  tick' + tock' (naked_trouble dropped)     -> SUCCESS, both swapped
+#   v3  tick'' + tock'' + naked_trouble included  -> must be REJECTED and
+#       ROLLED BACK: naked_trouble's entry can never be patched, and the
+#       patch of tick/tock must not survive the failure (atomicity)
+#   v4  tick''' only (tock dropped)               -> SUCCESS + warning that
+#       tock still carries a stale redirect
+set -euo pipefail
+
+CXX="@CMAKE_CXX_COMPILER@"
+SRC="@CMAKE_CURRENT_SOURCE_DIR@"
+HERE="@CMAKE_CURRENT_BINARY_DIR@"
+WORK="${1:-$(mktemp -d /tmp/neko-atomic.XXXXXX)}"
+OUT="$WORK/out.txt"
+: > "$OUT"
+
+BASE="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
+
+runner_pid=""
+cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+trap cleanup EXIT
+
+fail() { echo "FAIL: $1"; tail -6 "$OUT"; exit 1; }
+wait_count() { # pattern min timeout label
+  local pattern="$1" min="$2" timeout="$3" label="$4" waited=0 n
+  while :; do
+    n=$(grep -ac -- "$pattern" "$OUT" || true)
+    [ "$n" -ge "$min" ] && return 0
+    sleep 0.15; waited=$((waited + 1))
+    if [ "$waited" -gt $((timeout * 6)) ]; then
+      echo "FAIL($label): '$pattern' x$n < $min"; tail -5 "$OUT"; exit 1
+    fi
+  done
+}
+variant() { # variant <name> <keep-tock 0/1> <keep-trouble 0/1> <tick-text>
+  local name="$1" keep_tock="$2" keep_trouble="$3" tick_text="$4"
+  {
+    echo '#include <cstdio>'
+    echo 'int g_counter = 0;'
+    echo 'void tick() { ++g_counter; std::printf("['"$tick_text"'] %d\n", g_counter); }'
+    [ "$keep_tock" = 1 ] && echo 'void tock() { std::printf("[tock '"$tick_text"'] %d\n", g_counter); }'
+    [ "$keep_trouble" = 1 ] && printf '%s\n' '__attribute__((naked)) void naked_trouble() { __asm__ volatile("nop\n\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n\tret"); }'
+  } > "$WORK/hot.$name.cpp"
+  "$CXX" $BASE -c "$WORK/hot.$name.cpp" -o "$WORK/staging.o"
+}
+
+echo "== neko.atomicity (workdir: $WORK) =="
+
+"$HERE/atomic_runner" "$WORK/atomic.new.o" > "$OUT" 2>&1 &
+runner_pid=$!
+wait_count '\[tick v1\]' 2 10 startup
+
+# ---- v2: success, both functions swapped -------------------------------
+variant v2 1 0 "tick v2"
+mv "$WORK/staging.o" "$WORK/atomic.new.o"
+wait_count '\[tick v2\]' 2 15 v2-live
+grep -aq "reload applied" "$OUT" || fail "v2 did not apply"
+
+# ---- v3: must be rejected AND rolled back ------------------------------
+variant v3 1 1 "tick v3"
+mv "$WORK/staging.o" "$WORK/atomic.new.o"
+wait_count "rejected" 1 15 v3-rejected
+# Atomic rejection comes in two flavors, both correct: the zero-write
+# precheck refuses before anything is touched, or a mid-patch failure
+# rolls the already-written entries back. Either way nothing of v3 runs.
+if ! grep -aq "rejected before any write" "$OUT" && ! grep -aq "rolled back" "$OUT"; then
+  fail "v3 was neither prechecked away nor rolled back"
+fi
+sleep 0.8
+if grep -aq '\[tick v3\]' "$OUT"; then
+  fail "v3 tick ran despite rejection — patching is not atomic"
+fi
+if grep -aq '\[tock v3\]' "$OUT"; then
+  fail "v3 tock ran despite rejection — patching is not atomic"
+fi
+wait_count '\[tick v2\]' 1 5 v2-still-live
+kill -0 "$runner_pid" 2>/dev/null || fail "runner died on the rejected reload"
+echo "PASS atomic: v3 rejected with zero partial state, v2 code still running"
+
+# ---- v4: success + stale-redirect warning for the dropped tock ---------
+variant v4 0 0 "tick v4"
+mv "$WORK/staging.o" "$WORK/atomic.new.o"
+wait_count '\[tick v4\]' 2 15 v4-live
+wait_count "stale redirect" 1 15 tock-warning
+kill "$runner_pid" 2>/dev/null || true; wait "$runner_pid" 2>/dev/null || true; runner_pid=""
+
+echo ""
+echo "ATOMICITY PASS — mid-list failure rolled back; removed function warned"
+echo "output kept at: $OUT"

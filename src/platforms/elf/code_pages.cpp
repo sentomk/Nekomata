@@ -1,5 +1,7 @@
 #include "code_pages.hpp"
 
+#include <neko/log.hpp>
+
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -110,7 +112,7 @@ bool code_pages::commit_code(void* reservation, const void* image, std::uint64_t
   return true;
 }
 
-bool code_pages::patch_entry(std::uintptr_t entry, void* target) {
+bool code_pages::patchable_entry(std::uintptr_t entry, void* target) const {
   const auto* code = reinterpret_cast<const std::uint8_t*>(entry);
   const bool prologue_push_rbp =
       code[0] == 0x55 && code[1] == 0x48 && code[2] == 0x89 && code[3] == 0xE5;
@@ -130,12 +132,29 @@ bool code_pages::patch_entry(std::uintptr_t entry, void* target) {
   if (!patchable) {
     return false; // unknown entry contents — refuse to overwrite blindly
   }
-
   const std::uintptr_t dst = reinterpret_cast<std::uintptr_t>(target);
   const std::int64_t rel = static_cast<std::int64_t>(dst) - static_cast<std::int64_t>(entry + 5);
-  if (rel > 0x7FFF'FFFF || rel < -0x8000'0000LL) {
-    return false; // out of `jmp rel32` range
+  return rel <= 0x7FFF'FFFF && rel >= -0x8000'0000LL; // `jmp rel32` reach
+}
+
+bool code_pages::precheck_entry(std::uintptr_t entry, void* target) {
+  return patchable_entry(entry, target);
+}
+
+bool code_pages::snapshot_entry(std::uintptr_t entry, std::uint8_t out[5]) {
+  if (!patchable_entry(entry, reinterpret_cast<void*>(entry))) {
+    return false; // do not even read entries we would refuse to write
   }
+  std::memcpy(out, reinterpret_cast<const void*>(entry), 5);
+  return true;
+}
+
+bool code_pages::patch_entry(std::uintptr_t entry, void* target) {
+  if (!patchable_entry(entry, target)) {
+    return false;
+  }
+  const std::uintptr_t dst = reinterpret_cast<std::uintptr_t>(target);
+  const std::int64_t rel = static_cast<std::int64_t>(dst) - static_cast<std::int64_t>(entry + 5);
 
   // Flip the page writable, write E9 <rel32>, flip back to r-x.
   const std::uint64_t page = page_size();
@@ -148,7 +167,32 @@ bool code_pages::patch_entry(std::uintptr_t entry, void* target) {
   auto* patch = reinterpret_cast<std::uint8_t*>(entry);
   patch[0] = 0xE9;
   std::memcpy(patch + 1, &rel, sizeof(std::int32_t));
-  mprotect(reinterpret_cast<void*>(page_start), page_len, PROT_READ | PROT_EXEC);
+  if (mprotect(reinterpret_cast<void*>(page_start), page_len, PROT_READ | PROT_EXEC) != 0) {
+    // The redirect is written and executable, so the patch functionally
+    // succeeded — but the page stays writable+executable, breaking W^X.
+    // That degradation must be visible, not silent.
+    neko::log(neko::log_level::error,
+              "restoring r-x on a patched page failed (%s): page stays writable\n",
+              std::strerror(errno));
+  }
+  __builtin___clear_cache(reinterpret_cast<char*>(entry), reinterpret_cast<char*>(entry + 5));
+  return true;
+}
+
+bool code_pages::restore_entry(std::uintptr_t entry, const std::uint8_t original[5]) {
+  const std::uint64_t page = page_size();
+  const std::uintptr_t page_start = entry & ~(page - 1);
+  const std::uint64_t page_len = page * 2; // entry may straddle two pages
+  if (mprotect(reinterpret_cast<void*>(page_start), page_len, PROT_READ | PROT_WRITE | PROT_EXEC) !=
+      0) {
+    return false;
+  }
+  std::memcpy(reinterpret_cast<void*>(entry), original, 5);
+  if (mprotect(reinterpret_cast<void*>(page_start), page_len, PROT_READ | PROT_EXEC) != 0) {
+    neko::log(neko::log_level::error,
+              "restoring r-x on a rolled-back page failed (%s): page stays writable\n",
+              std::strerror(errno));
+  }
   __builtin___clear_cache(reinterpret_cast<char*>(entry), reinterpret_cast<char*>(entry + 5));
   return true;
 }

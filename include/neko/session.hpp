@@ -20,6 +20,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <neko/runtime/fwd.hpp>
@@ -55,6 +56,10 @@ private:
 
   backend_bundle backends_;
   std::vector<std::filesystem::path> watched_;
+  /// Functions redirected by the last fully-applied load, by name. Used to
+  /// warn when a later load drops a function whose entry still jumps to
+  /// stale arena code.
+  std::unordered_map<std::string, std::uintptr_t> last_redirected_;
 };
 
 } // namespace neko

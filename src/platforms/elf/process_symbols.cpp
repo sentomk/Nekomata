@@ -87,11 +87,11 @@ process_symbols::process_symbols() {
         continue;
       }
       if (type == STT_FUNC) {
-        function_index_[name] = functions_.size();
+        function_index_[name].push_back(functions_.size());
         functions_.push_back({name, static_cast<std::uintptr_t>(sym.st_value),
                               static_cast<std::size_t>(sym.st_size)});
       } else {
-        global_index_[name] = globals_.size();
+        global_index_[name].push_back(globals_.size());
         globals_.push_back({name, static_cast<std::uintptr_t>(sym.st_value),
                             static_cast<std::size_t>(sym.st_size)});
       }
@@ -108,12 +108,26 @@ std::vector<function_info> process_symbols::all_functions() const {
 
 std::optional<function_info> process_symbols::function_by_name(std::string_view name) const {
   const auto it = function_index_.find(std::string(name));
-  return it != function_index_.end() ? std::optional(functions_[it->second]) : std::nullopt;
+  return it != function_index_.end() && !it->second.empty()
+             ? std::optional(functions_[it->second.front()])
+             : std::nullopt;
+}
+
+std::size_t process_symbols::count_functions(std::string_view name) const {
+  const auto it = function_index_.find(std::string(name));
+  return it != function_index_.end() ? it->second.size() : 0;
+}
+
+std::size_t process_symbols::count_globals(std::string_view name) const {
+  const auto it = global_index_.find(std::string(name));
+  return it != global_index_.end() ? it->second.size() : 0;
 }
 
 std::optional<global_variable> process_symbols::global_by_name(std::string_view name) const {
   const auto it = global_index_.find(std::string(name));
-  return it != global_index_.end() ? std::optional(globals_[it->second]) : std::nullopt;
+  return it != global_index_.end() && !it->second.empty()
+             ? std::optional(globals_[it->second.front()])
+             : std::nullopt;
 }
 
 type_layout process_symbols::layout_of(type_id id) const {
@@ -124,8 +138,9 @@ type_layout process_symbols::layout_of(type_id id) const {
 
 void* process_symbols::map_global(std::string_view name) {
   const auto it = global_index_.find(std::string(name));
-  return it != global_index_.end() ? reinterpret_cast<void*>(globals_[it->second].address)
-                                   : nullptr;
+  return it != global_index_.end() && !it->second.empty()
+             ? reinterpret_cast<void*>(globals_[it->second.front()].address)
+             : nullptr;
 }
 
 void* process_symbols::resolve_external(std::string_view name) {

@@ -42,9 +42,13 @@ public:
 
   void* reserve_code_near(std::uintptr_t hint, std::uint64_t bytes) override;
   bool commit_code(void* reservation, const void* image, std::uint64_t bytes) override;
+  bool precheck_entry(std::uintptr_t entry, void* target) override;
+  bool snapshot_entry(std::uintptr_t entry, std::uint8_t out[5]) override;
   bool patch_entry(std::uintptr_t entry, void* target) override;
+  bool restore_entry(std::uintptr_t entry, const std::uint8_t original[5]) override;
 
 private:
+  bool patchable_entry(std::uintptr_t entry, void* target) const;
   bool owns_address(std::uintptr_t address) const;
 
   struct arena_range {

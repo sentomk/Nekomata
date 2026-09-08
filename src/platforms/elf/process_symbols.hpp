@@ -32,6 +32,8 @@ public:
 
   std::vector<function_info> all_functions() const override;
   std::optional<function_info> function_by_name(std::string_view name) const override;
+  std::size_t count_functions(std::string_view name) const override;
+  std::size_t count_globals(std::string_view name) const override;
   std::optional<global_variable> global_by_name(std::string_view name) const override;
   type_layout layout_of(type_id id) const override;
 
@@ -43,8 +45,8 @@ public:
 private:
   std::vector<function_info> functions_;
   std::vector<global_variable> globals_;
-  std::unordered_map<std::string, std::size_t> function_index_;
-  std::unordered_map<std::string, std::size_t> global_index_;
+  std::unordered_map<std::string, std::vector<std::size_t>> function_index_;
+  std::unordered_map<std::string, std::vector<std::size_t>> global_index_;
 };
 
 } // namespace neko::elf

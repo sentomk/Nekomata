@@ -182,6 +182,10 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
       // which is the only thing a rel32 can reach. Truly external
       // targets fall through to dlsym — and may then legitimately fail
       // the range check below (a documented current boundary).
+      if (symbols_.count_globals(sym.name) > 1) {
+        throw std::runtime_error("ambiguous global '" + sym.name +
+                                 "' — refusing to bind state by name");
+      }
       if (auto existing = symbols_.global_by_name(sym.name)) {
         return existing->address;
       }
@@ -293,6 +297,12 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     }
     if (obj.sections[sym.section_index].cls != section_class::text) {
       continue;
+    }
+    const auto duplicates = symbols_.count_functions(sym.name);
+    if (duplicates > 1) {
+      throw std::runtime_error("ambiguous function '" + sym.name + "' (" +
+                               std::to_string(duplicates) +
+                               " symbols share the name) — refusing to patch by name");
     }
     const auto old = symbols_.function_by_name(sym.name);
     if (!old) {

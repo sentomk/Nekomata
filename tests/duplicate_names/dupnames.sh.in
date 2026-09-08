@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# neko.dupnames — same-named statics across TUs must not cross-patch.
+#
+# The host links a.cpp + b.cpp, both defining static int value(). We offer a
+# fresh object of a.cpp v2 (value -> 100). Correct behavior: the symbol
+# `value` is ambiguous in the host, the offer is REJECTED loudly, and both
+# a_value() and b_value() keep returning their original values. The
+# name-only matcher would patch b.cpp's copy (or a.cpp's, arbitrarily) and
+# b would silently start reporting 100.
+set -euo pipefail
+
+CXX="@CMAKE_CXX_COMPILER@"
+SRC="@CMAKE_CURRENT_SOURCE_DIR@"
+HERE="@CMAKE_CURRENT_BINARY_DIR@"
+WORK="${1:-$(mktemp -d /tmp/neko-dup.XXXXXX)}"
+OUT="$WORK/out.txt"
+: > "$OUT"
+
+BASE="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
+
+runner_pid=""
+cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+trap cleanup EXIT
+
+fail() { echo "FAIL: $1"; tail -6 "$OUT"; exit 1; }
+wait_count() {
+  local pattern="$1" min="$2" timeout="$3" label="$4" waited=0 n
+  while :; do
+    n=$(grep -ac -- "$pattern" "$OUT" || true)
+    [ "$n" -ge "$min" ] && return 0
+    sleep 0.15; waited=$((waited + 1))
+    if [ "$waited" -gt $((timeout * 6)) ]; then
+      echo "FAIL($label): '$pattern' x$n < $min"; tail -5 "$OUT"; exit 1
+    fi
+  done
+}
+
+echo "== neko.dupnames (workdir: $WORK) =="
+
+"$HERE/dup_runner" "$WORK/dup.new.o" > "$OUT" 2>&1 &
+runner_pid=$!
+wait_count '\[a=1 b=2\]' 3 10 startup
+
+# a.cpp v2: same-named static now returns 100.
+sed 's|return 1;|return 100;|' "$SRC/a.cpp" > "$WORK/a.v2.cpp"
+"$CXX" $BASE -c "$WORK/a.v2.cpp" -o "$WORK/dup.new.o"
+
+wait_count "ambiguous" 1 15 ambiguous-rejection
+sleep 0.8
+kill -0 "$runner_pid" 2>/dev/null || fail "runner died on the ambiguous offer"
+if grep -aq '\[a=100' "$OUT"; then
+  fail "a.cpp's code was patched despite ambiguity"
+fi
+if grep -aq 'b=100' "$OUT"; then
+  fail "b.cpp's same-named static was patched — wrong-function redirect"
+fi
+wait_count '\[a=1 b=2\]' 1 5 unchanged
+
+kill "$runner_pid" 2>/dev/null || true; wait "$runner_pid" 2>/dev/null || true; runner_pid=""
+
+echo ""
+echo "DUPNAMES PASS — ambiguous symbol refused, no cross-TU patching"
+echo "output kept at: $OUT"

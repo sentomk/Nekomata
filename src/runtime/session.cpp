@@ -5,6 +5,7 @@
 #include <neko/runtime/object_loader.hpp>
 #include <neko/runtime/patch_planner.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -92,17 +93,65 @@ bool reload_session::try_load(const std::filesystem::path& path) {
 
   const loaded_image image = backends_.loader->load(bytes.data(), bytes.size());
 
-  std::size_t redirected = 0;
+  // Plan first (the planner owns "what does this object cover"): it is the
+  // seam the future dependency graph grows into.
+  change_set changes;
+  changes.changed_files.push_back(path.string());
+  const auto plans = backends_.planner->plan(changes);
+  neko::log(neko::log_level::info, "plan covers %zu translation unit(s)\n", plans.size());
+
+  // Two-phase commit: precheck EVERY entry without writing a byte, snapshot
+  // every entry, then patch. Any failure rolls already-written entries back
+  // in reverse order, so a reload is all-or-nothing.
   for (const auto& replacement : image.replacements) {
-    const auto* target = static_cast<const std::uint8_t*>(image.code) + replacement.offset_in_image;
-    if (!backends_.substituter->patch_entry(replacement.old_entry,
-                                            const_cast<std::uint8_t*>(target))) {
-      throw std::runtime_error("failed to patch entry of " + replacement.name);
+    auto* target = static_cast<std::uint8_t*>(image.code) + replacement.offset_in_image;
+    if (!backends_.substituter->precheck_entry(replacement.old_entry, target)) {
+      throw std::runtime_error("reload rejected before any write: cannot patch entry of " +
+                               replacement.name);
     }
-    ++redirected;
+  }
+  struct saved_entry {
+    std::uintptr_t entry;
+    std::uint8_t original[5];
+  };
+  std::vector<saved_entry> saved;
+  saved.reserve(image.replacements.size());
+  for (const auto& replacement : image.replacements) {
+    auto* target = static_cast<std::uint8_t*>(image.code) + replacement.offset_in_image;
+    saved_entry entry{};
+    entry.entry = replacement.old_entry;
+    if (!backends_.substituter->snapshot_entry(replacement.old_entry, entry.original) ||
+        !backends_.substituter->patch_entry(replacement.old_entry, target)) {
+      for (auto it = saved.rbegin(); it != saved.rend(); ++it) {
+        backends_.substituter->restore_entry(it->entry, it->original);
+      }
+      throw std::runtime_error("reload rejected and rolled back " + std::to_string(saved.size()) +
+                               " entr" + (saved.size() == 1 ? "y" : "ies") +
+                               ": cannot patch entry of " + replacement.name);
+    }
+    saved.push_back(entry);
   }
 
-  neko::log(neko::log_level::ok, "reload applied: %zu function(s) redirected\n", redirected);
+  // Warn about functions this load dropped: their old entries still jump to
+  // the previous arena copy, so calls silently run stale code.
+  for (const auto& previous : last_redirected_) {
+    const auto& name = previous.first;
+    const bool still_present =
+        std::any_of(image.replacements.begin(), image.replacements.end(),
+                    [&](const function_replacement& repl) { return repl.name == name; });
+    if (!still_present) {
+      neko::log(neko::log_level::warn,
+                "stale redirect: '%s' was removed but its entry still jumps to old code\n",
+                name.c_str());
+    }
+  }
+  last_redirected_.clear();
+  for (const auto& replacement : image.replacements) {
+    last_redirected_[replacement.name] = replacement.old_entry;
+  }
+
+  neko::log(neko::log_level::ok, "reload applied: %zu function(s) redirected\n",
+            image.replacements.size());
   return true;
 }
 
