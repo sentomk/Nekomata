@@ -344,13 +344,9 @@ Platform notes:
 
 ## Contributing
 
-The project is pre-alpha and its interfaces are still evolving. Start with
-this README and the runnable examples, and open an issue or discussion for
-anything from API shape to backend design.
-
-Naming follows the C++ standard library style: `snake_case` everywhere, types
-included (like `std::string_view`). Commit messages use Conventional Commits,
-with identifiers wrapped in backticks.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions, the testing
+doctrine, and the suite map; [AGENTS.md](AGENTS.md) carries the same
+rules for AI coding agents.
 
 ## License
 
