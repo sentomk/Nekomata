@@ -11,6 +11,7 @@ project(nekomata
 option(NEKOMATA_BUILD_TESTS "Build nekomata tests" ON)
 option(NEKOMATA_BUILD_TOOLS "Build nekomata command line tools" ON)
 option(NEKOMATA_BUILD_EXAMPLES "Build nekomata examples" ON)
+option(NEKOMATA_BUILD_FUZZ "Build libFuzzer targets (Clang only)" OFF)
 option(NEKOMATA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(NEKOMATA_ENABLE_SANITIZERS "Build with ASan+UBSan (Clang/GCC only)" OFF)
 option(NEKOMATA_ENABLE_CLANG_TIDY "Run clang-tidy on nekomata code during builds" OFF)

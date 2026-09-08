@@ -1,6 +1,9 @@
 {
   "version": 3,
-  "cmakeMinimumRequired": { "major": 3, "minor": 21 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21
+  },
   "configurePresets": [
     {
       "name": "base",
@@ -17,54 +20,104 @@
     {
       "name": "debug",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     },
     {
       "name": "release",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     },
     {
       "name": "asan",
       "inherits": "debug",
-      "cacheVariables": { "NEKOMATA_ENABLE_SANITIZERS": "ON" }
+      "cacheVariables": {
+        "NEKOMATA_ENABLE_SANITIZERS": "ON"
+      }
     },
     {
       "name": "tidy",
       "inherits": "debug",
-      "cacheVariables": { "NEKOMATA_ENABLE_CLANG_TIDY": "ON" }
+      "cacheVariables": {
+        "NEKOMATA_ENABLE_CLANG_TIDY": "ON"
+      }
+    },
+    {
+      "name": "fuzz",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "NEKOMATA_BUILD_FUZZ": "ON"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "debug", "configurePreset": "debug" },
-    { "name": "release", "configurePreset": "release" },
-    { "name": "asan", "configurePreset": "asan" },
-    { "name": "tidy", "configurePreset": "tidy" }
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "tidy",
+      "configurePreset": "tidy"
+    },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz"
+    }
   ],
   "testPresets": [
     {
       "name": "debug",
       "configurePreset": "debug",
-      "execution": { "noTestsAction": "error" },
-      "output": { "outputOnFailure": true }
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "release",
       "configurePreset": "release",
-      "execution": { "noTestsAction": "error" },
-      "output": { "outputOnFailure": true }
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "asan",
       "configurePreset": "asan",
-      "execution": { "noTestsAction": "error" },
-      "output": { "outputOnFailure": true }
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "tidy",
       "configurePreset": "tidy",
-      "execution": { "noTestsAction": "error" },
-      "output": { "outputOnFailure": true }
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

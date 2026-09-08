@@ -120,4 +120,24 @@ jobs:
       - name: Check formatting
         run: bash scripts/format.sh --check
 
+  fuzz:
+    name: fuzz burst / libFuzzer, 4 min
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure
+        run: cmake --preset fuzz
+
+      - name: Build fuzz targets
+        run: cmake --build --preset fuzz
+
+      - name: Replay corpus + explore (4 min)
+        run: |
+          ./build/fuzz/tests/fuzz/fuzz_parse_object tests/fuzz/corpus \
+            -max_total_time=240 -rss_limit_mb=2560 -print_final_stats=1
+
   # The Windows PE/PDB backend and MSVC build matrix are planned work.

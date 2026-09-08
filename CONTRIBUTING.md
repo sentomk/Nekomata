@@ -57,6 +57,8 @@ Two rules follow from this:
 | `tests/rejections/` | every boundary rejects loudly; process survives; old code keeps running |
 | `tests/elf/`, `tests/dwarf/` | offline ELF/DWARF inspection |
 | `tests/harness/`, `tests/headers/`, `tests/public_api.cpp` | test infrastructure, header hygiene, API shape |
+| `tests/soak/` | multi-generation reload soak: state continuity + arena accounting |
+| `tests/fuzz/` | libFuzzer on the ELF parser; corpus doubles as regression inputs |
 
 ## CI
 
