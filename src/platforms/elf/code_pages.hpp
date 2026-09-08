@@ -4,7 +4,7 @@
 // therefore mmap'd as close to the functions it replaces as the kernel lets
 // us (hinted allocation, distance-checked, retried in 128 MiB steps).
 //
-// Entry patching safety at -O0 (Phase 1 assumptions, guarded at runtime):
+// Entry patching safety at -O0 (current assumptions, guarded at runtime):
 //   * prologue `push rbp; mov rbp,rsp` (55 48 89 E5) — overwriting the
 //     first 5 bytes splits `sub rsp, N`'s encoding, which is fine because
 //     nothing branches into the first 8 bytes of an -O0 frame function
@@ -41,7 +41,7 @@ private:
     std::uintptr_t begin;
     std::uintptr_t end;
   };
-  /// Arenas allocated so far (never freed in Phase 1). Registrations let
+  /// Arenas allocated so far (never freed today). Registrations let
   /// patch_entry prove that an E9 at an entry is one of ours.
   std::vector<arena_range> arenas_;
 };

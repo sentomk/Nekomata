@@ -1,4 +1,4 @@
-# PE binary backend (Windows) — Phase 3.
+# PE binary backend (Windows) — not implemented yet.
 #
 # Planned scope:
 #   * PE relocation processing for freshly compiled code

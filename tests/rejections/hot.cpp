@@ -1,7 +1,7 @@
 // hot.cpp — baseline TU for the rejection-cases harness. Deliberately a
 // single function: a failed entry patch on a one-function image leaves the
 // process in a clean, unpatched state (multi-function transactionality is
-// a documented Phase 2 boundary).
+// a documented current boundary).
 
 #include <cstdio>
 

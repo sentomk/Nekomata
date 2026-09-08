@@ -4,8 +4,8 @@
 // resolves to old state, new code, or an external trampoline. Keep it separate
 // from the executable-memory and entry-patching responsibilities of code_substituter.
 //
-// Backends: ELF64 relocatable objects (Linux, Phase 1), PE/COFF (Windows,
-// Phase 3).
+// Backends: ELF64 relocatable objects (Linux, today), PE/COFF (Windows,
+// planned).
 
 #pragma once
 

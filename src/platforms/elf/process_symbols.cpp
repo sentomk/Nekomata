@@ -46,8 +46,8 @@ process_symbols::process_symbols() {
     throw std::runtime_error("/proc/self/exe: not ELF64 little-endian");
   }
   if (ehdr->e_type == ET_DYN) {
-    throw std::runtime_error("/proc/self/exe is position-independent (PIE); Phase 1 requires a "
-                             "-no-pie build (load-base detection arrives in Phase 2)");
+    throw std::runtime_error("/proc/self/exe is position-independent (PIE), which is not "
+                             "supported yet — relink with -no-pie");
   }
 
   const std::uint16_t shnum = ehdr->e_shnum;
@@ -115,7 +115,7 @@ std::optional<global_variable> process_symbols::global_by_name(std::string_view 
 type_layout process_symbols::layout_of(type_id id) const {
   type_layout layout;
   layout.id = id;
-  return layout; // Phase 5 territory.
+  return layout; // layout queries are not meaningful yet.
 }
 
 void* process_symbols::map_global(std::string_view name) {

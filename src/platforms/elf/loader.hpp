@@ -1,4 +1,4 @@
-// loader — the ELF backend's "runtime mini-link" (Phase 1).
+// loader — the ELF backend's "runtime mini-link" .
 //
 // Pipeline:
 //   1. parse the fresh .o                    (object_file)
@@ -11,7 +11,7 @@
 //   4. apply .rela.* relocations of text sections into the image
 //   5. hand the image to code_substituter for commit + entry patching
 //
-// Phase 1 limits (documented, detected and reported loudly):
+// Current limits (documented, detected and reported loudly):
 //   * new mutable globals in fresh code (no existing storage to map onto)
 //   * relocations in data sections (pointer initializers)
 //   * R_X86_64_GOT-style relocations (the demo TU is built -fno-pic)

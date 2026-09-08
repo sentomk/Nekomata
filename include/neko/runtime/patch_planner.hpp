@@ -1,10 +1,10 @@
 // patch_planner — from changed files to a reload plan.
 //
 // Answers "what does this change break?": which translation units must be
-// recompiled (dependency graph, seeded by compiler `.d` files — Phase 2)
+// recompiled (dependency graph, seeded by compiler `.d` files — planned)
 // before a reload can be offered.
 //
-// Phase 1 validation: the interface shape held; the Phase 1 implementation
+// Validation: the interface shape held; the prototype implementation
 // is the trivial_planner in src/runtime/ (every changed file is one TU to rebuild).
 
 #pragma once

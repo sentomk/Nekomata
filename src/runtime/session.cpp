@@ -32,8 +32,8 @@ std::vector<std::uint8_t> read_file(const std::filesystem::path& path) {
 
 } // namespace
 
-// Phase 1 planner: every changed file is one translation unit to rebuild.
-// Real dependency graphs (compiler .d files) arrive in Phase 2.
+// Trivial planner: every changed file is one translation unit to rebuild.
+// Real dependency graphs (compiler .d files) are planned.
 class trivial_planner final : public patch_planner {
 public:
   std::vector<patch_plan> plan(const change_set& changes) const override {

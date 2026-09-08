@@ -50,9 +50,9 @@ while [ ! -f "$stop_file" ]; do
       2) echo "truncated object file" ;;
       3) if [ "$mode" != reject_stale_truncated ]; then echo "truncated object file"; fi ;;
       4) echo "reload applied" ;;
-      5) echo "new globals are Phase 2 territory" ;;
-      6) echo "cross-TU references are Phase 2 territory" ;;
-      7) echo "inconsistent state anchors — layout changed (Phase 5)" ;;
+      5) echo "new globals are not supported yet" ;;
+      6) echo "cross-translation-unit references are not supported yet" ;;
+      7) echo "inconsistent state anchors — the global layout changed" ;;
       8) echo "GOT-style relocs need -fno-pic" ;;
       9)
         if [ "$mode" != reject_stale_final ]; then

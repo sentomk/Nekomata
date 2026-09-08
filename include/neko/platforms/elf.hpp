@@ -6,7 +6,7 @@
 
 namespace neko::elf {
 
-/// Assemble the Phase 1 Linux/ELF backend: process symbols (also serving as
+/// Assemble the Linux/ELF backend: process symbols (also serving as
 /// state manager), mmap-based code pages and the object loader.
 neko::backend_bundle create_backend();
 

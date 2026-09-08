@@ -1,8 +1,8 @@
 // process_symbols — the live process's own symbol table.
 //
-// Phase 1 reads the ELF .symtab of /proc/self/exe. This requires the binary
+// Today this reads the ELF .symtab of /proc/self/exe. This requires the binary
 // to be built -no-pie (link-time addresses == runtime addresses) and not
-// stripped — both are demo build choices; PIE support arrives in Phase 2
+// stripped — both are demo build choices; PIE support is planned
 // via load-base detection (dl_iterate_phdr).
 //
 // Implements both symbol_provider (where are the functions/globals) and

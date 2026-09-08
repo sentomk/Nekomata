@@ -4,7 +4,7 @@
 // existing code that a 5-byte `jmp rel32` reaches (±2 GiB), placing a
 // relocated image into them, and rewriting function entry points.
 //
-// Backends: mmap/mprotect (POSIX, Phase 1), VirtualProtect (Windows, Phase 3).
+// Backends: mmap/mprotect (POSIX, today), VirtualProtect (Windows, planned).
 //
 // rel32 reachability requires an allocation hint, hence reserve_code_near(hint, bytes).
 // Relocations belong to the object_loader, which has the symbol context.

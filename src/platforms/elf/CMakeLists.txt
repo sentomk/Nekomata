@@ -1,4 +1,4 @@
-# ELF binary backend (Linux) — Phase 1 (single-TU hot reload prototype).
+# ELF binary backend (Linux) — single-TU hot reload prototype.
 #
 # object_file     minimal ELF64 relocatable reader (sections/symbols/rela)
 # process_symbols /proc/self/exe .symtab + dlsym; symbol_provider+state_manager

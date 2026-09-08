@@ -1,5 +1,5 @@
-# Examples. Phase 1 ships one Linux/ELF demo; more platforms follow their
-# backend phases (Windows/PE with Phase 3).
+# Examples. Today one Linux/ELF demo ships; more platforms follow
+# their backends (Windows/PE, planned).
 if(NEKOMATA_TARGET_LINUX)
   add_subdirectory(hello_reload)
 else()

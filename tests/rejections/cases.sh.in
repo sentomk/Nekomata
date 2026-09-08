@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# neko.rejections — Phase 1 boundary tests: every known-bad input must be
+# neko.rejections — boundary tests: every known-bad input must be
 # rejected with a SPECIFIC message, the process must survive, and the old
 # code must keep running. One runner process absorbs all the broken drops
 # sequentially; a second (PIE) runner asserts the startup rejection.
@@ -155,7 +155,7 @@ expect_case truncated "$WORK/staging.o" "truncated object file"
 # guard checks the OLD entry (built -O0), and the fresh -O2 body needs no
 # prologue at all, just valid relocations. We pin that truth and the real
 # invariant: state continuity, no crash. (-O2 is NOT a supported config —
-# Phase 4 — cross-TU inlining will reject loudly once it appears.)
+# cross-TU inlining will reject loudly once it appears.)
 "$CXX" -std=c++20 -O2 -fno-pie -fno-pic -fno-exceptions \
   -fno-asynchronous-unwind-tables -c "$SRC/hot.cpp" -o "$WORK/staging.o"
 o2_cursor=$(log_cursor "$OUT")
@@ -171,16 +171,16 @@ echo "PASS flags_o2_applies_incidentally"
 
 # 5. fresh code introduces a new mutable global
 build_variant 's|static int s_calls = 0;|static int s_calls = 0; int g_extra = 1;|; s|++g_counter;|++g_counter; g_extra += 2;|'
-expect_case new_global "$WORK/staging.o" "new globals are Phase 2 territory"
+expect_case new_global "$WORK/staging.o" "new globals are not supported yet"
 
 # 6. cross-TU reference (host_only lives in the runner)
 build_variant 's|#include <cstdio>|#include <cstdio>\nvoid host_only();|; s|++s_calls;|++s_calls; host_only();|'
-expect_case cross_tu "$WORK/staging.o" "cross-TU references are Phase 2 territory"
+expect_case cross_tu "$WORK/staging.o" "cross-translation-unit references are not supported yet"
 
 # 7. existing global changed size (int -> long): layout drift must be
 #    caught by the data-section anchor consistency check
 build_variant 's|int g_counter = 0;|long g_counter = 0;|'
-expect_case size_change "$WORK/staging.o" "inconsistent state anchors — layout changed (Phase 5)"
+expect_case size_change "$WORK/staging.o" "inconsistent state anchors — the global layout changed"
 
 # 8. GOT-style relocations (-fpic hot TU)
 "$CXX" -std=c++20 -O0 -fpic -fno-exceptions -fno-asynchronous-unwind-tables \

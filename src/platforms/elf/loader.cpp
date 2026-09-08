@@ -100,8 +100,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     void* target = process_symbols::resolve_external(sym.name);
     if (target == nullptr) {
       throw std::runtime_error("cannot resolve external symbol '" + sym.name +
-                               "' (cross-TU references are Phase 2 "
-                               "territory)");
+                               "' (cross-translation-unit references are not supported yet)");
     }
     image_size = align_up(image_size, kSectionAlign);
     trampoline_offset_for_symbol[rel.symbol_index] = image_size;
@@ -152,7 +151,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
   // `<data section> + addend` relocations (st_value + RIP adjustment), so a
   // data section needs an OLD base address. We anchor it on the named
   // OBJECT symbols of that section: old_base = old_addr(sym) - sym.value.
-  // All anchors must agree; drift means the layout changed (Phase 5).
+  // All anchors must agree; drift means the layout changed.
   std::vector<std::optional<std::uintptr_t>> data_base(obj.sections.size());
   for (const auto& sym : obj.symbols) {
     if (sym.type != STT_OBJECT || sym.section_index >= obj.sections.size()) {
@@ -169,7 +168,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     auto& slot = data_base[sym.section_index];
     if (slot && *slot != anchor) {
       throw std::runtime_error("data section '" + obj.sections[sym.section_index].name +
-                               "' has inconsistent state anchors — layout changed (Phase 5)");
+                               "' has inconsistent state anchors — the global layout changed");
     }
     slot = anchor;
   }
@@ -182,7 +181,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
       // copy-relocated them (stdout et al.) into our own data segment,
       // which is the only thing a rel32 can reach. Truly external
       // targets fall through to dlsym — and may then legitimately fail
-      // the range check below (documented Phase 1 boundary).
+      // the range check below (a documented current boundary).
       if (auto existing = symbols_.global_by_name(sym.name)) {
         return existing->address;
       }
@@ -213,14 +212,14 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
       void* existing = state_.map_global(sym.name);
       if (existing == nullptr) {
         throw std::runtime_error("fresh code introduces mutable symbol '" + sym.name +
-                                 "' with no existing storage — new globals are Phase 2 "
-                                 "territory");
+                                 "' with no existing storage — new globals are not supported yet");
       }
       if (auto old = symbols_.global_by_name(sym.name);
           old && sym.size != 0 && sym.size != old->size) {
-        throw std::runtime_error("global '" + sym.name + "' changed size (" +
-                                 std::to_string(old->size) + " -> " + std::to_string(sym.size) +
-                                 ") — layout migration is Phase 5 territory");
+        throw std::runtime_error(
+            "global '" + sym.name + "' changed size (" + std::to_string(old->size) + " -> " +
+            std::to_string(sym.size) +
+            ") — changing the layout of existing globals is not supported yet");
       }
       return reinterpret_cast<std::uintptr_t>(existing);
     }
@@ -237,7 +236,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     }
     const auto& target = obj.sections[rel.target_section];
     if (target.cls != section_class::text) {
-      continue; // .rela.data/.rela.eh_frame etc. — Phase 2/later
+      continue; // .rela.data/.rela.eh_frame etc. — not handled yet
     }
     if (rel.symbol_index >= obj.symbols.size()) {
       throw std::runtime_error("relocation with bad symbol index");

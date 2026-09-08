@@ -3,9 +3,9 @@
 // Binds the mutable global/static variables of freshly compiled code onto
 // the existing storage of the running process, so state survives the swap.
 //
-// Phase 1 validation: the draft's global_id (a numeric handle) had no
+// Validation: the draft's global_id (a numeric handle) had no
 // producer — name-based lookup is what the loader actually needs, so
-// map_global() now takes the symbol name. Phase 5 extends this interface
+// map_global() now takes the symbol name. Layout migration (planned) extends this interface
 // with layout migration for changed types.
 
 #pragma once

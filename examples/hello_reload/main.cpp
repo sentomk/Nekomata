@@ -1,4 +1,4 @@
-// hello_reload — Phase 1 acceptance demo runner.
+// hello_reload — acceptance demo runner.
 //
 // Integration is the three marked lines: create a session with the ELF
 // backend, watch a path, tick. Everything else is demo scaffolding.

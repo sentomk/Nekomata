@@ -1,4 +1,4 @@
-# PDB symbol backend (Windows) — Phase 3.
+# PDB symbol backend (Windows) — not implemented yet.
 #
 # Planned scope:
 #   * PDB reading via the MS DIA SDK (deliberately not a hand-rolled parser)

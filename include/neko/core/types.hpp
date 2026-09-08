@@ -32,7 +32,7 @@ struct global_variable {
   std::size_t size = 0;
 };
 
-/// Physical layout of a type. Phase 5 (class layout migration) will extend
+/// Physical layout of a type. Class-layout migration (planned) will extend
 /// this with member offsets and vtable information; keep it minimal for now.
 struct type_layout {
   type_id id = 0;

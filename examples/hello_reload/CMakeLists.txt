@@ -6,9 +6,9 @@
 #   1. the process did not restart, yet later calls run the new logic;
 #   2. g_counter / s_calls kept counting across the swap (state preserved).
 #
-# Build requirements (Phase 1 pruning): -no-pie (process_symbols reads the
+# Build requirements (current pruning): -no-pie (process_symbols reads the
 # executable's .symtab and expects link-time == runtime addresses) and -O0
-# (entry-prologue pattern). PIE support arrives in Phase 2.
+# (entry-prologue pattern). PIE support is planned.
 
 add_executable(hello_reload main.cpp hot.cpp)
 target_link_libraries(hello_reload PRIVATE nekomata::backends::elf)
@@ -21,7 +21,7 @@ set_source_files_properties(hot.cpp PROPERTIES
   COMPILE_OPTIONS "-fno-exceptions;-fno-asynchronous-unwind-tables")
 target_link_options(hello_reload PRIVATE -no-pie)
 
-# Phase 1 "build information": the exact compiler command for rebuilding
+# The "build information" answer: the exact compiler command for rebuilding
 # hot.cpp, kept in sync with the flags that linked the original binary.
 configure_file(rebuild_hot.sh.in "${CMAKE_CURRENT_BINARY_DIR}/rebuild_hot.sh" @ONLY)
 configure_file(run_demo.sh.in "${CMAKE_CURRENT_BINARY_DIR}/run_demo.sh" @ONLY)
