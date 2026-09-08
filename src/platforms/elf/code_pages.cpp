@@ -41,21 +41,28 @@ void* code_pages::reserve_code_near(std::uintptr_t hint, std::uint64_t bytes) {
   if (bytes == 0) {
     return nullptr;
   }
-  const std::uint64_t span = round_up(bytes, page_size());
+  const std::uint64_t page = page_size();
+  const std::uint64_t span = round_up(bytes, page);
+  const std::uint64_t total = span + page; // usable span + PROT_NONE guard page
   for (int step = 1; step <= 16; ++step) {
     for (const std::int64_t sign : {std::int64_t{1}, std::int64_t{-1}}) {
       const std::uintptr_t addr = hint + sign * static_cast<std::uintptr_t>(step) * 0x0800'0000ull;
-      void* mapping = mmap(reinterpret_cast<void*>(addr), span, PROT_READ | PROT_WRITE,
+      void* mapping = mmap(reinterpret_cast<void*>(addr), total, PROT_READ | PROT_WRITE,
                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
       if (mapping == MAP_FAILED) {
         continue;
       }
       const auto begin = reinterpret_cast<std::uintptr_t>(mapping);
-      if (within_rel32(begin, hint)) {
-        arenas_.push_back({begin, begin + span});
-        return mapping;
+      if (!within_rel32(begin, hint)) {
+        munmap(mapping, total); // kernel placed it too far away
+        continue;
       }
-      munmap(mapping, span); // kernel placed it too far away
+      if (mprotect(reinterpret_cast<void*>(begin + span), page, PROT_NONE) != 0) {
+        munmap(mapping, total); // cannot arm the guard — try the next hint
+        continue;
+      }
+      arenas_.push_back({begin, begin + span});
+      return mapping;
     }
   }
   return nullptr;
@@ -74,9 +81,29 @@ bool code_pages::commit_code(void* reservation, const void* image, std::uint64_t
   if (reservation == nullptr || image == nullptr || bytes == 0) {
     return false;
   }
-  const std::uint64_t span = round_up(bytes, page_size());
+  // Ownership + span invariant: the image must fit the reservation exactly
+  // as it was sized. A larger image means the layout grew after the
+  // reservation — reject loudly instead of writing past the span (the
+  // guard page would catch it as a crash; this turns it into a message).
+  const auto begin = reinterpret_cast<std::uintptr_t>(reservation);
+  const auto* arena = [&]() -> const arena_range* {
+    for (const auto& a : arenas_) {
+      if (a.begin == begin) {
+        return &a;
+      }
+    }
+    return nullptr;
+  }();
+  if (arena == nullptr) {
+    throw std::runtime_error("commit_code: not a reservation made by this substituter");
+  }
+  if (bytes > arena->end - arena->begin) {
+    throw std::runtime_error(
+        "code image (" + std::to_string(bytes) + " bytes) exceeds its reservation (" +
+        std::to_string(arena->end - arena->begin) + " bytes) — refusing to commit");
+  }
   std::memcpy(reservation, image, bytes);
-  if (mprotect(reservation, span, PROT_READ | PROT_EXEC) != 0) {
+  if (mprotect(reservation, arena->end - arena->begin, PROT_READ | PROT_EXEC) != 0) {
     throw std::runtime_error(std::string("mprotect(PROT_EXEC) failed: ") + std::strerror(errno));
   }
   __builtin___clear_cache(static_cast<char*>(reservation), static_cast<char*>(reservation) + bytes);

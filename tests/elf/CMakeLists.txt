@@ -45,3 +45,12 @@ add_dependencies(neko_elf_relocation_tests neko_elf_debug_objects)
 add_test(NAME neko.elf.debug_relocations COMMAND neko_elf_relocation_tests
   $<TARGET_OBJECTS:neko_elf_debug_objects> COMMAND_EXPAND_LISTS)
 set_tests_properties(neko.elf.debug_relocations PROPERTIES TIMEOUT 30)
+
+add_executable(neko_elf_guard_tests code_pages_guard.cpp)
+target_include_directories(neko_elf_guard_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/elf")
+target_link_libraries(neko_elf_guard_tests PRIVATE neko_backend_elf)
+nekomata_apply_warnings(neko_elf_guard_tests)
+nekomata_apply_sanitizers(neko_elf_guard_tests)
+add_test(NAME neko.elf.guard_pages COMMAND neko_elf_guard_tests)
+set_tests_properties(neko.elf.guard_pages PROPERTIES TIMEOUT 30)

@@ -34,7 +34,7 @@ Four layers, each with a different contract:
 | Layer | Contract | Examples |
 |---|---|---|
 | Test suites | encoded bugs never return | `hello_reload`, `rejections` |
-| Runtime invariants | known bug classes never stay silent | entry-prologue guards, anchor consistency, span checks |
+| Runtime invariants | known bug classes never stay silent | entry-prologue guards, anchor consistency, guard pages, span checks |
 | Fuzz / stress | probabilistic discovery | condition exploration, randomized reload sequences |
 | Review + issues | everything else | — |
 

@@ -4,6 +4,16 @@
 // therefore mmap'd as close to the functions it replaces as the kernel lets
 // us (hinted allocation, distance-checked, retried in 128 MiB steps).
 //
+// Every arena is followed by a PROT_NONE guard page. Any write past the
+// reserved span — from any code path, in any geometry, in test runs and in
+// user processes alike — turns into a deterministic SIGSEGV instead of
+// silent corruption of whatever happens to be mapped next. This is the
+// runtime-invariant layer of the testing contract (see CONTRIBUTING.md):
+// it converts a whole class of geometry-dependent bugs into loud failures.
+//
+// commit_code additionally verifies the image fits its reservation, so
+// overflow attempts are rejected loudly (throwing) before any write.
+//
 // Entry patching safety at -O0 (current assumptions, guarded at runtime):
 //   * prologue `push rbp; mov rbp,rsp` (55 48 89 E5) — overwriting the
 //     first 5 bytes splits `sub rsp, N`'s encoding, which is fine because
@@ -39,10 +49,12 @@ private:
 
   struct arena_range {
     std::uintptr_t begin;
-    std::uintptr_t end;
+    std::uintptr_t end; // exclusive; the guard page lives at [end, end+page)
   };
-  /// Arenas allocated so far (never freed today). Registrations let
-  /// patch_entry prove that an E9 at an entry is one of ours.
+  /// Arenas allocated so far (never freed today). Registrations serve two
+  /// invariants: patch_entry proves an E9 at an entry is one of ours by
+  /// checking the target against these ranges, and commit_code proves the
+  /// image fits before writing a byte.
   std::vector<arena_range> arenas_;
 };
 
