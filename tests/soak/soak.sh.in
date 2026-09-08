@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# neko.soak — randomized multi-generation reload soak.
+#
+# Drops a sequence of logic-only variants (different step/label, identical
+# state variables) into one live process, and asserts, per generation:
+#   * the new label activates (logic swap took effect),
+#   * g_counter advances by exactly the variant's step, s_calls by 1
+#     (state continuity, no reset, also across the swap boundary),
+# and at the end:
+#   * applied == number of dropped variants,
+#   * arenas_after - arenas_before == applied (allocation accounting).
+#
+# Runtime ~20 s. Longer manual runs: SOAK_GENERATIONS / SOAK_TICKS env.
+set -euo pipefail
+
+CXX="@CMAKE_CXX_COMPILER@"
+SRC="@CMAKE_CURRENT_SOURCE_DIR@"
+HERE="@CMAKE_CURRENT_BINARY_DIR@"
+WORK="${1:-$(mktemp -d /tmp/neko-soak.XXXXXX)}"
+OUT="$WORK/out.txt"
+: > "$OUT"
+
+GEN="${SOAK_GENERATIONS:-8}"
+BASE="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
+
+runner_pid=""
+cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+trap cleanup EXIT
+
+fail() { echo "FAIL: $1"; tail -4 "$OUT"; exit 1; }
+
+wait_for() { # wait_for <pattern> <min_count> <timeout_s> <label>
+  local pattern="$1" min="$2" timeout="$3" label="$4" waited=0 n
+  while :; do
+    n=$(grep -ac -- "$pattern" "$OUT" || true)
+    [ "$n" -ge "$min" ] && return 0
+    sleep 0.2; waited=$((waited + 1))
+    if [ "$waited" -gt $((timeout * 5)) ]; then
+      echo "FAIL($label): '$pattern' x$n < $min after ${timeout}s"; tail -4 "$OUT"; exit 1
+    fi
+  done
+}
+
+# snapshot <label> -> "g s" from the label's LAST tick line, read as one
+# consistent line (reading g and s separately races with new ticks).
+snapshot() { grep -a "\[$1\] tick" "$OUT" | tail -1 | sed -n 's/.*g=\([0-9]*\) s=\([0-9]*\).*/\1 \2/p'; }
+first_snapshot() { grep -a "\[$1\] tick" "$OUT" | head -1 | sed -n 's/.*g=\([0-9]*\) s=\([0-9]*\).*/\1 \2/p'; }
+
+echo "== neko.soak: $GEN generations (workdir: $WORK) =="
+
+"$HERE/soak_runner" "$WORK/soak.new.o" 5000 > "$OUT" 2>&1 &
+runner_pid=$!
+wait_for '\[g0\] tick' 2 10 startup
+
+for i in $(seq 1 "$GEN"); do
+  step=$((i + 1))
+  sed -e "s|const int kStep = 1;|const int kStep = $step;|" \
+      -e "s|const char kLabel\[\] = \"g0\";|const char kLabel[] = \"g$i\";|" \
+      "$SRC/hot.cpp" > "$WORK/hot.g$i.cpp"
+  "$CXX" $BASE -c "$WORK/hot.g$i.cpp" -o "$WORK/staging.o" \
+    || fail "variant g$i failed to compile"
+  mv "$WORK/staging.o" "$WORK/soak.new.o"
+
+  wait_for "\[g$i\] tick" 2 15 "gen$i-live"
+
+  read -r g_prev s_prev <<< "$(snapshot "g$i")"
+  sleep 0.6 # let a few ticks land for the delta check
+  read -r g_cur s_cur <<< "$(snapshot "g$i")"
+  # Invariant: every tick adds exactly `step` to g and 1 to s, so the
+  # deltas must satisfy g_delta == step * s_delta (ticks elapsed).
+  g_delta=$((g_cur - g_prev)); s_delta=$((s_cur - s_prev))
+  [ "$s_delta" -gt 0 ] || fail "gen$i: no ticks observed between checks"
+  [ $((g_delta % step)) -eq 0 ] \
+    || fail "gen$i step: g went $g_prev -> $g_cur, not a multiple of $step"
+  [ $((g_delta / step)) -eq "$s_delta" ] \
+    || fail "gen$i ratio: g +$g_delta vs s +$s_delta at step=$step"
+
+  if [ "$i" -gt 1 ]; then
+    prev=$((i - 1))
+    g_last_prev=$(snapshot "g$prev" | cut -d' ' -f1)
+    g_first_new=$(first_snapshot "g$i" | cut -d' ' -f1)
+    [ -n "$g_last_prev" ] && [ -n "$g_first_new" ] \
+      || fail "gen$i: missing boundary ticks"
+    [ "$g_first_new" -gt "$g_last_prev" ] \
+      || fail "gen$i: counter reset across swap ($g_last_prev -> $g_first_new)"
+  fi
+  echo "PASS gen$i (step=$step, continuity ok)"
+done
+
+kill "$runner_pid" 2>/dev/null || true
+wait "$runner_pid" 2>/dev/null || true
+runner_pid=""
+
+summary=$(grep -a '^summary' "$OUT" | tail -1)
+echo "$summary"
+applied=$(echo "$summary" | sed -n 's/.*applied=\([0-9]*\).*/\1/p')
+before=$(echo "$summary" | sed -n 's/.*arenas_before=\([0-9]*\).*/\1/p')
+after=$(echo "$summary" | sed -n 's/.*arenas_after=\([0-9]*\).*/\1/p')
+[ "$applied" -eq "$GEN" ] || fail "applied=$applied, expected $GEN"
+[ $((after - before)) -eq "$applied" ] \
+  || fail "arena accounting: delta=$((after - before)) != applied=$applied"
+
+echo ""
+echo "SOAK PASS — $GEN generations, state continuous, arenas accounted ($before -> $after)"
+echo "output kept at: $OUT"
