@@ -51,6 +51,15 @@ public:
   /// process keeps running the previously loaded code afterwards.
   bool update();
 
+  /// Read-only session statistics for observers (TUI, logging, tests).
+  struct stats {
+    std::size_t applied = 0;  ///< reloads that took effect
+    std::size_t rejected = 0; ///< offers refused (ambiguity, bad object, ...)
+    std::string last_result;  ///< human-readable outcome of the last offer
+    std::vector<std::string> watched_paths;
+  };
+  stats session_stats() const;
+
 private:
   bool try_load(const std::filesystem::path& path);
 
@@ -60,6 +69,9 @@ private:
   /// warn when a later load drops a function whose entry still jumps to
   /// stale arena code.
   std::unordered_map<std::string, std::uintptr_t> last_redirected_;
+  std::size_t applied_ = 0;
+  std::size_t rejected_ = 0;
+  std::string last_result_ = "no offers yet";
 };
 
 } // namespace neko

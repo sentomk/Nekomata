@@ -58,6 +58,17 @@ reload_session::reload_session(backend_bundle backends) : backends_(std::move(ba
   }
 }
 
+reload_session::stats reload_session::session_stats() const {
+  stats out;
+  out.applied = applied_;
+  out.rejected = rejected_;
+  out.last_result = last_result_;
+  for (const auto& path : watched_) {
+    out.watched_paths.push_back(path.string());
+  }
+  return out;
+}
+
 void reload_session::watch(std::filesystem::path object_path) {
   watched_.push_back(std::move(object_path));
 }
@@ -65,8 +76,14 @@ void reload_session::watch(std::filesystem::path object_path) {
 bool reload_session::update() {
   bool reloaded = false;
   for (const auto& path : watched_) {
-    if (try_load(path)) {
-      reloaded = true;
+    try {
+      if (try_load(path)) {
+        reloaded = true;
+      }
+    } catch (const std::exception& e) {
+      ++rejected_;
+      last_result_ = e.what();
+      throw; // the caller decides how to surface the failure
     }
   }
   return reloaded;
@@ -152,6 +169,8 @@ bool reload_session::try_load(const std::filesystem::path& path) {
 
   neko::log(neko::log_level::ok, "reload applied: %zu function(s) redirected\n",
             image.replacements.size());
+  ++applied_;
+  last_result_ = "applied " + std::to_string(image.replacements.size()) + " function(s)";
   return true;
 }
 
