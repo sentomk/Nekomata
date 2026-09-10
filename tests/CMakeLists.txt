@@ -31,6 +31,10 @@ if(TARGET nekomata AND NOT TARGET neko_backend_dwarf)
   set_tests_properties(neko.cli.without_dwarf PROPERTIES TIMEOUT 10)
 endif()
 
+if(NEKOMATA_TUI AND TARGET nekomata::tui)
+  add_subdirectory(tui)
+endif()
+
 if(NEKOMATA_TARGET_LINUX)
   if(NEKOMATA_ENABLE_SANITIZERS)
     # A canary for the sanitizer gate itself: reporting UB but returning zero
