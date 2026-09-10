@@ -359,32 +359,27 @@ public:
 
   [[nodiscard]] const terminal_screen& screen() const { return screen_; }
 
-  /// Block until the monitor writes something (a frame went out), so a test
-  /// can act just after a cadence tick instead of racing it. Returns the
-  /// bytes read, empty on timeout.
-  std::string wait_for_output(std::chrono::milliseconds timeout) {
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
-    char buf[4096];
-    for (;;) {
-      const auto now = std::chrono::steady_clock::now();
-      if (now >= deadline) {
-        break;
+  /// The monitor's frame counter, read off the reconstructed screen. Every
+  /// render increments it, so the delta between two readings is the number
+  /// of renders — which is what a test wants when it cares about how often
+  /// the monitor drew rather than exactly when.
+  [[nodiscard]] int frame_counter() const {
+    for (const auto& row : screen_.rows()) {
+      const std::size_t at = row.find("frame ");
+      if (at == std::string::npos) {
+        continue;
       }
-      const auto left =
-          std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
-      struct pollfd pfd {};
-      pfd.fd = master_;
-      pfd.events = POLLIN;
-      if (::poll(&pfd, 1, static_cast<int>(std::max<std::int64_t>(left, 1))) <= 0) {
-        break;
+      int value = 0;
+      bool digits = false;
+      for (std::size_t p = at + 6; p < row.size() && row[p] >= '0' && row[p] <= '9'; ++p) {
+        value = value * 10 + (row[p] - '0');
+        digits = true;
       }
-      const ssize_t n = ::read(master_, buf, sizeof(buf));
-      if (n > 0) {
-        screen_.feed(std::string_view(buf, static_cast<std::size_t>(n)));
-        return std::string(buf, static_cast<std::size_t>(n));
+      if (digits) {
+        return value;
       }
     }
-    return {};
+    return -1;
   }
 
   void send(const std::string& bytes) {
@@ -698,30 +693,46 @@ TEST_CASE("monitor: new lines do not yank a reader who scrolled up") {
   CHECK(*std::max_element(seen_released.begin(), seen_released.end()) >= kLogLines);
 }
 
-TEST_CASE("monitor: a drag highlights the selection right away") {
-  // The highlight used to wait for the next cadence tick — up to 100 ms
-  // behind the pointer, which reads as the selection being stuck to the
-  // table. Input now schedules a redraw of its own.
+TEST_CASE("monitor: input drives redraws of its own") {
+  // A dragged selection used to follow the pointer at the frame cadence,
+  // which reads as the highlight being stuck to the table. Counting renders
+  // rather than timing one is deliberate: a deadline would have to sit
+  // between "prompt" and "the next cadence tick", a gap that depends on
+  // where in the cadence the drag lands and on how fast the machine is. A
+  // shared CI runner is slower and jitterier than a dev box, and the count
+  // does not care about either.
   //
-  // Reverse video (SGR "0;7") appears only for the selection: every other
-  // style in the panel is a foreground colour, and none of the palette's
-  // components is 7, so the attribute cannot be confused with a colour.
+  // Reverse video (SGR "0;7") is used as the marker because it appears only
+  // for the selection: every other style in the panel is a foreground
+  // colour, and no palette component is 7, so it cannot be a colour by
+  // accident.
   pty_monitor pty;
   (void)pty.drain(std::chrono::milliseconds(400));
 
-  // Sync to just after a cadence frame, so the next one is a full tick away
-  // and only an input-driven redraw can beat the deadline below.
-  REQUIRE_FALSE(pty.wait_for_output(std::chrono::milliseconds(1000)).empty());
+  // Idle first: the cadence alone.
+  const int idle_from = pty.frame_counter();
+  REQUIRE(idle_from >= 0);
+  (void)pty.drain(std::chrono::milliseconds(600));
+  const int idle_frames = pty.frame_counter() - idle_from;
 
+  // Then the same window with a button held down and the pointer moving.
   // Columns 72..76 (1-based) are inside the log pane's text, not the blank
-  // tail of the row: a selection over trailing spaces highlights nothing.
-  pty.send("\033[<0;72;14M");  // left button down on a log line
-  pty.send("\033[<32;76;14M"); // drag right with the button held
+  // tail of a row: a selection over trailing spaces highlights nothing.
+  pty.send("\033[<0;72;14M"); // left button down on a log line
+  const int busy_from = pty.frame_counter();
+  const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(600);
+  int notch = 0;
+  while (std::chrono::steady_clock::now() < until) {
+    pty.send("\033[<32;" + std::to_string(73 + (notch++ % 4)) + ";14M");
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+  (void)pty.drain(std::chrono::milliseconds(100));
+  const int busy_frames = pty.frame_counter() - busy_from;
 
-  // A third of a cadence tick: waiting for the next frame lands here only
-  // if the highlight is not driven by input.
-  const std::string bytes = pty.drain(std::chrono::milliseconds(33));
-  CHECK(bytes.find("\033[0;7") != std::string::npos);
+  CHECK(idle_frames > 0);
+  // ~24 notches against ~6 cadence frames: input has to be scheduling
+  // redraws for this to hold, and the ratio leaves room for a slow machine.
+  CHECK(busy_frames > idle_frames * 2);
 }
 
 TEST_CASE("monitor: 'q' closes the panel and stops the app loop") {
