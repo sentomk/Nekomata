@@ -25,7 +25,8 @@ namespace neko::tui {
 enum class mode {
   inline_status, ///< styled line(s) in the current terminal (default)
   fullscreen,    ///< take over the terminal nekomata was started from
-  terminal,      ///< separate terminal window via pty
+  terminal,      ///< separate terminal window via pty (not supported on
+                 ///< Windows yet: the monitor constructor throws)
 };
 
 struct monitor_config {
