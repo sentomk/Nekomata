@@ -98,6 +98,32 @@ jobs:
       - name: Test
         run: ctest --test-dir build/tui -R neko.tui --output-on-failure
 
+  # Windows has no backend yet (pe/pdb are stubs), so this job covers what
+  # does run there: the kernel (log, session, harness, public_api) and
+  # neko::tui with the Win32 terminal backend. This is the only Windows
+  # coverage in CI — it would have caught the `log.cpp` unistd.h slip.
+  windows:
+    name: windows / kernel + tui
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable the MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: >
+          cmake -S . -B build/win -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DNEKOMATA_TUI=ON
+          -DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF
+
+      - name: Build
+        run: cmake --build build/win
+
+      - name: Test
+        run: ctest --test-dir build/win --output-on-failure
+
   sanitizers:
     name: sanitizers / ASan + UBSan
     runs-on: ubuntu-24.04
