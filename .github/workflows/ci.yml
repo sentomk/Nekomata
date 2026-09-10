@@ -61,6 +61,43 @@ jobs:
       - name: Test
         run: ctest --preset debug
 
+  # neko::tui is optional and off by default (turning it on fetches Glyph), so
+  # no other job builds it — and it is the one place with a platform layer: a
+  # pty and termios, whose behaviour differs between Linux and macOS in ways
+  # that fail silently (termios on the master, sizing before the slave
+  # exists). Both platforms run it, and the tests drive a real pty rather than
+  # a mock, so the platform layer is exercised rather than compiled.
+  tui:
+    name: tui / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y ninja-build
+          else
+            brew install ninja
+          fi
+
+      - name: Configure
+        run: >
+          cmake -S . -B build/tui -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DNEKOMATA_TUI=ON
+          -DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF
+
+      - name: Build the TUI and its tests
+        run: cmake --build build/tui --target neko_tui_layout neko_tui_monitor_input
+
+      - name: Test
+        run: ctest --test-dir build/tui -R neko.tui --output-on-failure
+
   sanitizers:
     name: sanitizers / ASan + UBSan
     runs-on: ubuntu-24.04
