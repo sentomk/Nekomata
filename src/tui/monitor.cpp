@@ -584,7 +584,11 @@ private:
 
   /// Hand a frame to the display. The terminal layer owns the
   /// non-blocking, drop-what-the-reader-is-not-taking contract.
-  void write_display(std::string_view bytes) { terminal_->write(bytes); }
+  void write_display(std::string_view bytes) {
+    if (!terminal_->write(bytes)) {
+      renderer_->reset();
+    }
+  }
 
   reload_session& session_;
   std::string title_;

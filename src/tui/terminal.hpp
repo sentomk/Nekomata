@@ -44,9 +44,13 @@ public:
 
   /// Write raw bytes to the display. Best effort by contract: it must never
   /// block, because the far end stopping (a detached screen, a stopped
-  /// reader) must not wedge the render thread. Dropping the tail of a frame
-  /// is safe — the next one repaints from scratch.
-  virtual void write(std::string_view bytes) = 0;
+  /// reader) must not wedge the render thread.
+  ///
+  /// Returns false when the display did not take everything. The caller has
+  /// to arrange a full repaint then: a half-written frame leaves the
+  /// renderer's idea of the screen wrong, and a diff against a screen that
+  /// never received those cells would never repair them.
+  [[nodiscard]] virtual bool write(std::string_view bytes) = 0;
 
   /// Bytes that arrived within `wait`, empty when none did. Waits for the
   /// first byte only, then takes everything already queued: a single escape

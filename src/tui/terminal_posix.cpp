@@ -118,10 +118,18 @@ public:
     out_fd_ = master_fd_;
   }
 
-  void write(std::string_view bytes) override {
+  bool write(std::string_view bytes) override {
     if (out_fd_ < 0) {
-      return;
+      return false;
     }
+    // Two regimes, one loop. A pty master is ours and non-blocking, so a
+    // reader that stops draining makes the write come up short and the rest
+    // of the frame is dropped — the panel is a display, not a log. The
+    // application's stdout in placement::current is left blocking: a
+    // terminal that accepts nothing is a terminal nobody is looking at, and
+    // polling POLLOUT in its place is not an option (macOS reports a pty
+    // slave unwritable after a single kilobyte, which drops nearly every
+    // frame).
     const char* p = bytes.data();
     std::size_t left = bytes.size();
     while (left > 0) {
@@ -134,8 +142,9 @@ public:
       if (n < 0 && errno == EINTR) {
         continue;
       }
-      return; // EAGAIN or a dead end: drop the rest of this frame
+      return false; // EAGAIN or a dead end
     }
+    return true;
   }
 
   std::string read(std::chrono::milliseconds wait) override {
