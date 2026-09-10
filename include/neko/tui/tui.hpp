@@ -24,7 +24,8 @@ namespace neko::tui {
 /// Rendering placement.
 enum class mode {
   inline_status, ///< styled line(s) in the current terminal (default)
-  terminal,      ///< separate terminal window (planned)
+  fullscreen,    ///< take over the terminal nekomata was started from
+  terminal,      ///< separate terminal window via pty
 };
 
 struct monitor_config {
@@ -42,6 +43,15 @@ public:
 
   /// Refresh the display with current session state.
   void render();
+
+  /// Append one line to the application log pane (fullscreen/terminal
+  /// modes only; ignored by inline_status). Thread-safe.
+  void log_line(std::string text);
+
+  /// False once the user asked the panel to close (`q`, or Esc with no
+  /// selection in fullscreen/terminal modes). Always true in
+  /// inline_status mode, which has no input of its own.
+  [[nodiscard]] bool running() const;
 
 private:
   reload_session& session_;

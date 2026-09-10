@@ -8,28 +8,31 @@
 #include <neko/tui/tui.hpp>
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <cstdint>
 #include <deque>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
 
-#include <fcntl.h>
-#include <poll.h>
-#include <sys/ioctl.h>
-#include <termios.h>
-#include <unistd.h>
-
 #include "glyph/core/cell.h"
 #include "glyph/core/color.h"
+#include "glyph/core/event.h"
 #include "glyph/core/geometry.h"
 #include "glyph/core/style.h"
+#include "glyph/input/detail/vt_decoder.h"
+#include "glyph/platform/clipboard.h"
 #include "glyph/render/ansi/ansi_renderer.h"
 #include "glyph/render/terminal.h"
+#include "glyph/view/components/scroll_region.h"
 #include "glyph/view/components/status_line.h"
 #include "glyph/view/frame.h"
 #include "glyph/view/text.h"
+
+#include "terminal.hpp"
 
 namespace neko::tui {
 namespace {
@@ -41,7 +44,31 @@ using glyph::core::Rect;
 using glyph::core::Size;
 using glyph::core::Style;
 using glyph::view::Frame;
+using glyph::view::ScrollRegionView;
 using glyph::view::StatusLineView;
+
+// Render cadence: fast enough that wheel scrolling and drag-select feel
+// immediate, slow enough to stay invisible in `top`.
+constexpr int kTickMs = 100;
+
+// Input is polled on a much shorter slice than the frame cadence; the
+// renderer only writes what changed, so checking input costs nothing.
+constexpr int kInputPollMs = 5;
+
+// Ceiling for redraws triggered by input (~60 fps). Dragging a selection
+// has to follow the pointer, and waiting for the next cadence tick made it
+// feel stuck to the table; the diff renderer keeps an extra frame cheap.
+constexpr int kInteractiveFrameMs = 16;
+
+// Logo animation cycle. The cat stretches, watches for a while, and
+// stretches again — the idle beat is deliberately much longer than the
+// animation so the panel reads as calm rather than busy.
+constexpr int kLogoFrameMs = 1600;                                 // per animation frame
+constexpr int kLogoAnimMs = kLogoFrameMs * cats::logo_frame_count; // stretch
+constexpr int kLogoIdleMs = 12000;                                 // watch
+constexpr int kLogoCycleMs = kLogoAnimMs + kLogoIdleMs;
+constexpr int kLogoFlashMs = 1200;    // alert flash after a reload
+constexpr int kLogoFlashStepMs = 150; // how fast it alternates
 
 // Nekomata palette.
 Style title_style() {
@@ -101,17 +128,56 @@ void draw_border(Frame& f, const Rect& r, const std::string& title, Style title_
   }
 }
 
+/// One line in the application log pane.
 struct log_entry {
   std::string text;
   Style style;
 };
 
-/// Nekomata logo animation: 5 frames, 9 columns each.
-///   0: reaching out (curious)     っ(=•ω•=)っ
-///   1: left paw forms             ฅ(=•ω•=)っ
-///   2: both paws, eyes open       ฅ(=•ω•=)ฅ   ← alert
-///   3: left eye closes            ฅ(=─ω•=)ฅ
-///   4: fully content              ฅ(=─ω─=)ฅ   ← resting
+/// How many lines may be held back while the reader is scrolled away.
+constexpr std::size_t kHeldCap = 500;
+
+/// Incremental UTF-8 decoder: the VT decoder wants code points, the pty
+/// hands us bytes, and a multi-byte sequence can be split across reads.
+struct utf8_decoder {
+  char32_t cp = 0;
+  std::uint8_t need = 0;
+  std::uint32_t acc = 0;
+
+  /// Feed one byte; returns true when `out` holds a complete code point.
+  bool feed(unsigned char b, char32_t& out) {
+    if (need == 0) {
+      if (b < 0x80) {
+        out = b;
+        return true;
+      }
+      if ((b & 0xE0) == 0xC0) {
+        acc = b & 0x1F;
+        need = 1;
+      } else if ((b & 0xF0) == 0xE0) {
+        acc = b & 0x0F;
+        need = 2;
+      } else if ((b & 0xF8) == 0xF0) {
+        acc = b & 0x07;
+        need = 3;
+      }
+      // Stray continuation / invalid lead: drop the byte.
+      return false;
+    }
+    if ((b & 0xC0) != 0x80) { // lost sync mid-sequence
+      need = 0;
+      acc = 0;
+      return false;
+    }
+    acc = (acc << 6) | (b & 0x3F);
+    if (--need == 0) {
+      out = static_cast<char32_t>(acc);
+      return true;
+    }
+    return false;
+  }
+};
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -120,98 +186,82 @@ struct log_entry {
 class monitor::terminal_monitor {
 public:
   terminal_monitor(reload_session& session, const monitor_config& config)
-      : session_(session), title_(config.title), show_log_(config.show_app_log), running_{true} {
-    open_pty();
+      : session_(session), title_(config.title), show_log_(config.show_app_log), running_{true},
+        fullscreen_(config.render_mode == mode::fullscreen) {
+    renderer_ = std::make_unique<glyph::render::AnsiRenderer>(out_);
+    terminal_ =
+        detail::terminal::open(fullscreen_ ? detail::placement::current : detail::placement::pty);
     render_thread_ = std::thread([this] { loop(); });
   }
+
+  void log_line(std::string text) { queue_log(std::move(text), dim_style()); }
+
+  [[nodiscard]] bool running() const { return running_.load(); }
 
   ~terminal_monitor() {
     running_.store(false);
     if (render_thread_.joinable()) {
       render_thread_.join();
     }
-    if (master_fd_ >= 0) {
-      ::close(master_fd_);
-    }
+    // terminal_ restores the host terminal on destruction.
   }
 
 private:
-  void open_pty() {
-    master_fd_ = ::posix_openpt(O_RDWR | O_NOCTTY);
-    if (master_fd_ < 0) {
-      throw std::runtime_error("neko::tui: cannot create pty");
-    }
-    ::grantpt(master_fd_);
-    ::unlockpt(master_fd_);
-    slave_path_ = ::ptsname(master_fd_);
-
-    // The attached terminal (screen/tmux) needs to know the pty size.
-    // Without this the pty defaults to 0x0 and rendering is invisible.
-    // Sync the pty size from the host process's terminal. screen/tmux
-    // don't propagate sizes to external ptys (they're not the session
-    // leader), so the pty would stay at kernel default (0x0) forever.
-    // Assume the attached terminal is the same size as the host's.
-    struct winsize host_ws;
-    if (::ioctl(STDERR_FILENO, TIOCGWINSZ, &host_ws) == 0 && host_ws.ws_col > 0) {
-      ::ioctl(master_fd_, TIOCSWINSZ, &host_ws);
-    }
-
-    // Raw mode: ANSI escape sequences must pass through the line
-    // discipline unmodified. Without this, ONLCR translates \n to
-    // \r\n (breaking cursor positioning) and ECHO reflects our output
-    // back to the master (confusing input handling).
-    struct termios raw {};
-    if (::tcgetattr(master_fd_, &raw) == 0) {
-      raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-      raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-      raw.c_oflag &= ~(OPOST | ONLCR);
-      raw.c_cc[VMIN] = 1;
-      raw.c_cc[VTIME] = 0;
-      ::tcsetattr(master_fd_, TCSANOW, &raw);
-    }
-
-    std::fprintf(stderr, "Nekomata TUI: %s\n", slave_path_.c_str());
-    std::fprintf(stderr, "  attach:  tmux split-window 'screen %s'\n", slave_path_.c_str());
-    std::string cmd = "tmux split-window -h 'screen " + slave_path_ + "' > /dev/null 2>&1 &";
-    std::system(cmd.c_str());
-  }
-
   void loop() {
-    write_ansi("\033[?1049h\033[?25l"); // alt screen + hide cursor
+    write_display("\033[?1049h\033[?25l"); // alt screen + hide cursor
+    // Mouse reporting, matching what Glyph's own input backend enables:
+    // 1000 = press/release, 1002 = button-event tracking (motion while a
+    // button is held, i.e. drag), 1006 = SGR coordinates. Dropping 1002
+    // costs both drag-select and, on several terminals, the wheel.
+    write_display("\033[?1000h\033[?1002h\033[?1006h");
     int frame_count = 0;
+    auto next_frame = std::chrono::steady_clock::now();
+    auto last_frame = next_frame - std::chrono::milliseconds(kTickMs);
     while (running_.load()) {
-      render_frame(frame_count);
-      ++frame_count;
-      // Non-blocking input check, then sleep for the render cadence.
+      const auto now = std::chrono::steady_clock::now();
+      const bool cadence_due = now >= next_frame;
+      const bool interactive_due =
+          dirty_ && now - last_frame >= std::chrono::milliseconds(kInteractiveFrameMs);
+      if (cadence_due || interactive_due) {
+        render_frame(frame_count);
+        ++frame_count;
+        last_frame = now;
+        dirty_ = false;
+        next_frame = now + std::chrono::milliseconds(kTickMs);
+      }
+      // Poll input on a short slice: rendering at the frame cadence but
+      // sleeping on it too made every wheel notch and keypress wait up to
+      // a whole frame before it was even looked at.
+      ++tick_;
       handle_input_nb();
-      std::this_thread::sleep_for(std::chrono::milliseconds(400));
+      std::this_thread::sleep_for(std::chrono::milliseconds(kInputPollMs));
     }
-    write_ansi("\033[2J\033[H\033[?25h\033[?1049l"); // restore
+    write_display("\033[?1000l\033[?1002l\033[?1006l"); // mouse off
+    write_display("\033[2J\033[H\033[?25h\033[?1049l"); // restore
   }
 
   void render_frame(int frame_count) {
     const auto stats = session_.session_stats();
 
-    // Accumulate log entries from session stats.
+    // Session events and application lines both go through the queue;
+    // the view only receives them while the reader is at the bottom.
     if (stats.applied != last_applied_ || stats.rejected != last_rejected_) {
       if (stats.applied > last_applied_) {
-        logs_.push_back({"(=^\u03C9^=) reload applied: " + stats.last_result, ok_style()});
+        queue_log(std::string(cats::ok) + " reload applied: " + stats.last_result, ok_style());
       }
       if (stats.rejected > last_rejected_) {
-        logs_.push_back({"(=\u00D7\u03C9\u00D7=) rejected: " + stats.last_result, error_style()});
+        queue_log(std::string(cats::error) + " rejected: " + stats.last_result, error_style());
       }
       last_applied_ = stats.applied;
       last_rejected_ = stats.rejected;
-      if (logs_.size() > 50) {
-        logs_.pop_front();
-      }
     }
+    flush_logs_if_following();
 
-    // Terminal size (from pty).
-    struct winsize ws;
-    ioctl(master_fd_, TIOCGWINSZ, &ws);
-    const int term_w = ws.ws_col > 0 ? ws.ws_col : 80;
-    const int term_h = ws.ws_row > 0 ? ws.ws_row : 24;
+    // Terminal size, straight from the platform layer: the pty in terminal
+    // mode, the real terminal in fullscreen mode.
+    const Size term_size = terminal_->size();
+    const int term_w = term_size.w;
+    const int term_h = term_size.h;
 
     // Fresh frame with the actual terminal size (not a fixed member).
     Frame frame{Size{term_w, term_h}, Cell::from_char(U' ')};
@@ -221,6 +271,7 @@ private:
     constexpr int MONITOR_H = 22;
     constexpr int LOG_W = 52;
 
+    log_area_ = Rect{}; // no log pane until the layout grants one
     Rect monitor_area;
     if (show_log_ && term_w >= MONITOR_W + LOG_W + 1) {
       // Dual pane, side-by-side, centered.
@@ -229,16 +280,14 @@ private:
       const int ox = std::max(0, (term_w - total_w) / 2);
       const int oy = std::max(0, (term_h - total_h) / 2);
       monitor_area = Rect{ox, oy, MONITOR_W, MONITOR_H};
-      const Rect log_area{ox + MONITOR_W + 1, oy, LOG_W, MONITOR_H};
-      render_log_pane(frame, log_area);
+      log_area_ = Rect{ox + MONITOR_W + 1, oy, LOG_W, MONITOR_H};
     } else if (show_log_ && term_h >= MONITOR_H + 16) {
       // Dual pane, stacked, centered.
       const int total_h = MONITOR_H + 1 + 14;
       const int ox = std::max(0, (term_w - MONITOR_W) / 2);
       const int oy = std::max(0, (term_h - total_h) / 2);
       monitor_area = Rect{ox, oy, MONITOR_W, MONITOR_H};
-      const Rect log_area{ox, oy + MONITOR_H + 1, MONITOR_W, 14};
-      render_log_pane(frame, log_area);
+      log_area_ = Rect{ox, oy + MONITOR_H + 1, MONITOR_W, 14};
     } else {
       // Single pane, centered.
       const int ox = std::max(0, (term_w - MONITOR_W) / 2);
@@ -247,13 +296,232 @@ private:
     }
 
     render_monitor_pane(frame, monitor_area, stats, frame_count);
+    if (!log_area_.empty()) {
+      render_log_pane(frame, log_area_);
+    }
 
-    // Flush.
-    std::ostringstream oss;
-    glyph::render::AnsiRenderer renderer{oss};
-    renderer.render(frame);
-    write_ansi("\033[H"); // home cursor; full-frame render handles the rest
-    write_ansi(oss.str());
+    // Flush. The renderer diffs against the frame it drew last time, so
+    // only what actually changed goes out.
+    out_.str({});
+    out_.clear();
+    renderer_->render(frame);
+    write_display(out_.str());
+  }
+
+  void render_log_pane(Frame& frame, const Rect& area) {
+    const std::size_t held = held_count();
+    const std::string title =
+        held > 0 ? " log  +" + std::to_string(held) + " new " : std::string(" log ");
+    draw_border(frame, area, title, held > 0 ? warn_style() : dim_style());
+    const Rect inner{area.left() + 2, area.top() + 1, area.size.w - 4, area.size.h - 2};
+    if (inner.empty()) {
+      return;
+    }
+    if (log_view_.line_count() == 0) {
+      write_text(frame, inner.left(), inner.top(),
+                 std::string(cats::info) + " waiting for events...", dim_style());
+      return;
+    }
+    // ScrollRegionView owns scrollback, wrapping, wheel scrolling, and the
+    // selection highlight; we only hand it the area.
+    log_view_.render(frame, inner);
+  }
+
+  /// Queue one log line. Lines are held while the reader is scrolled away
+  /// from the live end and flushed the moment they come back — see
+  /// flush_logs_if_following().
+  void queue_log(std::string text, Style style) {
+    std::lock_guard<std::mutex> lock(log_mutex_);
+    if (pending_logs_.size() >= kHeldCap) {
+      pending_logs_.pop_front(); // the pane keeps 500 lines anyway
+    }
+    pending_logs_.push_back(log_entry{std::move(text), style});
+    dirty_ = true;
+  }
+
+  /// Push held lines into the view, but only while the reader is at the
+  /// bottom. ScrollRegionView::push_line re-follows the bottom
+  /// unconditionally, so pushing under a scrolled-up reader would yank
+  /// them away from what they are reading — and a live log feeds lines
+  /// faster than anyone can read them. Held lines appear as soon as the
+  /// reader scrolls back down.
+  void flush_logs_if_following() {
+    if (log_view_.scroll_offset() != 0) {
+      return;
+    }
+    std::deque<log_entry> fresh;
+    {
+      std::lock_guard<std::mutex> lock(log_mutex_);
+      fresh.swap(pending_logs_);
+    }
+    for (auto& entry : fresh) {
+      log_view_.push_line(std::move(entry.text), entry.style);
+    }
+  }
+
+  [[nodiscard]] std::size_t held_count() {
+    std::lock_guard<std::mutex> lock(log_mutex_);
+    return pending_logs_.size();
+  }
+
+  /// True if the point falls inside the currently rendered log pane.
+  [[nodiscard]] bool in_log_pane(Point p) const {
+    return !log_area_.empty() && p.x >= log_area_.left() && p.x < log_area_.right() &&
+           p.y >= log_area_.top() && p.y < log_area_.bottom();
+  }
+
+  [[nodiscard]] Point clamp_to_log(Point p) const {
+    if (log_area_.empty()) {
+      return p;
+    }
+    p.x =
+        std::clamp(p.x, log_area_.left(), static_cast<glyph::core::coord_t>(log_area_.right() - 1));
+    p.y =
+        std::clamp(p.y, log_area_.top(), static_cast<glyph::core::coord_t>(log_area_.bottom() - 1));
+    return p;
+  }
+
+  void handle_input_nb() {
+    const std::string bytes = terminal_->read(std::chrono::milliseconds(kInputPollMs));
+    for (const char raw : bytes) {
+      char32_t cp = 0;
+      if (utf8_.feed(static_cast<unsigned char>(raw), cp)) {
+        decoder_.feed(cp);
+      }
+    }
+    decoder_.flush(true);
+
+    while (decoder_.has_event()) {
+      dispatch(decoder_.pop());
+      dirty_ = true; // an event may have moved the selection or the view
+    }
+  }
+
+  void dispatch(const glyph::core::Event& ev) {
+    if (const auto* key = std::get_if<glyph::core::KeyEvent>(&ev)) {
+      dispatch_key(*key);
+    } else if (const auto* m = std::get_if<glyph::core::MouseEvent>(&ev)) {
+      dispatch_mouse(*m);
+    }
+  }
+
+  void dispatch_key(const glyph::core::KeyEvent& key) {
+    if (key.code == glyph::core::KeyCode::Esc) {
+      if (log_view_.selection_active()) {
+        log_view_.select_clear();
+      } else {
+        running_.store(false);
+      }
+      return;
+    }
+    if (key.code != glyph::core::KeyCode::Char || key.mods != glyph::core::Mod::None) {
+      return;
+    }
+    switch (key.ch) {
+    case U'y':
+      copy_selection();
+      break;
+    case U'r':
+      try {
+        session_.update();
+      } catch (...) {
+      }
+      break;
+    case U'q':
+      running_.store(false);
+      break;
+    default:
+      break;
+    }
+  }
+
+  void dispatch_mouse(const glyph::core::MouseEvent& m) {
+    // Wheel: the log pane is the only scrollable region on screen, so the
+    // wheel drives it from anywhere rather than only when the pointer is
+    // parked inside it. Requiring the pointer inside was the first version
+    // and it reads as "the wheel is broken" — the natural gesture is to
+    // scroll wherever the reader is looking, which is usually not the pane
+    // under the cursor.
+    if (m.action == glyph::core::MouseAction::Scroll) {
+      if (!log_area_.empty()) {
+        log_view_.on_mouse(m);
+      }
+      return;
+    }
+    if (!in_log_pane(m.pos) && !log_view_.selection_active()) {
+      return;
+    }
+
+    if (m.action == glyph::core::MouseAction::Down && m.button == glyph::core::MouseButton::Left) {
+      log_view_.select_begin(clamp_to_log(m.pos));
+      note_.clear();
+    } else if ((m.action == glyph::core::MouseAction::Drag ||
+                m.action == glyph::core::MouseAction::Move) &&
+               log_view_.selection_active()) {
+      // Dragging past an edge pulls more output into view, like tmux. The
+      // selection is content-anchored, so rows swept out mid-drag still
+      // make it into extract_selection().
+      if (!log_area_.empty() && m.pos.y <= log_area_.top()) {
+        log_view_.scroll_up(3);
+      } else if (!log_area_.empty() && m.pos.y >= log_area_.bottom() - 1) {
+        log_view_.scroll_down(3);
+      }
+      log_view_.select_extend(clamp_to_log(m.pos));
+    } else if (m.action == glyph::core::MouseAction::Up &&
+               m.button == glyph::core::MouseButton::Left) {
+      copy_selection();
+    }
+  }
+
+  void copy_selection() {
+    if (!log_view_.selection_active()) {
+      return;
+    }
+    const std::string text = log_view_.extract_selection();
+    if (text.empty()) {
+      return;
+    }
+    if (glyph::platform::copy_to_clipboard(text)) {
+      note_ = "copied " + std::to_string(text.size()) + " bytes";
+    } else {
+      note_ = "clipboard unavailable";
+    }
+    note_tick_ = tick_;
+    log_view_.select_clear();
+  }
+
+  /// Which logo frame belongs on screen right now.
+  ///
+  /// Clock-driven, not render-counter-driven: interactive redraws fire far
+  /// more often than the cadence, and an animation stepped by the render
+  /// counter would visibly run fast while the user drags a selection.
+  ///
+  /// The cycle is animation → idle → animation. A reload interrupts it with
+  /// a short alert flash, because that is the one state worth noticing.
+  [[nodiscard]] int logo_frame_at(std::chrono::steady_clock::time_point now,
+                                  const reload_session::stats& stats) {
+    const auto since_start =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - started_).count();
+
+    if (stats.applied > last_logo_applied_) {
+      if (!flashing_) {
+        flashing_ = true;
+        flash_until_ = now + std::chrono::milliseconds(kLogoFlashMs);
+      }
+      if (now < flash_until_) {
+        const auto phase =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - started_).count();
+        return (phase / kLogoFlashStepMs) % 2 == 0 ? 2 : cats::logo_frame_count - 1;
+      }
+      flashing_ = false;
+      last_logo_applied_ = stats.applied;
+    }
+
+    const auto phase = since_start % kLogoCycleMs;
+    if (phase >= kLogoAnimMs) {
+      return cats::logo_frame_count - 1; // idle: content, eyes closed
+    }
+    return std::min(static_cast<int>(phase / kLogoFrameMs), cats::logo_frame_count - 1);
   }
 
   void render_monitor_pane(Frame& frame, const Rect& area, const reload_session::stats& stats,
@@ -262,26 +530,9 @@ private:
     const int x = area.left() + 3;
     int y = area.top() + 2;
 
-    // Nekomata animated logo (top-right).
-    // Startup: play frames 0→4 (curious → content).
-    // Monitoring: rest on frame 4. A reload flashes frame 2 (alert).
-    y = area.top() + 2;
-    int logo_frame;
-    if (frame_count < cats::logo_frame_count * 6) {
-      logo_frame = std::min(frame_count / 6, cats::logo_frame_count - 1); // intro (slow)
-    } else {
-      const std::size_t applied_now = stats.applied;
-      if (applied_now > last_logo_applied_) {
-        // A reload just happened — flash the alert frame briefly.
-        logo_frame = (frame_count % 8 < 4) ? 2 : 4;
-        if (frame_count % 8 == 7) {
-          last_logo_applied_ = applied_now;
-        }
-      } else {
-        logo_frame = 4; // resting: content, eyes closed
-      }
-    }
-    write_text(frame, area.right() - 12, y, cats::logo_frames[logo_frame], title_style());
+    // Nekomata animated logo (top-right): stretch, idle, stretch again.
+    const int logo_frame = logo_frame_at(std::chrono::steady_clock::now(), stats);
+    write_text(frame, area.right() - 13, y, cats::logo_frames[logo_frame], title_style());
     y += 2;
     write_text(frame, x, y, "native hot reload engine for everyone.", tagline_style());
     y += 3;
@@ -298,10 +549,10 @@ private:
     y++;
     if (stats.applied > 0 || stats.rejected > 0) {
       const Style st = stats.rejected > 0 ? warn_style() : info_style();
-      write_text(frame, x + 2, y, "(=\u00B7\u03C9\u00B7=) " + stats.last_result, st);
+      write_text(frame, x + 2, y, std::string(cats::info) + " " + stats.last_result, st);
       y++;
     } else {
-      write_text(frame, x + 2, y, "(=\u00B7\u03C9\u00B7=) monitoring...", info_style());
+      write_text(frame, x + 2, y, std::string(cats::info) + " monitoring...", info_style());
       y++;
     }
     y++;
@@ -313,86 +564,60 @@ private:
                    " rejected",
                dim_style());
 
-    // Key bindings
+    // Footer: a transient note wins over the key hints.
     const int ky = area.bottom() - 3;
-    char status[80];
-    std::snprintf(status, sizeof(status), "%s frame %d", cats::logo_frames[2], frame_count);
-    write_text(frame, x, ky, status, info_style());
-    write_text(frame, x + 2, ky + 1, " ", dim_style());
-    write_text(frame, x + 3, ky + 1, "r", key_style());
-    write_text(frame, x + 4, ky + 1, " reload ", dim_style());
-    write_text(frame, x + 12, ky + 1, "s", key_style());
-    write_text(frame, x + 13, ky + 1, " skip ", dim_style());
-    write_text(frame, x + 19, ky + 1, "q", key_style());
-    write_text(frame, x + 20, ky + 1, " quit", dim_style());
-  }
-
-  void render_log_pane(Frame& frame, const Rect& area) {
-    draw_border(frame, area, " log ", dim_style());
-    const int x = area.left() + 2;
-    const int y0 = area.top() + 1;
-    const int max_lines = area.size.h - 3;
-
-    // Show recent entries, newest at bottom.
-    const std::size_t skip = logs_.size() > static_cast<std::size_t>(max_lines)
-                                 ? logs_.size() - static_cast<std::size_t>(max_lines)
-                                 : 0;
-    int y = y0;
-    for (std::size_t i = skip; i < logs_.size() && y < area.bottom() - 1; ++i, ++y) {
-      write_text(frame, x, y, logs_[i].text, logs_[i].style);
-    }
-    // Show a "waiting" line if empty.
-    if (logs_.empty()) {
-      write_text(frame, x, y0, "(=\u00B7\u03C9\u00B7=) waiting for events...", dim_style());
+    if (!note_.empty() && tick_ - note_tick_ < 30) {
+      write_text(frame, x, ky, note_, ok_style());
+    } else {
+      char status[80];
+      std::snprintf(status, sizeof(status), "%s frame %d", cats::logo, frame_count);
+      write_text(frame, x, ky, status, info_style());
+      write_text(frame, x + 2, ky + 1, " ", dim_style());
+      write_text(frame, x + 3, ky + 1, "r", key_style());
+      write_text(frame, x + 4, ky + 1, " reload ", dim_style());
+      write_text(frame, x + 12, ky + 1, "wheel", key_style());
+      write_text(frame, x + 17, ky + 1, " scroll ", dim_style());
+      write_text(frame, x + 25, ky + 1, "q", key_style());
+      write_text(frame, x + 26, ky + 1, " quit", dim_style());
     }
   }
 
-  void handle_input_nb() {
-    // Set the master fd non-blocking for the duration of the read.
-    const int flags = ::fcntl(master_fd_, F_GETFL, 0);
-    ::fcntl(master_fd_, F_SETFL, flags | O_NONBLOCK);
-    char buf[16];
-    const ssize_t len = ::read(master_fd_, buf, sizeof(buf));
-    ::fcntl(master_fd_, F_SETFL, flags); // restore
-    if (len <= 0) {
-      return; // no input available
-    }
-    for (ssize_t i = 0; i < len; ++i) {
-      switch (buf[i]) {
-      case 'q':
-      case 'Q':
-        running_.store(false);
-        return;
-      case 'r':
-      case 'R':
-        try {
-          session_.update();
-        } catch (...) {
-        }
-        break;
-      default:
-        break;
-      }
-    }
-  }
-
-  void write_ansi(const std::string& s) {
-    if (master_fd_ >= 0) {
-      ::write(master_fd_, s.data(), s.size());
-    }
-  }
+  /// Hand a frame to the display. The terminal layer owns the
+  /// non-blocking, drop-what-the-reader-is-not-taking contract.
+  void write_display(std::string_view bytes) { terminal_->write(bytes); }
 
   reload_session& session_;
   std::string title_;
   bool show_log_;
   std::atomic<bool> running_;
   std::thread render_thread_;
-  int master_fd_ = -1;
-  std::string slave_path_;
+  bool fullscreen_ = false;
+  std::unique_ptr<detail::terminal> terminal_;
   std::size_t last_applied_ = 0;
   std::size_t last_logo_applied_ = 0;
+  std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
+  std::chrono::steady_clock::time_point flash_until_{};
+  bool flashing_ = false;
   std::size_t last_rejected_ = 0;
-  std::deque<log_entry> logs_;
+
+  /// App log pane: scrollback, wrap, wheel scrolling, and content-anchored
+  /// selection all live inside the view.
+  ScrollRegionView log_view_{500};
+  std::atomic<bool> dirty_{true}; // render before the next cadence tick
+  // One renderer for the whole session: AnsiRenderer keeps the previous
+  // frame and emits only the dirty lines, so a fresh renderer per frame
+  // (the first version) paid a full-screen repaint ten times a second —
+  // ~90 KB/s of escapes with a static panel.
+  std::ostringstream out_;
+  std::unique_ptr<glyph::render::AnsiRenderer> renderer_;
+  std::mutex log_mutex_;
+  std::deque<log_entry> pending_logs_;
+  glyph::input::detail::VtDecoder decoder_{};
+  utf8_decoder utf8_{};
+  Rect log_area_{};       // last rendered log pane (mouse hit-testing)
+  std::string note_;      // transient footer message ("copied N bytes")
+  std::int64_t tick_ = 0; // input-loop ticks, for note expiry
+  std::int64_t note_tick_ = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -401,16 +626,28 @@ private:
 
 monitor::monitor(reload_session& session, monitor_config config)
     : session_(session), config_(std::move(config)) {
-  if (config_.render_mode == mode::terminal) {
+  if (config_.render_mode != mode::inline_status) {
+    // Both fullscreen and terminal own a render thread; only the output
+    // sink differs (this terminal vs a pty).
     terminal_ = std::make_unique<terminal_monitor>(session_, config_);
   }
 }
 
 monitor::~monitor() = default;
 
+void monitor::log_line(std::string text) {
+  if (terminal_) {
+    terminal_->log_line(std::move(text));
+  }
+}
+
+bool monitor::running() const {
+  return !terminal_ || terminal_->running();
+}
+
 void monitor::render() {
-  if (config_.render_mode == mode::terminal) {
-    return; // the terminal thread renders on its own cadence
+  if (config_.render_mode != mode::inline_status) {
+    return; // the render thread draws on its own cadence
   }
 
   // mode::inline_status — styled line in the current terminal.
