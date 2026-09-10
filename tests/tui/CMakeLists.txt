@@ -1,8 +1,5 @@
-# TUI tests. These need a pty and fork, so they are Unix-only; the TUI
-# itself is off unless -DNEKOMATA_TUI=ON.
-if(WIN32)
-  return()
-endif()
+# TUI tests. The pty-driven suites need a pty and fork, so they are
+# Unix-only; the TUI itself is off unless -DNEKOMATA_TUI=ON.
 
 # Pure layout: no terminal, so it runs anywhere the TUI is built.
 add_executable(neko_tui_layout layout.cpp)
@@ -13,6 +10,11 @@ nekomata_apply_warnings(neko_tui_layout)
 nekomata_apply_sanitizers(neko_tui_layout)
 add_test(NAME neko.tui.layout COMMAND neko_tui_layout)
 set_tests_properties(neko.tui.layout PROPERTIES TIMEOUT 15)
+
+# Everything below drives a real pty in real time: Unix-only.
+if(WIN32)
+  return()
+endif()
 
 add_executable(neko_tui_monitor_input monitor_input.cpp)
 target_include_directories(neko_tui_monitor_input
