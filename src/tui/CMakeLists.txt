@@ -6,21 +6,23 @@ if(NOT NEKOMATA_TUI)
   return()
 endif()
 
+if(WIN32)
+  # The platform seam (terminal.hpp) has a POSIX implementation only; the
+  # Win32 one — ConPTY plus the console's VT modes — is not written yet.
+  # Failing loudly beats shipping a target that cannot work. The gate runs
+  # before the Glyph fetch so a restricted-network machine gets this
+  # message rather than an opaque download error.
+  message(FATAL_ERROR
+    "NEKOMATA_TUI=ON is not supported on Windows yet (only the POSIX "
+    "terminal backend exists). The rest of nekomata builds fine without it.")
+endif()
+
 include(FetchContent)
 FetchContent_Declare(
   glyph
   GIT_REPOSITORY https://github.com/sentomk/Glyph.git
   GIT_TAG        main)
 FetchContent_MakeAvailable(glyph)
-
-if(WIN32)
-  # The platform seam (terminal.hpp) has a POSIX implementation only; the
-  # Win32 one — ConPTY plus the console's VT modes — is not written yet.
-  # Failing loudly beats shipping a target that cannot work.
-  message(FATAL_ERROR
-    "NEKOMATA_TUI=ON is not supported on Windows yet (only the POSIX "
-    "terminal backend exists). The rest of nekomata builds fine without it.")
-endif()
 
 add_library(neko_tui STATIC monitor.cpp terminal_posix.cpp)
 add_library(nekomata::tui ALIAS neko_tui)
