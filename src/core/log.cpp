@@ -16,14 +16,23 @@
 
 #include <cstdarg>
 #include <cstdio>
+
+#ifdef _WIN32
+#include <io.h>
+#else
 #include <unistd.h>
+#endif
 
 namespace neko {
 
 namespace {
 
 bool stderr_is_tty() {
+#ifdef _WIN32
+  static const bool tty = _isatty(_fileno(stderr)) != 0;
+#else
   static const bool tty = isatty(fileno(stderr)) != 0;
+#endif
   return tty;
 }
 
