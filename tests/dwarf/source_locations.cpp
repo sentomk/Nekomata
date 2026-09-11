@@ -146,6 +146,26 @@ TEST_CASE("compiler-generated functions may be named only by their linkage name"
   CHECK(function.linkage_name == "_ZThn8_N4neko4tickEv");
 }
 
+TEST_CASE("a range-listed function outside executable segments is unlocated") {
+  unit input;
+  input.nodes.front().erase(input.nodes.front().begin() + 1, input.nodes.front().begin() + 3);
+  input.nodes.front().push_back(number(DW_AT_ranges, 0, DW_FORM_sec_offset));
+
+  const auto original = build({input});
+  bytes ranges;
+  ranges.number(0x500000, 8);
+  ranges.number(0x500004, 8);
+  ranges.number(0, 8);
+  ranges.number(0, 8);
+  const sample image(
+      elf(section_data(original, 2), section_data(original, 3), section_data(original, 4), ranges));
+
+  const auto result = neko::dwarf::inspect(image.path());
+  REQUIRE(result.units.size() == 1);
+  CHECK(result.units.front().functions.empty());
+  CHECK(result.units.front().unlocated_functions == std::vector<std::string>{"tick"});
+}
+
 TEST_CASE("direct coordinate values, including zero, override inherited values") {
   unit input;
   input.nodes.push_back(function());

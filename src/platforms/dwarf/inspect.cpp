@@ -520,9 +520,20 @@ private:
       // block" — hot/cold splitting, and anything the linker folded. libdwarf
       // resolves both the DWARF 4 .debug_ranges and the DWARF 5 rnglists form,
       // so this is written against its API rather than against either layout.
-      Dwarf_Unsigned offset = 0;
-      call("read range list offset",
-           [&](Dwarf_Error* error) { return dwarf_formudata(ranges.get(), &offset, error); });
+      Dwarf_Half form = 0;
+      call("read range list form",
+           [&](Dwarf_Error* error) { return dwarf_whatform(ranges.get(), &form, error); });
+      Dwarf_Off offset = 0;
+      if (form == DW_FORM_sec_offset) {
+        call("read range list offset", [&](Dwarf_Error* error) {
+          return dwarf_global_formref(ranges.get(), &offset, error);
+        });
+      } else {
+        Dwarf_Unsigned value = 0;
+        call("read range list offset",
+             [&](Dwarf_Error* error) { return dwarf_formudata(ranges.get(), &value, error); });
+        offset = value;
+      }
       Dwarf_Off real_offset = 0;
       Dwarf_Ranges* ranges_ptr = nullptr;
       Dwarf_Signed count = 0;
@@ -560,14 +571,13 @@ private:
       // the whole truth about where its code lives, and it is how anything
       // non-contiguous is described — hot/cold splitting, linker folding, and
       // most of what a DWARF 5 producer emits.
-      for (const auto& listed_range : listed_ranges) {
-        const auto begin = listed_range.first;
-        const auto end = listed_range.second;
-        if (!std::any_of(executable_.begin(), executable_.end(), [begin, end](const auto& range) {
-              return begin >= range.begin && end <= range.end;
-            })) {
-          throw std::runtime_error("function range is outside executable segments");
-        }
+      if (!std::all_of(listed_ranges.begin(), listed_ranges.end(), [&](const auto& listed_range) {
+            return std::any_of(executable_.begin(), executable_.end(), [&](const auto& range) {
+              return listed_range.first >= range.begin && listed_range.second <= range.end;
+            });
+          })) {
+        unit.unlocated_functions.push_back(function.name.empty() ? "<unnamed>" : function.name);
+        return;
       }
       if (function.name.empty()) {
         throw std::runtime_error("function with code has no source name");

@@ -119,7 +119,8 @@ inline bytes line_table(const unit& input) {
   return out;
 }
 
-inline bytes elf(const bytes& info, const bytes& abbrev, const bytes& lines) {
+inline bytes elf(const bytes& info, const bytes& abbrev, const bytes& lines,
+                 const bytes& ranges = {}) {
   bytes out;
   out.resize(128 + 16); // ELF header, one executable segment, then dummy code.
   out[0] = 0x7f;
@@ -137,8 +138,9 @@ inline bytes elf(const bytes& info, const bytes& abbrev, const bytes& lines) {
   out.patch(54, 56, 2);
   out.patch(56, 1, 2);
   out.patch(58, 64, 2);
-  out.patch(60, 6, 2);
-  out.patch(62, 5, 2);
+  const auto has_ranges = !ranges.empty();
+  out.patch(60, has_ranges ? 7 : 6, 2);
+  out.patch(62, has_ranges ? 6 : 5, 2);
   out.patch(64, PT_LOAD, 4);
   out.patch(68, PF_R | PF_X, 4);
   out.patch(72, 128, 8);
@@ -151,16 +153,19 @@ inline bytes elf(const bytes& info, const bytes& abbrev, const bytes& lines) {
   out.append(abbrev);
   const auto lines_offset = out.size();
   out.append(lines);
+  const auto ranges_offset = out.size();
+  out.append(ranges);
   const auto names_offset = out.size();
   out.number(0, 1);
   out.text(".text");
   out.text(".debug_info");
   out.text(".debug_abbrev");
   out.text(".debug_line");
+  out.text(".debug_ranges");
   out.text(".shstrtab");
   const auto names_size = out.size() - names_offset;
   const auto sections = out.size();
-  out.resize(out.size() + 6 * 64);
+  out.resize(out.size() + (has_ranges ? 7 : 6) * 64);
   out.patch(40, sections, 8);
   const auto section = [&](unsigned index, unsigned name, unsigned type, std::uint64_t offset,
                            std::uint64_t size) {
@@ -177,7 +182,12 @@ inline bytes elf(const bytes& info, const bytes& abbrev, const bytes& lines) {
   section(2, 7, SHT_PROGBITS, info_offset, info.size());
   section(3, 19, SHT_PROGBITS, abbrev_offset, abbrev.size());
   section(4, 33, SHT_PROGBITS, lines_offset, lines.size());
-  section(5, 45, SHT_STRTAB, names_offset, names_size);
+  if (has_ranges) {
+    section(5, 45, SHT_PROGBITS, ranges_offset, ranges.size());
+    section(6, 59, SHT_STRTAB, names_offset, names_size);
+  } else {
+    section(5, 59, SHT_STRTAB, names_offset, names_size);
+  }
   return out;
 }
 
