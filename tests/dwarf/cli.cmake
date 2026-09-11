@@ -40,7 +40,19 @@ function(expect_error path expected)
   endif()
 endfunction()
 expect_error("${NO_DEBUG}" "no embedded DWARF")
-expect_error("${DWARF5}" "unsupported compilation unit")
+# DWARF 5 is what GCC and Clang emit by default, so it has to inspect rather
+# than refuse. Same sources, same expectations: the version is not supposed to
+# change what the binary says about itself.
+execute_process(COMMAND "${INSPECTOR}" inspect "${DWARF5}"
+  OUTPUT_VARIABLE output ERROR_VARIABLE error RESULT_VARIABLE result)
+if(NOT result EQUAL 0 OR NOT error STREQUAL "")
+  message(FATAL_ERROR "DWARF 5 inspection failed: ${result}\n${error}\n${output}")
+endif()
+string(REGEX MATCHALL "match=matched" matches "${output}")
+list(LENGTH matches matched_count)
+if(NOT output MATCHES "summary: 3 compilation unit" OR NOT matched_count EQUAL 10)
+  message(FATAL_ERROR "DWARF 5 listing differs from DWARF 4:\n${output}")
+endif()
 expect_error("${PIE}" "expected ET_EXEC")
 expect_error("${FIXTURE}.missing" "cannot open binary")
 

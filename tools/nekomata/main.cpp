@@ -18,7 +18,7 @@ void print_usage(std::FILE* out) {
              "inspect reads embedded DWARF without running or modifying the binary.\n"
              "manifest writes the same analysis for a program to consume: one matched\n"
              "symbol per line, with the source file it came from.\n"
-             "Supported: Linux ELF64 x86-64 ET_EXEC, DWARF 4 / DWARF32, -O0.\n",
+             "Supported: Linux ELF64 x86-64 ET_EXEC, DWARF 4 or 5, DWARF32, -O0.\n",
              out);
 }
 

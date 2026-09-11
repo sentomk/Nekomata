@@ -11,6 +11,15 @@ target_compile_options(neko_index_alias_fixture PRIVATE
 target_link_options(neko_index_alias_fixture PRIVATE -no-pie -fno-lto)
 nekomata_apply_warnings(neko_index_alias_fixture)
 
+# The same sources as the DWARF 4 fixture, compiled with the version GCC and
+# Clang emit by default. Same expectations: the version says nothing about what
+# the program contains, so a difference here is a bug in the reader.
+add_executable(neko_dwarf_fixture_v5 fixtures/main.cpp fixtures/a.cpp fixtures/b.cpp)
+target_compile_options(neko_dwarf_fixture_v5 PRIVATE
+  -O0 -g -gdwarf-5 -fno-inline -fno-pie -fno-lto)
+target_link_options(neko_dwarf_fixture_v5 PRIVATE -no-pie -fno-lto)
+nekomata_apply_warnings(neko_dwarf_fixture_v5)
+
 add_executable(neko_function_index_tests function_index.cpp)
 target_include_directories(neko_function_index_tests PRIVATE
   "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/elf")
@@ -72,7 +81,7 @@ if(TARGET nekomata)
       "-DINSPECTOR=$<TARGET_FILE:nekomata>"
       "-DFIXTURE=$<TARGET_FILE:neko_dwarf_fixture>"
       "-DNO_DEBUG=$<TARGET_FILE:neko_dwarf_no_debug>"
-      "-DDWARF5=$<TARGET_FILE:neko_dwarf_dwarf5>"
+      "-DDWARF5=$<TARGET_FILE:neko_dwarf_fixture_v5>"
       "-DPIE=$<TARGET_FILE:neko_dwarf_pie>"
       "-DALIASES=$<TARGET_FILE:neko_index_alias_fixture>"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/cli.cmake")

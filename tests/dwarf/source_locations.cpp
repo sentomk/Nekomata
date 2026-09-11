@@ -135,6 +135,17 @@ TEST_CASE("references resolve file indexes in the originating CU, including forw
   CHECK(function.declaration.column == 4);
 }
 
+TEST_CASE("compiler-generated functions may be named only by their linkage name") {
+  unit input;
+  input.nodes.front().front() = text(DW_AT_linkage_name, "_ZThn8_N4neko4tickEv");
+  input.nodes.front().push_back(number(DW_AT_artificial, 1, DW_FORM_flag_present));
+  const auto result = inspect({input});
+  REQUIRE(result.units.front().functions.size() == 1);
+  const auto& function = result.units.front().functions.front();
+  CHECK(function.name == "_ZThn8_N4neko4tickEv");
+  CHECK(function.linkage_name == "_ZThn8_N4neko4tickEv");
+}
+
 TEST_CASE("direct coordinate values, including zero, override inherited values") {
   unit input;
   input.nodes.push_back(function());
@@ -173,10 +184,21 @@ TEST_CASE("invalid coordinate forms and source file indexes fail inspection") {
   SUBCASE("nonconstant coordinate") {
     input.nodes.front()[4] = number(DW_AT_decl_line, 12, DW_FORM_sec_offset);
   }
-  SUBCASE("unsupported line table") {
-    input.line_version = 5;
-  }
   CHECK_THROWS_AS(inspect({input}), std::runtime_error);
+}
+
+TEST_CASE("a DWARF 5 line table leaves the coordinate unknown, not the inspection failed") {
+  // The DWARF 5 header describes its entries with a format list and keeps
+  // strings in a separate section; until that is parsed, the honest answer for
+  // a file index is "unknown" — the same answer a missing line table already
+  // gives. Failing instead would take the functions down with it, and the
+  // functions are what a symbol map needs.
+  unit input;
+  input.line_version = 5;
+  const auto info = inspect({input});
+  REQUIRE(info.units.size() == 1);
+  REQUIRE(info.units.front().functions.size() == 1);
+  CHECK(info.units.front().functions.front().declaration.file == std::nullopt);
 }
 
 TEST_CASE("missing coordinates cannot recurse indefinitely through malformed references") {

@@ -28,6 +28,8 @@ struct source_location {
 
 struct function_record {
   // A DIE in this binary's .debug_info; NOT an identity across rebuilds.
+  // Compiler-generated functions may have only a linkage name; for those,
+  // name contains that linkage name as the only available identifier.
   std::uint64_t die_offset = 0;
   std::string name;
   std::optional<std::string> linkage_name;
@@ -44,6 +46,10 @@ struct compilation_unit {
   // Abstract definitions and other DIEs without emitted code are reported,
   // never assigned an address by guessing from their name.
   std::vector<std::string> unlocated_functions;
+  // Inlined instances are counted, not listed: they are code inside another
+  // function, with no symbol of their own to associate anything with. Reported
+  // so that skipping them is visible rather than silent.
+  std::size_t inlined_subroutines = 0;
 };
 
 struct binary_info {

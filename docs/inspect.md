@@ -43,16 +43,35 @@ running the inspector. Missing line tables leave the file unknown without
 discarding independently known line/column values. Invalid indexes, malformed
 coordinates and unsupported line-table formats fail inspection. Dynamically
 added file entries (`DW_LNE_define_file`) are not resolved by this header-only
-file-table reader; references beyond the header's entries are rejected.
+file-table reader; references beyond the header's entries are rejected. That
+reader understands the DWARF 4 form; a DWARF 5 unit therefore reports file and
+line as unknown rather than failing, which is what a missing line table already
+means here. The functions themselves are listed either way.
 
-The initial supported input is an x86-64 ELF `ET_EXEC` with embedded DWARF 4,
-DWARF32 offsets and 8-byte addresses, built with `-O0 -g -gdwarf-4`, `-fno-pie`
-and linked with `-no-pie`. These options belong to the **inspected project's**
-build, not to Nekomata itself. PIE/shared libraries, relocatable `.o` files,
-DWARF 5, split/compressed debug information, inline instances and function range
-lists are not supported yet. Declarations are skipped; definitions without
-emitted ranges are reported separately. Missing or unsupported information
-causes a diagnostic and nonzero exit instead of a partial successful listing.
+The initial supported input is an x86-64 ELF `ET_EXEC` with embedded DWARF 4 or
+5 compilation units, DWARF32 offsets and 8-byte addresses, built with `-O0 -g`,
+`-fno-pie` and linked with `-no-pie`. These options belong to the **inspected
+project's** build, not to Nekomata itself. PIE/shared libraries, relocatable
+`.o` files, split/compressed debug information and the DWARF 5 source-file table
+are not supported yet.
+
+Function range lists are supported, in both the DWARF 4 and the DWARF 5 form:
+anything non-contiguous is described with one, and a DWARF 5 producer emits
+them even at `-O0`. A definition whose range falls outside every executable
+segment is reported as unlocated rather than rejected — that is a function the
+linker did not keep, not a corrupt file, and it is common in a translation unit
+that was compiled into a library of which only part was linked in.
+
+Inlined instances are counted per compilation unit and otherwise skipped. They
+are code inside the function they were inlined into, so they have no symbol of
+their own to associate anything with, and listing them would invent functions
+the program does not have. The count is reported so that skipping them is
+visible rather than silent. This is not a detail: the standard library marks
+functions `always_inline`, so even an `-O0` build contains them.
+
+Declarations are skipped; definitions without emitted ranges are reported
+separately. Missing or unsupported information causes a diagnostic and nonzero
+exit instead of a partial successful listing.
 
 The internal ELF-only reader additionally indexes functions in x86-64 `ET_REL`
 objects, including separate function sections. Their symbol values are offsets

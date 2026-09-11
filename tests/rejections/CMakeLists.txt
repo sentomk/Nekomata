@@ -6,12 +6,11 @@ if(NEKOMATA_TARGET_LINUX)
   add_executable(reject_runner runner.cpp hot.cpp collide.cpp)
   target_link_libraries(reject_runner PRIVATE nekomata::backends::elf)
   set_target_properties(reject_runner PROPERTIES POSITION_INDEPENDENT_CODE OFF)
-  # -g is what the manifest is generated from, and -gdwarf-4 because the
-  # inspector reads DWARF 4: GCC and Clang emit DWARF 5 by default now, which
-  # it refuses rather than misreads. Debug sections carry no code, so the
-  # reload behaviour and every address stay as they were.
-  target_compile_options(reject_runner PRIVATE
-    -O0 -g -gdwarf-4 -fno-inline -fno-pie -fno-pic)
+  # -g is what the offline manifest is generated from. Nothing else is
+  # special: the inspector reads what the compiler emits by default, including
+  # DWARF 5 and the standard library's always-inlined functions. Debug sections
+  # carry no code, so every address stays as it was.
+  target_compile_options(reject_runner PRIVATE -O0 -g -fno-pie -fno-pic)
   target_link_options(reject_runner PRIVATE -no-pie)
   set_source_files_properties(hot.cpp PROPERTIES
     COMPILE_OPTIONS "-fno-exceptions;-fno-asynchronous-unwind-tables")

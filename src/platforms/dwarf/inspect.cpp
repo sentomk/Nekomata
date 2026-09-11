@@ -154,9 +154,10 @@ public:
       if (!found) {
         break;
       }
-      if (version != 4 || address_size != 8 || length_size != 4 || extension_size != 0 ||
-          unit_type != DW_UT_compile || tag(die.get()) != DW_TAG_compile_unit) {
-        throw std::runtime_error("unsupported compilation unit; require DWARF 4, DWARF32, "
+      if ((version != 4 && version != 5) || address_size != 8 || length_size != 4 ||
+          extension_size != 0 || unit_type != DW_UT_compile ||
+          tag(die.get()) != DW_TAG_compile_unit) {
+        throw std::runtime_error("unsupported compilation unit; require DWARF 4 or 5, DWARF32, "
                                  "8-byte addresses and ordinary compile units");
       }
       if (attribute(die.get(), DW_AT_GNU_dwo_name) || attribute(die.get(), DW_AT_dwo_name)) {
@@ -289,8 +290,12 @@ private:
       }
       return static_cast<std::uint64_t>(value);
     }
+    // implicit_const is a DWARF 5 addition: when the value is constant the
+    // producer records it in the abbreviation and the DIE carries no bytes at
+    // all. libdwarf surfaces it through the same accessor as the udata class,
+    // so accepting the form is the whole fix.
     if (form != DW_FORM_data1 && form != DW_FORM_data2 && form != DW_FORM_data4 &&
-        form != DW_FORM_data8 && form != DW_FORM_udata) {
+        form != DW_FORM_data8 && form != DW_FORM_udata && form != DW_FORM_implicit_const) {
       throw std::runtime_error("unsupported declaration coordinate form");
     }
     Dwarf_Unsigned value = 0;
@@ -398,8 +403,16 @@ private:
     const auto length = cursor.number(4);
     const auto version = cursor.number(2);
     const auto header_length = cursor.number(4);
-    if (length >= 0xfffffff0 || version != 4) {
-      throw std::runtime_error("unsupported source file table; require DWARF 4 and DWARF32");
+    if (length >= 0xfffffff0) {
+      throw std::runtime_error("invalid source table length");
+    }
+    if (version != 4) {
+      // The DWARF 5 form describes its entries with a format list and keeps
+      // strings in a separate section; parsing it is its own piece of work.
+      // Until then the declaration coordinates are unknown, which is exactly
+      // what a missing line table already means here — and unlike a guess, it
+      // is honest, and it leaves the functions themselves intact.
+      return {};
     }
     if (length < 6 || length > line_size_ - offset - 4 || header_length < 8 ||
         header_length > length - 6) {
@@ -501,8 +514,33 @@ private:
         return;
       }
     }
-    if (attribute(die, DW_AT_ranges)) {
-      throw std::runtime_error("function range lists are unsupported in this inspector");
+    std::vector<std::pair<Dwarf_Addr, Dwarf_Addr>> listed_ranges;
+    if (const auto ranges = attribute(die, DW_AT_ranges)) {
+      // Range lists are how a function says "my code is not one contiguous
+      // block" — hot/cold splitting, and anything the linker folded. libdwarf
+      // resolves both the DWARF 4 .debug_ranges and the DWARF 5 rnglists form,
+      // so this is written against its API rather than against either layout.
+      Dwarf_Unsigned offset = 0;
+      call("read range list offset",
+           [&](Dwarf_Error* error) { return dwarf_formudata(ranges.get(), &offset, error); });
+      Dwarf_Off real_offset = 0;
+      Dwarf_Ranges* ranges_ptr = nullptr;
+      Dwarf_Signed count = 0;
+      Dwarf_Unsigned byte_count = 0;
+      call("read range list", [&](Dwarf_Error* error) {
+        return dwarf_get_ranges_b(debug_.get(), offset, die, &real_offset, &ranges_ptr, &count,
+                                  &byte_count, error);
+      });
+      for (Dwarf_Signed i = 0; i < count; ++i) {
+        const auto& entry = ranges_ptr[i];
+        if (entry.dwr_type != DW_RANGES_ENTRY) {
+          continue; // base-address selections and end-of-list markers
+        }
+        if (entry.dwr_addr2 <= entry.dwr_addr1) {
+          throw std::runtime_error("empty or inverted function range");
+        }
+        listed_ranges.emplace_back(entry.dwr_addr1, entry.dwr_addr2);
+      }
     }
     function_record function;
     function.die_offset = die_offset(die);
@@ -511,6 +549,37 @@ private:
     if (!function.linkage_name) {
       function.linkage_name = inherited_string(die, DW_AT_MIPS_linkage_name);
     }
+    // Clang emits artificial adjustment thunks with code and a linkage name,
+    // but no source-level DW_AT_name. They are valid functions, and the ELF
+    // association uses their linkage name, so do not reject the whole binary.
+    if (function.name.empty() && function.linkage_name) {
+      function.name = *function.linkage_name;
+    }
+    if (!listed_ranges.empty()) {
+      // A function with a range list has no single low/high pair; the list is
+      // the whole truth about where its code lives, and it is how anything
+      // non-contiguous is described — hot/cold splitting, linker folding, and
+      // most of what a DWARF 5 producer emits.
+      for (const auto& listed_range : listed_ranges) {
+        const auto begin = listed_range.first;
+        const auto end = listed_range.second;
+        if (!std::any_of(executable_.begin(), executable_.end(), [begin, end](const auto& range) {
+              return begin >= range.begin && end <= range.end;
+            })) {
+          throw std::runtime_error("function range is outside executable segments");
+        }
+      }
+      if (function.name.empty()) {
+        throw std::runtime_error("function with code has no source name");
+      }
+      for (const auto& listed_range : listed_ranges) {
+        function.ranges.push_back({listed_range.first, listed_range.second});
+      }
+      function.declaration = declaration(die);
+      unit.functions.push_back(std::move(function));
+      return;
+    }
+
     Dwarf_Addr low = 0, high = 0;
     Dwarf_Half form = 0;
     Dwarf_Form_Class form_class = DW_FORM_CLASS_UNKNOWN;
@@ -520,6 +589,8 @@ private:
       return dwarf_highpc_b(die, &high, &form, &form_class, error);
     });
     if (!has_low && !has_high) {
+      // A range list with no code entries means the same thing as no low/high
+      // pair: a definition this build never emitted code for.
       unit.unlocated_functions.push_back(function.name.empty() ? "<unnamed>" : function.name);
       return;
     }
@@ -534,10 +605,18 @@ private:
     } else if (form_class != DW_FORM_CLASS_ADDRESS) {
       throw std::runtime_error("unsupported high_pc form");
     }
+    // A definition whose range lands outside every executable segment is not a
+    // corrupt file, which is what it would have meant when this check was
+    // written: it is a function whose code the linker did not keep. Compile a
+    // translation unit into a library, link against part of it, and the debug
+    // information still describes the rest — with a zero low_pc. Reporting it
+    // as unlocated is the honest answer, and it keeps one such leftover from
+    // failing the whole inspection.
     if (low == 0 || high <= low ||
         !std::any_of(executable_.begin(), executable_.end(),
                      [&](const auto& range) { return low >= range.begin && high <= range.end; })) {
-      throw std::runtime_error("function code range is empty or outside executable segments");
+      unit.unlocated_functions.push_back(function.name.empty() ? "<unnamed>" : function.name);
+      return;
     }
     if (function.name.empty()) {
       throw std::runtime_error("function with code has no source name");
@@ -562,7 +641,13 @@ private:
       if (kind == DW_TAG_subprogram) {
         read_function(die.get(), unit);
       } else if (kind == DW_TAG_inlined_subroutine) {
-        throw std::runtime_error("inlined subroutines are unsupported; use an -O0 build");
+        // Inlined code has no symbol of its own — it lives inside the function
+        // it was inlined into — so it can never be a reload target and never
+        // belongs in a symbol map. Skipping is not a silent omission: the count
+        // is reported, and the function that absorbed the code is listed as
+        // usual. This matters because the standard library marks functions
+        // always_inline, so even an -O0 build is full of them.
+        ++unit.inlined_subroutines;
       }
       walk(die.get(), unit, depth + 1);
       Dwarf_Die sibling = nullptr;

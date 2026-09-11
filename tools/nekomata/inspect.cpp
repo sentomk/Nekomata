@@ -111,6 +111,10 @@ int inspect_binary(const char* path) {
         }
         ++functions;
       }
+      if (unit.inlined_subroutines > 0) {
+        std::cout << "  inlined-instances " << unit.inlined_subroutines
+                  << " (code inside another function; skipped, no symbol of their own)\n";
+      }
       for (const auto& name : unit.unlocated_functions) {
         std::cout << "  no-emitted-range name=" << std::quoted(name) << '\n';
         ++unlocated;
