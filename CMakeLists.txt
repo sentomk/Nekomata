@@ -25,6 +25,15 @@ endif()
 # ---------------------------------------------------------------------------
 # Global compile settings
 # ---------------------------------------------------------------------------
+# Source and output are UTF-8: the cat faces in `cats.hpp` and the TUI's box
+# drawing are multi-byte, and log lines are meant to reach the terminal as
+# UTF-8. MSVC defaults both character sets to the machine's code page, which
+# makes every `\u...` in a string literal C4566 — an error under /WX — and
+# would otherwise mangle the output on the way out.
+if(MSVC)
+  add_compile_options(/utf-8)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

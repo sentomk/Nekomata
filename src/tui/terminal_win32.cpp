@@ -167,7 +167,7 @@ private:
     for (;;) {
       char buf[256];
       DWORD n = 0;
-      if (!::ReadFile(in_, buf, sizeof(buf), &n, nullptr)) {
+      if (!::ReadFile(in_, buf, static_cast<DWORD>(sizeof(buf)), &n, nullptr)) {
         break; // a dying console is not EOF; just stop
       }
       if (n == 0) {
@@ -196,7 +196,7 @@ private:
       if (!::PeekNamedPipe(in_, nullptr, 0, nullptr, &avail, nullptr)) {
         char buf[256];
         DWORD n = 0;
-        if (!::ReadFile(in_, buf, sizeof(buf), &n, nullptr) || n == 0) {
+        if (!::ReadFile(in_, buf, static_cast<DWORD>(sizeof(buf)), &n, nullptr) || n == 0) {
           closed_ = true; // broken pipe, or a file at EOF
         } else {
           out.append(buf, n);
@@ -206,7 +206,7 @@ private:
       if (avail > 0) {
         char buf[256];
         DWORD n = 0;
-        const DWORD want = static_cast<DWORD>(std::min<DWORD>(avail, sizeof(buf)));
+        const DWORD want = std::min<DWORD>(avail, static_cast<DWORD>(sizeof(buf)));
         if (::ReadFile(in_, buf, want, &n, nullptr) && n > 0) {
           out.append(buf, n);
         }
