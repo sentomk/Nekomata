@@ -102,11 +102,11 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     if (sym.section_index != SHN_UNDEF || trampoline_offset_for_symbol.count(rel.symbol_index)) {
       continue;
     }
-    void* target = symbols_.resolve_external(sym.name);
+    void* target = symbols_.resolve_external(sym.name, STT_FUNC, sym.bind);
     if (target == nullptr) {
       throw std::runtime_error("cannot resolve external symbol '" + sym.name +
-                               "' — the process defines no such symbol and the dynamic linker "
-                               "cannot see one either");
+                               "' — the process has no link-visible definition and the dynamic "
+                               "linker cannot see one either");
     }
     image_size = align_up(image_size, kSectionAlign);
     trampoline_offset_for_symbol[rel.symbol_index] = image_size;
@@ -148,7 +148,8 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     std::memcpy(image.data() + section_offset[sec.index], sec.bytes.data(), sec.bytes.size());
   }
   for (const auto& [sym_index, offset] : trampoline_offset_for_symbol) {
-    void* target = symbols_.resolve_external(obj.symbols[sym_index].name);
+    const auto& sym = obj.symbols[sym_index];
+    void* target = symbols_.resolve_external(sym.name, STT_FUNC, sym.bind);
     write_trampoline(image.data() + offset, reinterpret_cast<std::uintptr_t>(target));
   }
 
@@ -188,21 +189,11 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
       // which is the only thing a rel32 can reach. Truly external
       // targets fall through to dlsym — and may then legitimately fail
       // the range check below (a documented current boundary).
-      if (symbols_.count_globals(sym.name) > 1) {
-        throw std::runtime_error("ambiguous global '" + sym.name +
-                                 "' — refusing to bind state by name");
-      }
-      if (auto existing = symbols_.global_by_name(sym.name)) {
-        return existing->address;
-      }
-      if (auto fn = symbols_.function_by_name(sym.name)) {
-        return fn->address;
-      }
-      void* external = symbols_.resolve_external(sym.name);
+      void* external = symbols_.resolve_external(sym.name, sym.type, sym.bind);
       if (external == nullptr) {
         throw std::runtime_error("cannot resolve external symbol '" + sym.name +
-                                 "' — the process defines no such symbol and the dynamic linker "
-                                 "cannot see one either");
+                                 "' — the process has no link-visible definition and the dynamic "
+                                 "linker cannot see one either");
       }
       return reinterpret_cast<std::uintptr_t>(external);
     }

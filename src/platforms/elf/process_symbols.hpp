@@ -41,10 +41,11 @@ public:
 
   void* map_global(std::string_view name) override;
 
-  /// Resolve a symbol the process references but does not define here: a
-  /// function or global in the executable itself, or one the dynamic linker
-  /// can see in a shared library.
-  void* resolve_external(std::string_view name);
+  /// Resolve an undefined symbol from a fresh object against the executable
+  /// or a shared library. A process-table candidate must have external
+  /// binding; a same-named STB_LOCAL symbol belongs to another translation
+  /// unit and is never a legal definition for this reference.
+  void* resolve_external(std::string_view name, std::uint8_t type, std::uint8_t binding);
 
   /// Pick the function named `name` that belongs to `source_path`, when the
   /// name alone is not enough to tell.
@@ -78,6 +79,10 @@ private:
   /// runtime addresses (this table) can be compared.
   std::uintptr_t load_base_ = 0;
   std::vector<global_variable> globals_;
+  /// Parallel to globals_: local storage is valid for state preservation in
+  /// its own translation unit, but cannot satisfy another unit's undefined
+  /// reference.
+  std::vector<std::uint8_t> global_bindings_;
   std::unordered_map<std::string, std::vector<std::size_t>> function_index_;
   std::unordered_map<std::string, std::vector<std::size_t>> global_index_;
 };

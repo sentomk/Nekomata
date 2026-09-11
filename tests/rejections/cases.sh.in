@@ -243,16 +243,28 @@ cross_ticks_after=$(count '\[hot\] tick')
   echo "FAIL(cross_tu): ticks did not continue after the reload"; exit 1; }
 echo "PASS cross_tu_calls_the_host"
 
-# 7. a reference that exists nowhere: still refused, and the message says what
+# 7. A global data reference must not bind to another translation unit's
+#    file-local storage merely because its C-linkage name is unique in the
+#    process table. Volatile access in collide.cpp keeps the symbol present.
+build_variant 's|#include <cstdio>|#include <cstdio>\nextern "C" volatile int private_host_state;|; s|++s_calls;|++s_calls; g_counter += private_host_state;|'
+expect_case local_external_data_capture "$WORK/staging.o" "cannot resolve external symbol 'private_host_state' — the process has no link-visible definition and the dynamic linker cannot see one either"
+
+# 8. The same binding rule applies to calls. The static definition in
+#    collide.cpp is deliberately retained by a call from that unit; it is not
+#    a valid target for this undefined global reference.
+build_variant 's|#include <cstdio>|#include <cstdio>\nextern "C" int private_host_value();|; s|++s_calls;|++s_calls; g_counter += private_host_value();|'
+expect_case local_external_function_capture "$WORK/staging.o" "cannot resolve external symbol 'private_host_value' — the process has no link-visible definition and the dynamic linker cannot see one either"
+
+# 9. a reference that exists nowhere: still refused, and the message says what
 #    is missing rather than blaming cross-TU references, which work now.
 build_variant 's|#include <cstdio>|#include <cstdio>\nvoid missing_everywhere();|; s|++s_calls;|++s_calls; missing_everywhere();|'
 #    The name in the message is the object's symbol, which for C++ is the
 #    mangled one; demangling the diagnostic is a separate change.
-expect_case cross_tu_missing "$WORK/staging.o" "cannot resolve external symbol '_Z18missing_everywherev'"
+expect_case cross_tu_missing "$WORK/staging.o" "cannot resolve external symbol '_Z18missing_everywherev' — the process has no link-visible definition and the dynamic linker cannot see one either"
 
 if [ "$manifest_ready" = 1 ]; then
 
-# 8. A fresh file-static helper whose name the process also uses under another
+# 10. A fresh file-static helper whose name the process also uses under another
 #    source. This watcher deliberately supplies no source identity, so even a
 #    loaded manifest cannot authorize a name-only redirect. The process must
 #    survive the refusal with the old code still running.
@@ -264,17 +276,17 @@ else
   echo "SKIP manifest_confirms_or_refuses (no --cli)"
 fi
 
-# 10. existing global changed size (int -> long): layout drift must be
+# 11. existing global changed size (int -> long): layout drift must be
 #    caught by the data-section anchor consistency check
 build_variant 's|int g_counter = 0;|long g_counter = 0;|'
 expect_case size_change "$WORK/staging.o" "inconsistent state anchors — the global layout changed"
 
-# 11. GOT-style relocations (-fpic hot TU)
+# 12. GOT-style relocations (-fpic hot TU)
 "$CXX" -std=c++20 -O0 -fpic -fno-exceptions -fno-asynchronous-unwind-tables \
   -c "$SRC/hot.cpp" -o "$WORK/staging.o"
 expect_case got_style "$WORK/staging.o" "GOT-style relocs need -fno-pic"
 
-# 12. arena boundary: image sections sized so the laid-out image stays
+# 13. arena boundary: image sections sized so the laid-out image stays
 #    within one page while at least one trampoline slot follows (printf
 #    remains an undefined call). The reservation must cover the trampoline
 #    bytes; before the fix the commit wrote past the reserved page span.

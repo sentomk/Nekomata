@@ -57,6 +57,17 @@ const std::uint8_t* bounds(const std::vector<std::uint8_t>& bytes, std::uint64_t
   return bytes.data() + offset;
 }
 
+bool has_external_binding(std::uint8_t binding) {
+  if (binding == STB_GLOBAL || binding == STB_WEAK) {
+    return true;
+  }
+#ifdef STB_GNU_UNIQUE
+  return binding == STB_GNU_UNIQUE;
+#else
+  return false;
+#endif
+}
+
 } // namespace
 
 process_symbols::process_symbols() {
@@ -122,6 +133,7 @@ process_symbols::process_symbols() {
         global_index_[name].push_back(globals_.size());
         globals_.push_back({name, static_cast<std::uintptr_t>(sym.st_value) + base,
                             static_cast<std::size_t>(sym.st_size)});
+        global_bindings_.push_back(ELF64_ST_BIND(sym.st_info));
       }
     }
   }
@@ -217,7 +229,8 @@ bool process_symbols::contains_source(std::string_view source_path) const {
   return manifest_.contains_source(source_path);
 }
 
-void* process_symbols::resolve_external(std::string_view name) {
+void* process_symbols::resolve_external(std::string_view name, std::uint8_t type,
+                                        std::uint8_t binding) {
   // The process's own symbol table comes first. Patching already trusts it — a
   // function defined in this executable is redirected by name — and asking the
   // dynamic linker alone made that an asymmetry: the same function could be
@@ -225,19 +238,49 @@ void* process_symbols::resolve_external(std::string_view name) {
   // invisible to dlsym. A reloaded function calling a helper defined in the
   // main program is the ordinary case, not an exotic one.
   //
-  // Only an unambiguous name is taken from here. Two entries can share one
-  // (a local symbol in each of two translation units, an alias), and for those
-  // the dynamic linker is the one that knows which definition the reference
-  // bound to — it is the same authority that resolved the main program.
-  if (count_functions(name) == 1) {
-    if (const auto fn = function_by_name(name)) {
-      return reinterpret_cast<void*>(fn->address);
+  // A unique spelling is not enough: STB_LOCAL belongs to the translation
+  // unit that defined it and cannot satisfy another unit's undefined symbol.
+  // Retain only externally bindable definitions of the requested kind. An
+  // STT_NOTYPE reference may name either code or data, as compiler-produced
+  // relocatable objects commonly leave undefined symbols untyped.
+  if (binding == STB_LOCAL) {
+    return nullptr;
+  }
+
+  void* candidate = nullptr;
+  std::size_t candidate_count = 0;
+  const auto consider = [&](std::uintptr_t address) {
+    candidate = reinterpret_cast<void*>(address);
+    ++candidate_count;
+  };
+
+  if (type == STT_FUNC || type == STT_NOTYPE) {
+    const auto it = function_index_.find(std::string(name));
+    if (it != function_index_.end()) {
+      for (const auto index : it->second) {
+        if (has_external_binding(function_bindings_[index])) {
+          consider(functions_[index].address);
+        }
+      }
     }
   }
-  if (count_globals(name) == 1) {
-    if (const auto global = global_by_name(name)) {
-      return reinterpret_cast<void*>(global->address);
+
+  if (type == STT_OBJECT || type == STT_NOTYPE) {
+    const auto it = global_index_.find(std::string(name));
+    if (it != global_index_.end()) {
+      for (const auto index : it->second) {
+        if (has_external_binding(global_bindings_[index])) {
+          consider(globals_[index].address);
+        }
+      }
     }
+  }
+
+  if (candidate_count == 1) {
+    return candidate;
+  }
+  if (candidate_count > 1) {
+    return nullptr; // conflicting link-visible definitions: refuse to guess
   }
   return dlsym(RTLD_DEFAULT, std::string(name).c_str());
 }

@@ -14,6 +14,20 @@ static void helper() {
   std::printf("[collide] helper\n");
 }
 
+// The C-linkage function and explicit object-file label below give the process
+// symbol table unique, file-local definitions whose spellings can also appear
+// as undefined globals in a fresh object. The runtime linker must not treat
+// name equality as permission to cross that binding boundary.
+extern "C" {
+static volatile int private_host_state asm("private_host_state") = 23;
+
+static int private_host_value() {
+  return 17;
+}
+}
+
 void use_collide_helper() {
   helper();
+  (void)private_host_state;
+  (void)private_host_value();
 }

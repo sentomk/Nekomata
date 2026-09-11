@@ -34,10 +34,10 @@ fi
 
 stage=0; calls=0; counter=0; recovered=0
 # The arena-boundary case runs a second, fresh runner watching boundary.new.o;
-# its single offer is a valid reload (stage 10), not a rejection. It must exit
+# its single offer is a valid reload (stage 13), not a rejection. It must exit
 # cleanly regardless of the fault mode: the injected nonzero exit belongs to
 # the main runner, not to this boundary probe.
-if [[ "$watched" == *boundary* ]]; then stage=10; boundary=1; fi
+if [[ "$watched" == *boundary* ]]; then stage=12; boundary=1; fi
 while [ ! -f "$stop_file" ]; do
   if [ -f "$watched" ]; then
     mv "$watched" "$watched.consumed"
@@ -51,17 +51,19 @@ while [ ! -f "$stop_file" ]; do
       6) # cross-TU call into the host: applies, and the host function runs
         echo "reload applied"
         echo "[host] host_only called" ;;
-      7) echo "cannot resolve external symbol '_Z18missing_everywherev'" ;;
-      8) echo "inconsistent state anchors — the global layout changed" ;;
-      9) echo "GOT-style relocs need -fno-pic" ;;
-      10)
+      7) echo "cannot resolve external symbol 'private_host_state' — the process has no link-visible definition and the dynamic linker cannot see one either" ;;
+      8) echo "cannot resolve external symbol 'private_host_value' — the process has no link-visible definition and the dynamic linker cannot see one either" ;;
+      9) echo "cannot resolve external symbol '_Z18missing_everywherev' — the process has no link-visible definition and the dynamic linker cannot see one either" ;;
+      10) echo "inconsistent state anchors — the global layout changed" ;;
+      11) echo "GOT-style relocs need -fno-pic" ;;
+      12)
         if [ "$mode" != reject_stale_final ]; then
           echo "reload applied"
           if [ "$mode" != reject_ignored_final ]; then recovered=1; fi
         fi
         if [ "$mode" = reject_state_reset ]; then calls=0; counter=0; fi
         ;;
-      11) echo "reload applied" ;; # arena boundary: a valid reload that must apply
+      13) echo "reload applied" ;; # arena boundary: a valid reload that must apply
       *) echo "unexpected offer" >&2; exit 2 ;;
     esac
   fi
