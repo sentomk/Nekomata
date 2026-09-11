@@ -253,10 +253,9 @@ expect_case cross_tu_missing "$WORK/staging.o" "cannot resolve external symbol '
 if [ "$manifest_ready" = 1 ]; then
 
 # 8. A fresh file-static helper whose name the process also uses under another
-#    source. The manifest is asked which translation unit the object is, and
-#    here it cannot say: the two units share too little. Refusing is the answer
-#    — the manifest can only confirm a redirect, never invent one — and the
-#    process must survive it with the old code still running.
+#    source. This watcher deliberately supplies no source identity, so even a
+#    loaded manifest cannot authorize a name-only redirect. The process must
+#    survive the refusal with the old code still running.
 build_variant 's|#include <cstdio>|#include <cstdio>\nstatic int helper() { return 7; }|; s|++g_counter;|g_counter += helper();|'
 expect_case ambiguous_not_confirmed "$WORK/staging.o" "ambiguous function"
 echo "PASS manifest_confirms_or_refuses"

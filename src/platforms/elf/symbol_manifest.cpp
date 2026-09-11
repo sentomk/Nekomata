@@ -1,11 +1,10 @@
 #include "symbol_manifest.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace neko::elf {
 namespace {
@@ -39,15 +38,8 @@ std::uint64_t parse_address(std::string_view field) {
   return value;
 }
 
-/// The translation units a manifest describes, keyed by source file.
-using unit_symbols = std::unordered_map<std::string, std::unordered_set<std::string>>;
-
-unit_symbols group_by_source(const std::vector<manifest_entry>& entries) {
-  unit_symbols units;
-  for (const auto& entry : entries) {
-    units[entry.source].insert(entry.symbol);
-  }
-  return units;
+std::filesystem::path normalized_source(std::string_view source) {
+  return std::filesystem::path(source).lexically_normal();
 }
 
 } // namespace
@@ -119,50 +111,27 @@ symbol_manifest symbol_manifest::discover(const std::filesystem::path& executabl
   return load(manifest_host.string() + ".nekomata-map");
 }
 
+bool symbol_manifest::contains_source(std::string_view source_path) const {
+  if (source_path.empty()) {
+    return false;
+  }
+  const auto wanted_source = normalized_source(source_path);
+  return std::any_of(entries_.begin(), entries_.end(), [&](const manifest_entry& entry) {
+    return normalized_source(entry.source) == wanted_source;
+  });
+}
+
 std::optional<std::uint64_t>
-symbol_manifest::address_in_unit(std::string_view symbol,
-                                 const std::vector<std::string>& unit_symbols_wanted) const {
-  if (entries_.empty() || unit_symbols_wanted.empty()) {
+symbol_manifest::address_in_source(std::string_view symbol, std::string_view source_path) const {
+  if (entries_.empty() || source_path.empty()) {
     return std::nullopt;
   }
 
-  // First decide *which translation unit this object is*, using its whole
-  // symbol list — not just the name in question. Asking "who defines this
-  // name?" would happily answer with a unit that merely happens to use the
-  // same name, which is the mistake this whole mechanism exists to avoid.
-  //
-  // Adding a function to the unit does not lower an unchanged unit's score,
-  // because only the intersection counts. Two units that match equally well
-  // mean the evidence is not conclusive, and the caller must refuse.
-  const unit_symbols units = group_by_source(entries_);
-  std::size_t best_score = 0;
-  bool tied = false;
-  const std::string* best_source = nullptr;
-  for (const auto& [source, symbols] : units) {
-    std::size_t score = 0;
-    for (const auto& wanted : unit_symbols_wanted) {
-      if (symbols.count(wanted) != 0) {
-        ++score;
-      }
-    }
-    if (score > best_score) {
-      best_score = score;
-      best_source = &source;
-      tied = false;
-    } else if (score == best_score && score > 0 && &source != best_source) {
-      tied = true;
-    }
-  }
-  if (best_source == nullptr || tied) {
-    return std::nullopt;
-  }
-
-  // Now the name has to be defined *by that unit*. A source that defines it
-  // but is not this object's unit is a different function with the same name.
+  const auto wanted_source = normalized_source(source_path);
   const std::string key(symbol);
   std::optional<std::uint64_t> found;
   for (const auto& entry : entries_) {
-    if (entry.source != *best_source || entry.symbol != key) {
+    if (normalized_source(entry.source) != wanted_source || entry.symbol != key) {
       continue;
     }
     if (found.has_value()) {

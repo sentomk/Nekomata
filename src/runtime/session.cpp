@@ -31,6 +31,15 @@ std::vector<std::uint8_t> read_file(const std::filesystem::path& path) {
   return bytes;
 }
 
+std::filesystem::path normalized_source_path(const std::filesystem::path& path) {
+  if (path.empty()) {
+    return {};
+  }
+  std::error_code ec;
+  const auto absolute = std::filesystem::absolute(path, ec);
+  return (ec ? path : absolute).lexically_normal();
+}
+
 } // namespace
 
 // Trivial planner: every changed file is one translation unit to rebuild.
@@ -63,21 +72,26 @@ reload_session::stats reload_session::session_stats() const {
   out.applied = applied_;
   out.rejected = rejected_;
   out.last_result = last_result_;
-  for (const auto& path : watched_) {
-    out.watched_paths.push_back(path.string());
+  for (const auto& watched : watched_) {
+    out.watched_paths.push_back(watched.object_path.string());
   }
   return out;
 }
 
 void reload_session::watch(std::filesystem::path object_path) {
-  watched_.push_back(std::move(object_path));
+  watched_.push_back({std::move(object_path), {}});
+}
+
+void reload_session::watch(std::filesystem::path object_path,
+                           const std::filesystem::path& source_path) {
+  watched_.push_back({std::move(object_path), normalized_source_path(source_path)});
 }
 
 bool reload_session::update() {
   bool reloaded = false;
-  for (const auto& path : watched_) {
+  for (const auto& watched : watched_) {
     try {
-      if (try_load(path)) {
+      if (try_load(watched)) {
         reloaded = true;
       }
     } catch (const std::exception& e) {
@@ -89,7 +103,8 @@ bool reload_session::update() {
   return reloaded;
 }
 
-bool reload_session::try_load(const std::filesystem::path& path) {
+bool reload_session::try_load(const watched_object& watched) {
+  const auto& path = watched.object_path;
   std::error_code ec;
   if (!std::filesystem::is_regular_file(path, ec)) {
     return false;
@@ -108,12 +123,13 @@ bool reload_session::try_load(const std::filesystem::path& path) {
   const auto bytes = read_file(claimed_path);
   std::filesystem::remove(claimed_path, ec);
 
-  const loaded_image image = backends_.loader->load(bytes.data(), bytes.size());
+  const auto source_path = watched.source_path.generic_string();
+  const loaded_image image = backends_.loader->load(bytes.data(), bytes.size(), source_path);
 
   // Plan first (the planner owns "what does this object cover"): it is the
   // seam the future dependency graph grows into.
   change_set changes;
-  changes.changed_files.push_back(path.string());
+  changes.changed_files.push_back(source_path.empty() ? path.string() : source_path);
   const auto plans = backends_.planner->plan(changes);
   neko::log(neko::log_level::info, "plan covers %zu translation unit(s)\n", plans.size());
 

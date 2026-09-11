@@ -1,25 +1,35 @@
 #!/usr/bin/env bash
 # neko.dupnames — same-named statics across TUs must not cross-patch.
 #
-# The host links a.cpp + b.cpp, both defining static int value(). We offer a
-# fresh object of a.cpp v2 (value -> 100). Correct behavior: the symbol
-# `value` is ambiguous in the host, the offer is REJECTED loudly, and both
-# a_value() and b_value() keep returning their original values. The
-# name-only matcher would patch b.cpp's copy (or a.cpp's, arbitrarily) and
-# b would silently start reporting 100.
+# The host links a.cpp + b.cpp, both defining static int value(). The edited A
+# also adds two static names from B, making B the stronger symbol-set match.
+# With an explicit source identity, A must still be selected deterministically.
+# Without a manifest, the offer must be rejected rather than guessed.
 set -euo pipefail
 
 CXX="@CMAKE_CXX_COMPILER@"
 SRC="@CMAKE_CURRENT_SOURCE_DIR@"
 HERE="@CMAKE_CURRENT_BINARY_DIR@"
-WORK="${1:-$(mktemp -d /tmp/neko-dup.XXXXXX)}"
+CLI=""
+WORK=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --cli) CLI="$2"; shift 2 ;;
+    *)     WORK="$1"; shift ;;
+  esac
+done
+WORK="${WORK:-$(mktemp -d /tmp/neko-dup.XXXXXX)}"
 OUT="$WORK/out.txt"
 : > "$OUT"
 
 BASE="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
 
 runner_pid=""
-cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+manifest_path="$HERE/dup_runner.nekomata-map"
+cleanup() {
+  [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true
+  rm -f "$manifest_path"
+}
 trap cleanup EXIT
 
 fail() { echo "FAIL: $1"; tail -6 "$OUT"; exit 1; }
@@ -37,27 +47,53 @@ wait_count() {
 
 echo "== neko.dupnames (workdir: $WORK) =="
 
-"$HERE/dup_runner" "$WORK/dup.new.o" > "$OUT" 2>&1 &
+manifest_ready=0
+if [ -n "$CLI" ]; then
+  if ! "$CLI" manifest "$HERE/dup_runner" > "$manifest_path" 2>/dev/null; then
+    echo "FAIL: symbol manifest generation failed"
+    exit 1
+  fi
+  manifest_ready=1
+else
+  rm -f "$manifest_path"
+fi
+
+runner_args=("$WORK/dup.new.o")
+if [ "$manifest_ready" = 1 ]; then
+  # Lexical spelling is not identity: `./` must normalize to the manifest's
+  # source path without requiring filesystem canonicalization.
+  runner_args+=("$SRC/./a.cpp")
+fi
+"$HERE/dup_runner" "${runner_args[@]}" > "$OUT" 2>&1 &
 runner_pid=$!
 wait_count '\[a=1 b=2\]' 3 10 startup
-
-# a.cpp v2: same-named static now returns 100.
-sed 's|return 1;|return 100;|' "$SRC/a.cpp" > "$WORK/a.v2.cpp"
-"$CXX" $BASE -c "$WORK/a.v2.cpp" -o "$WORK/dup.new.o"
-
-wait_count "ambiguous" 1 15 ambiguous-rejection
-sleep 0.8
-kill -0 "$runner_pid" 2>/dev/null || fail "runner died on the ambiguous offer"
-if grep -aq '\[a=100' "$OUT"; then
-  fail "a.cpp's code was patched despite ambiguity"
+if [ "$manifest_ready" = 1 ]; then
+  wait_count "symbol manifest loaded" 1 5 manifest_loaded
 fi
-if grep -aq 'b=100' "$OUT"; then
-  fail "b.cpp's same-named static was patched — wrong-function redirect"
+
+# a.cpp v2: same-named static now returns 100, and two new functions make its
+# symbol-set overlap with b.cpp stronger than with the original a.cpp.
+"$CXX" $BASE -c "$SRC/a_v2.cpp" -o "$WORK/dup.new.o"
+
+if [ "$manifest_ready" = 1 ]; then
+  wait_count "reload applied" 1 15 reload
+  wait_count '\[a=100 b=2\]' 3 10 source_selected
+  if grep -aq 'b=100' "$OUT"; then
+    fail "b.cpp's same-named static was patched — source identity was ignored"
+  fi
+  echo "DUPNAMES PASS — explicit source selected a.cpp despite stronger overlap with b.cpp"
+else
+  wait_count "ambiguous" 1 15 ambiguous_rejection
+  sleep 0.8
+  kill -0 "$runner_pid" 2>/dev/null || fail "runner died on the ambiguous offer"
+  if grep -aq '\[a=100' "$OUT" || grep -aq 'b=100' "$OUT"; then
+    fail "code was patched despite missing source evidence"
+  fi
+  wait_count '\[a=1 b=2\]' 1 5 unchanged
+  echo "DUPNAMES PASS — ambiguous symbol refused without a manifest"
 fi
-wait_count '\[a=1 b=2\]' 1 5 unchanged
 
 kill "$runner_pid" 2>/dev/null || true; wait "$runner_pid" 2>/dev/null || true; runner_pid=""
 
 echo ""
-echo "DUPNAMES PASS — ambiguous symbol refused, no cross-TU patching"
 echo "output kept at: $OUT"

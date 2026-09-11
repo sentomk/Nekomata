@@ -15,6 +15,7 @@
 #include <cstdint>
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace neko {
@@ -45,6 +46,16 @@ public:
   /// Load, relocate and lay out an object file's code. Throws
   /// std::runtime_error with a human-readable reason on failure.
   virtual loaded_image load(const std::uint8_t* object_data, std::size_t size) = 0;
+
+  /// Load an object that the caller identifies as a particular source file.
+  /// Backends that do not need translation-unit identity keep working through
+  /// the two-argument load() above. Backends that disambiguate file-static
+  /// symbols override this overload and consume `source_path`.
+  virtual loaded_image load(const std::uint8_t* object_data, std::size_t size,
+                            std::string_view source_path) {
+    (void)source_path;
+    return load(object_data, size);
+  }
 };
 
 } // namespace neko

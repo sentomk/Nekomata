@@ -7,14 +7,14 @@
 // and the library refuses to link a DWARF reader to find out (every user of a
 // hot-reload library would then carry libdwarf into their process).
 //
-// Discovery is opportunistic and needs no API: the file is looked for next to
-// the running executable, or wherever NEKOMATA_MANIFEST points. No manifest
-// means the previous behaviour, not a broken one.
+// Discovery is opportunistic: the file is looked for next to the running
+// executable, or wherever NEKOMATA_MANIFEST points.
 //
-// The identity of a translation unit comes from its *symbol set*: a manifest
-// entry says which source defined which symbols, and a fresh object says which
-// symbols it defines. Two translation units that share one name almost never
-// share all of them, so the overlap is what picks the right one.
+// The identity of a translation unit comes from the build integration through
+// reload_session::watch(object, source). A manifest entry then answers the
+// deterministic question "where was this source's symbol linked?". Inferring
+// identity from a fresh object's symbol set is unsafe because ordinary edits
+// change that set.
 
 #pragma once
 
@@ -50,14 +50,13 @@ public:
   static symbol_manifest discover(const std::filesystem::path& executable);
 
   [[nodiscard]] bool empty() const noexcept { return entries_.empty(); }
+  [[nodiscard]] bool contains_source(std::string_view source_path) const;
 
-  /// The link-time address of `symbol` inside the translation unit that best
-  /// matches `unit_symbols`, or nullopt when the evidence is not conclusive:
-  /// no manifest, no entry for the symbol, or two translation units matching
-  /// equally well. A wrong answer here redirects the wrong function, so the
-  /// caller must treat nullopt as "fall back to refusing".
-  [[nodiscard]] std::optional<std::uint64_t>
-  address_in_unit(std::string_view symbol, const std::vector<std::string>& unit_symbols) const;
+  /// The link-time address of `symbol` attributed to exactly `source_path`, or
+  /// nullopt when there is no unique match. A wrong answer here redirects the
+  /// wrong function, so the caller must treat nullopt as "refuse".
+  [[nodiscard]] std::optional<std::uint64_t> address_in_source(std::string_view symbol,
+                                                               std::string_view source_path) const;
 
 private:
   std::vector<manifest_entry> entries_;

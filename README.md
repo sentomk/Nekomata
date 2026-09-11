@@ -61,9 +61,11 @@ survives the swap, no restart. Expected transcript:
 `inspect` reads an existing binary without running it, attaching to a process,
 or modifying the file: compilation units, function names, declaration
 locations, code ranges, and how each DWARF function associates with the ELF
-symbol table. `manifest` writes the same analysis for a program to consume, which
-is how a reload tells two same-named static functions apart. Exit code zero
-means the inspection finished, not that every function is safe to patch.
+symbol table. `manifest` writes the same analysis for the runtime to consume.
+Registering an object with `session.watch(object, source)` gives that map an
+explicit translation-unit identity, so a reload can tell two same-named static
+functions apart without guessing from the edited object's symbol set. Exit code
+zero means the inspection finished, not that every function is safe to patch.
 
 The details — what is matched, what is refused, the resource budgets, and the
 libdwarf dependency — are in [docs/inspect.md](docs/inspect.md).

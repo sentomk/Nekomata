@@ -8,8 +8,8 @@ the inspection finished, **not** that every function is matched or safe to
 patch.
 
 Everything below is the contract: what is matched, what is refused, and the
-resource budgets. It describes the tool, not the reload path; the runtime uses
-its own symbol lookup.
+resource budgets. Of this tool's outputs, the runtime consumes only the
+offline `manifest` artifact; it does not link the DWARF reader into the process.
 
 ```sh
 ./build/debug/tools/nekomata/nekomata inspect \
@@ -122,10 +122,12 @@ inspector decodes only the bounded DWARF 4 header from the same ELF descriptor.
 It does not read, execute or validate the line program. libdwarf remains the
 reader for compilation units, DIEs and attributes.
 
-This is an offline foundation, not an expansion of the runtime's hot-reload
-support or a cross-build matching API. Exit code zero means inspection finished,
-**not** that every function is matched or safe to patch. The runtime still uses
-its original symbol lookup. Tests compare fixture ranges and linkage names
+This remains an offline analysis surface, not a cross-build matching API. Exit
+code zero means inspection finished, **not** that every function is matched or
+safe to patch. A reload session may use `manifest` output together with an
+explicit `watch(object, source)` identity to select same-named file-static
+functions; missing or mismatched identity is refused rather than inferred from
+the edited object's symbols. Tests compare fixture ranges and linkage names
 with GNU `nm`, and cover duplicate local names, aliases, overloads, out-of-line
 members, malformed input, missing metadata and repeated inspection.
 `readelf --debug-dump=info <binary>` or

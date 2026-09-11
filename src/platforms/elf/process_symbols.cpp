@@ -173,8 +173,8 @@ void* process_symbols::map_global(std::string_view name) {
 }
 
 std::optional<function_info>
-process_symbols::function_in_unit(std::string_view name, std::uint8_t binding,
-                                  const std::vector<std::string>& unit_symbols) const {
+process_symbols::function_in_source(std::string_view name, std::uint8_t binding,
+                                    std::string_view source_path) const {
   const auto it = function_index_.find(std::string(name));
   if (it == function_index_.end() || it->second.empty()) {
     return std::nullopt;
@@ -194,25 +194,27 @@ process_symbols::function_in_unit(std::string_view name, std::uint8_t binding,
         only_global = functions_[index];
       }
     }
-    if (only_global.has_value()) {
-      return only_global;
-    }
+    return only_global;
   }
 
   // Otherwise the offline manifest decides, if one was found: it knows which
-  // source file defined each address, and the object's symbol list says which
-  // translation unit this is.
-  const auto link_time = manifest_.address_in_unit(name, unit_symbols);
+  // source file defined each address, and the caller says which source this
+  // object was built for.
+  const auto link_time = manifest_.address_in_source(name, source_path);
   if (!link_time.has_value()) {
     return std::nullopt;
   }
   const auto runtime_address = static_cast<std::uintptr_t>(*link_time) + load_base_;
   for (const auto index : it->second) {
-    if (functions_[index].address == runtime_address) {
+    if (function_bindings_[index] == STB_LOCAL && functions_[index].address == runtime_address) {
       return functions_[index];
     }
   }
   return std::nullopt;
+}
+
+bool process_symbols::contains_source(std::string_view source_path) const {
+  return manifest_.contains_source(source_path);
 }
 
 void* process_symbols::resolve_external(std::string_view name) {

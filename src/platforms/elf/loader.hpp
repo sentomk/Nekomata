@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string_view>
 
 #include <neko/runtime/fwd.hpp>
 #include <neko/runtime/object_loader.hpp>
@@ -33,6 +34,8 @@ public:
   loader(process_symbols& symbols, state_manager& state, code_substituter& substituter);
 
   loaded_image load(const std::uint8_t* object_data, std::size_t size) override;
+  loaded_image load(const std::uint8_t* object_data, std::size_t size,
+                    std::string_view source_path) override;
 
 private:
   process_symbols& symbols_;

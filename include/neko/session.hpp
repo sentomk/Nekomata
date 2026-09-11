@@ -3,7 +3,7 @@
 // Usage pattern:
 //
 //     neko::reload_session session{neko::elf::create_backend()};
-//     session.watch("hot.new.o");
+//     session.watch("hot.new.o", "src/hot.cpp");
 //     ... session.update() once per frame / loop iteration ...
 //
 // Trigger model: compilation is the caller's business; a
@@ -43,8 +43,18 @@ public:
   explicit reload_session(backend_bundle backends);
 
   /// Offer an object file path to watch. When a regular file appears there,
-  /// it is claimed and loaded on the next update().
+  /// it is claimed and loaded on the next update(). This name-only form can
+  /// reload exported functions, but refuses to guess which file-static
+  /// function to patch when a live function has the same name.
   void watch(std::filesystem::path object_path);
+
+  /// Watch an object produced for `source_path`. The source identity is
+  /// matched against the offline symbol manifest when file-static function
+  /// names need disambiguation; it is supplied by the build integration, not
+  /// inferred from the fresh object's changing symbol set. A relative path is
+  /// made absolute when registered, then compared lexically (without opening
+  /// or canonicalizing the source file).
+  void watch(std::filesystem::path object_path, const std::filesystem::path& source_path);
 
   /// Pick up any newly offered object file. Returns true when a reload was
   /// applied. Throws std::runtime_error on a failed reload attempt — the
@@ -61,10 +71,15 @@ public:
   stats session_stats() const;
 
 private:
-  bool try_load(const std::filesystem::path& path);
+  struct watched_object {
+    std::filesystem::path object_path;
+    std::filesystem::path source_path;
+  };
+
+  bool try_load(const watched_object& watched);
 
   backend_bundle backends_;
-  std::vector<std::filesystem::path> watched_;
+  std::vector<watched_object> watched_;
   /// Functions redirected by the last fully-applied load, by name. Used to
   /// warn when a later load drops a function whose entry still jumps to
   /// stale arena code.

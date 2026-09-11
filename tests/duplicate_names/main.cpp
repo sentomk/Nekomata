@@ -1,6 +1,6 @@
 // main.cpp — duplicate-names host: prints both TUs' values every tick.
-// After a rejected offer of a.cpp v2 (value -> 100), BOTH must be unchanged:
-// a==1 because nothing was patched, b==2 because it was never a_candidate.
+// With a source identity and manifest, a.cpp v2 must change a to 100 while b
+// stays 2. Without those inputs, the ambiguous offer must be rejected.
 
 #include <chrono>
 #include <cstdio>
@@ -16,9 +16,14 @@ int b_value();
 
 int main(int argc, char** argv) {
   const char* watched = argc > 1 ? argv[1] : "dup.new.o";
+  const char* source = argc > 2 ? argv[2] : nullptr;
   std::setvbuf(stdout, nullptr, _IOLBF, 0);
   neko::reload_session session{neko::elf::create_backend()};
-  session.watch(watched);
+  if (source != nullptr) {
+    session.watch(watched, source);
+  } else {
+    session.watch(watched);
+  }
 
   for (int i = 0; i < 3000; ++i) {
     std::printf("[a=%d b=%d]\n", a_value(), b_value());

@@ -46,22 +46,26 @@ public:
   /// can see in a shared library.
   void* resolve_external(std::string_view name);
 
-  /// Pick the function named `name` that belongs to the translation unit the
-  /// fresh object came from, when the name alone is not enough to tell.
+  /// Pick the function named `name` that belongs to `source_path`, when the
+  /// name alone is not enough to tell.
   ///
   /// Two same-named static functions are ordinary in real code, and the symbol
   /// table cannot say which is which. Two things can: the binding — a global
   /// name is unique by construction, so only a local one is genuinely
   /// ambiguous — and the offline manifest, which records which source file
-  /// defined each address. The object's own symbol list identifies its
-  /// translation unit, because two units that share one static name rarely
-  /// share all of them.
+  /// defined each address. The build integration supplies that source path;
+  /// it must not be guessed from a symbol set that changes with every edit.
   ///
   /// Returns nullopt when the evidence is not conclusive; the caller refuses
   /// rather than guesses, since a guess redirects the wrong function.
-  [[nodiscard]] std::optional<function_info>
-  function_in_unit(std::string_view name, std::uint8_t binding,
-                   const std::vector<std::string>& unit_symbols) const;
+  [[nodiscard]] std::optional<function_info> function_in_source(std::string_view name,
+                                                                std::uint8_t binding,
+                                                                std::string_view source_path) const;
+
+  /// Whether the loaded manifest describes `source_path` at all. When it does,
+  /// a missing file-static name is a new function, not a license to redirect
+  /// the same name from another source.
+  [[nodiscard]] bool contains_source(std::string_view source_path) const;
 
 private:
   std::vector<function_info> functions_;
