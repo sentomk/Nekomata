@@ -28,6 +28,44 @@ void print_coordinate(const char* label, const std::optional<std::uint64_t>& val
 
 } // namespace
 
+// A machine-readable answer to one question: which source file produced the
+// function at this address? The reload runtime needs it to tell two
+// same-named static functions apart, and it must not link a DWARF reader to
+// get it — inspection is where that dependency is allowed to live.
+//
+// Format: comment lines, then one matched ELF symbol per line —
+// `<link-time address>\t<symbol>\t<source file>`. Link-time, not runtime
+// addresses: the same rebasing the runtime already applies to its own symbol
+// table turns them into the addresses it sees. Aliases share an address and
+// each get a line, because either name may be the one a fresh object uses.
+int write_manifest(const char* path) {
+  try {
+    const auto index = neko::elf::inspect_functions(path);
+    const auto& binary = index.debug;
+    std::cout << "# nekomata symbol manifest v1\n"
+              << "# binary " << std::quoted(binary.path.string()) << '\n'
+              << "# link-time addresses; regenerate after relinking\n";
+    for (const auto& match : index.functions) {
+      if (match.status != neko::elf::match_status::matched) {
+        continue;
+      }
+      const auto& unit = binary.units[match.unit];
+      const std::string source = unit.directory.empty() || unit.name.starts_with('/')
+                                     ? unit.name
+                                     : unit.directory + "/" + unit.name;
+      for (const auto candidate : match.candidates) {
+        const auto& symbol = index.symbols.functions[candidate];
+        std::cout << "0x" << std::hex << symbol.address << std::dec << '\t' << symbol.name << '\t'
+                  << source << '\n';
+      }
+    }
+    return 0;
+  } catch (const std::exception& e) {
+    std::cout << "manifest failed: " << e.what() << '\n';
+    return 1;
+  }
+}
+
 int inspect_binary(const char* path) {
   try {
     // Validate completely before printing a possibly incomplete index.

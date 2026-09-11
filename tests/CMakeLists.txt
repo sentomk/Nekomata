@@ -24,6 +24,17 @@ set_tests_properties(neko.public_api PROPERTIES TIMEOUT 15)
 add_subdirectory(headers)
 add_subdirectory(harness)
 
+# The manifest needs the offline DWARF inspector and a fixture binary built
+# with debug information; both are Linux-only and optional.
+if(TARGET nekomata AND TARGET neko_backend_dwarf)
+  add_test(NAME neko.cli.manifest
+    COMMAND "${CMAKE_COMMAND}"
+      "-DCLI=$<TARGET_FILE:nekomata>"
+      "-DFIXTURE=$<TARGET_FILE:neko_dwarf_fixture>"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cli_manifest.cmake")
+  set_tests_properties(neko.cli.manifest PROPERTIES TIMEOUT 20)
+endif()
+
 if(TARGET nekomata AND NOT TARGET neko_backend_dwarf)
   add_test(NAME neko.cli.without_dwarf
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:nekomata>"
