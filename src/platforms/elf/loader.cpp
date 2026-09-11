@@ -293,6 +293,19 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
   loaded_image out;
   out.code = arena;
   out.code_size = image_size;
+
+  // The fresh object's own symbol list, which is how the offline manifest is
+  // asked "which translation unit is this?": two units that share one static
+  // name rarely share all of them.
+  std::vector<std::string> unit_symbols;
+  unit_symbols.reserve(obj.symbols.size());
+  for (const auto& sym : obj.symbols) {
+    if (sym.type == STT_FUNC && sym.section_index != 0 && sym.section_index < obj.sections.size() &&
+        obj.sections[sym.section_index].cls == section_class::text) {
+      unit_symbols.push_back(sym.name);
+    }
+  }
+
   for (const auto& sym : obj.symbols) {
     if (sym.type != STT_FUNC || sym.section_index == 0 ||
         sym.section_index >= obj.sections.size()) {
@@ -301,13 +314,42 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     if (obj.sections[sym.section_index].cls != section_class::text) {
       continue;
     }
+    std::optional<function_info> old = symbols_.function_by_name(sym.name);
     const auto duplicates = symbols_.count_functions(sym.name);
+
     if (duplicates > 1) {
-      throw std::runtime_error("ambiguous function '" + sym.name + "' (" +
-                               std::to_string(duplicates) +
-                               " symbols share the name) — refusing to patch by name");
+      // Same-named static functions are ordinary in real code, and the symbol
+      // table cannot say which is which. The binding can (a global name is
+      // unique by construction), and the offline manifest can (it records
+      // which source file defined each address).
+      old = symbols_.function_in_unit(sym.name, sym.bind, unit_symbols);
+      if (!old.has_value()) {
+        throw std::runtime_error(
+            "ambiguous function '" + sym.name + "' (" + std::to_string(duplicates) +
+            " symbols share the name) — refusing to patch by name. `nekomata manifest "
+            "<binary>` next to the executable would tell them apart");
+      }
+    } else if (sym.bind == STB_LOCAL && old.has_value() && !unit_symbols.empty()) {
+      // A local name is local *to a translation unit*, so finding one by name
+      // is not evidence that this is the same function: a fresh static helper
+      // whose name another unit also uses would be redirected onto that other
+      // unit's function. The manifest can tell them apart, and when it says
+      // this is a different unit, the answer is still to refuse — the archive
+      // has no business redirecting a function this object never replaced.
+      //
+      // Without a manifest there is nothing to check against, and the reload
+      // proceeds as it always has: a manifest can only tighten this decision,
+      // never loosen it.
+      const auto same_unit = symbols_.function_in_unit(sym.name, sym.bind, unit_symbols);
+      if (!same_unit.has_value()) {
+        throw std::runtime_error(
+            "ambiguous function '" + sym.name +
+            "' — the symbol manifest does not "
+            "attribute this file-static name to this object's translation unit; "
+            "refusing to patch by name");
+      }
+      old = same_unit;
     }
-    const auto old = symbols_.function_by_name(sym.name);
     if (!old) {
       continue; // fresh code introduced a new static helper — fine, it
                 // just lives in the arena; nothing to redirect

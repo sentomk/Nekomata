@@ -24,6 +24,8 @@
 #include <neko/runtime/state_manager.hpp>
 #include <neko/runtime/symbol_provider.hpp>
 
+#include "symbol_manifest.hpp"
+
 namespace neko::elf {
 
 class process_symbols final : public symbol_provider, public state_manager {
@@ -44,8 +46,33 @@ public:
   /// can see in a shared library.
   void* resolve_external(std::string_view name);
 
+  /// Pick the function named `name` that belongs to the translation unit the
+  /// fresh object came from, when the name alone is not enough to tell.
+  ///
+  /// Two same-named static functions are ordinary in real code, and the symbol
+  /// table cannot say which is which. Two things can: the binding — a global
+  /// name is unique by construction, so only a local one is genuinely
+  /// ambiguous — and the offline manifest, which records which source file
+  /// defined each address. The object's own symbol list identifies its
+  /// translation unit, because two units that share one static name rarely
+  /// share all of them.
+  ///
+  /// Returns nullopt when the evidence is not conclusive; the caller refuses
+  /// rather than guesses, since a guess redirects the wrong function.
+  [[nodiscard]] std::optional<function_info>
+  function_in_unit(std::string_view name, std::uint8_t binding,
+                   const std::vector<std::string>& unit_symbols) const;
+
 private:
   std::vector<function_info> functions_;
+  /// Parallel to functions_: the ELF binding, which is what tells an
+  /// unambiguous global name from a genuinely ambiguous local one.
+  std::vector<std::uint8_t> function_bindings_;
+  /// Symbol-to-source map produced offline; empty when none was found.
+  symbol_manifest manifest_;
+  /// Load base for a PIE image, so link-time information (the manifest) and
+  /// runtime addresses (this table) can be compared.
+  std::uintptr_t load_base_ = 0;
   std::vector<global_variable> globals_;
   std::unordered_map<std::string, std::vector<std::size_t>> function_index_;
   std::unordered_map<std::string, std::vector<std::size_t>> global_index_;

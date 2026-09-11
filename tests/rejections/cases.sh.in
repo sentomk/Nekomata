@@ -12,7 +12,19 @@ CXX="@CMAKE_CXX_COMPILER@"
 SRC="@CMAKE_CURRENT_SOURCE_DIR@"
 HERE="@CMAKE_CURRENT_BINARY_DIR@"
 source "@PROJECT_SOURCE_DIR@/scripts/test_helpers.sh"
-WORK="${1:-$(mktemp -d /tmp/neko-reject.XXXXXX)}"
+# The offline tool is an argument, not a configured path: configure_file()
+# substitutes text at configure time and does not evaluate generator
+# expressions, so the location of a built target has to arrive at run time.
+WORK=""
+CLI=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --cli) CLI="$2"; shift 2 ;;
+    *)     WORK="$1"; shift ;;
+  esac
+done
+WORK="${WORK:-$(mktemp -d /tmp/neko-reject.XXXXXX)}"
+
 OUT="$WORK/out.txt"
 STOP_FILE="$WORK/stop"
 if [ -e "$STOP_FILE" ]; then echo "FAIL: use a fresh workdir"; exit 1; fi
@@ -152,9 +164,48 @@ echo "PASS pie_host (startup + live reload under ASLR)"
 
 # ---- one runner absorbs all broken drops ---------------------------------
 "$CXX" $BASE -c "$SRC/hot.cpp" -o "$WORK/baseline.o"
+
+# The disambiguation cases below need a real binary to analyse with nm and
+# addr2line, so they are skipped when no tool was supplied — the mock harness
+# runs this same script against shell stand-ins, where there is nothing to
+# analyse. The real suite always passes --cli.
+#
+# The symbol-to-source map is written where the runtime looks for it by
+# convention: beside the executable. Nothing in the library's API mentions it,
+# and no manifest simply means the previous behaviour. It is written by hand
+# rather than by `nekomata manifest` because the inspector refuses two things
+# this binary has, both of which real C++ projects have too: DWARF 5 (the
+# compilers' default now) and inlined subroutines (the standard library's
+# always_inline functions, present even at -O0). Generate it before starting
+# the process: process_symbols loads the map once, while the reload session is
+# constructed.
+manifest_path="$HERE/reject_runner.nekomata-map"
+rm -f "$manifest_path"
+manifest_ready=0
+if [ -n "$CLI" ]; then
+  manifest_line() { # address from nm, source from addr2line
+    nm --defined-only "$HERE/reject_runner" | awk -v want="$1" '$3 == want { print $1 }' \
+    | while read -r address; do
+        source=$(addr2line -e "$HERE/reject_runner" -f "0x$address" | tail -1 | sed 's/:[0-9]*$//')
+        printf "0x%s\t%s\t%s\n" "$address" "$1" "$source"
+      done
+  }
+  { manifest_line _ZL6helperv; manifest_line _Z4tickv; } > "$manifest_path"
+  if grep -q _ZL6helperv "$manifest_path" && grep -q _Z4tickv "$manifest_path"; then
+    manifest_ready=1
+  else
+    echo "FAIL: could not assemble the symbol manifest"
+    cat "$manifest_path"
+    exit 1
+  fi
+fi
+
 "$HERE/reject_runner" "$WORK/bad.new.o" "$STOP_FILE" > "$OUT" 2>&1 &
 runner_pid=$!
 wait_for '\[hot\] tick' 2 startup 0
+if [ "$manifest_ready" = 1 ]; then
+  wait_for "symbol manifest loaded" 2 manifest_loaded 0
+fi
 
 # 1. garbage bytes
 head -c 100 /dev/urandom > "$WORK/staging.o"
@@ -216,17 +267,32 @@ build_variant 's|#include <cstdio>|#include <cstdio>\nvoid missing_everywhere();
 #    mangled one; demangling the diagnostic is a separate change.
 expect_case cross_tu_missing "$WORK/staging.o" "cannot resolve external symbol '_Z18missing_everywherev'"
 
-# 8. existing global changed size (int -> long): layout drift must be
+if [ "$manifest_ready" = 1 ]; then
+
+# 8. A fresh file-static helper whose name the process also uses under another
+#    source. The manifest is asked which translation unit the object is, and
+#    here it cannot say: the two units share too little. Refusing is the answer
+#    — the manifest can only confirm a redirect, never invent one — and the
+#    process must survive it with the old code still running.
+build_variant 's|#include <cstdio>|#include <cstdio>\nstatic int helper() { return 7; }|; s|++g_counter;|g_counter += helper();|'
+expect_case ambiguous_not_confirmed "$WORK/staging.o" "ambiguous function"
+echo "PASS manifest_confirms_or_refuses"
+
+else
+  echo "SKIP manifest_confirms_or_refuses (no --cli)"
+fi
+
+# 10. existing global changed size (int -> long): layout drift must be
 #    caught by the data-section anchor consistency check
 build_variant 's|int g_counter = 0;|long g_counter = 0;|'
 expect_case size_change "$WORK/staging.o" "inconsistent state anchors — the global layout changed"
 
-# 9. GOT-style relocations (-fpic hot TU)
+# 11. GOT-style relocations (-fpic hot TU)
 "$CXX" -std=c++20 -O0 -fpic -fno-exceptions -fno-asynchronous-unwind-tables \
   -c "$SRC/hot.cpp" -o "$WORK/staging.o"
 expect_case got_style "$WORK/staging.o" "GOT-style relocs need -fno-pic"
 
-# 10. arena boundary: image sections sized so the laid-out image stays
+# 12. arena boundary: image sections sized so the laid-out image stays
 #    within one page while at least one trampoline slot follows (printf
 #    remains an undefined call). The reservation must cover the trampoline
 #    bytes; before the fix the commit wrote past the reserved page span.

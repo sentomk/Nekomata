@@ -24,6 +24,10 @@ void host_only() {
   std::printf("[host] host_only called\n");
 }
 
+// From collide.cpp: a file-static `helper` in another unit, called so that a
+// reload which redirected the wrong one would be visible in the output.
+void use_collide_helper();
+
 int main(int argc, char** argv) {
   const char* watched = argc > 1 ? argv[1] : "bad.new.o";
   const char* stop_file = argc > 2 ? argv[2] : nullptr;
@@ -44,6 +48,7 @@ int main(int argc, char** argv) {
       return 0;
     }
     tick();
+    use_collide_helper();
     try {
       session->update();
     } catch (const std::exception& e) {

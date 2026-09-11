@@ -12,6 +12,8 @@
 
 #include <neko/log.hpp>
 
+#include <cstdint>
+
 namespace neko::elf {
 namespace {
 
@@ -74,6 +76,7 @@ process_symbols::process_symbols() {
           "/proc/self/exe is PIE but its load base cannot be determined (static PIE?)");
     }
   }
+  load_base_ = base;
 
   const std::uint16_t shnum = ehdr->e_shnum;
   const std::vector<Elf64_Shdr> shdrs([&] {
@@ -114,6 +117,7 @@ process_symbols::process_symbols() {
         function_index_[name].push_back(functions_.size());
         functions_.push_back({name, static_cast<std::uintptr_t>(sym.st_value) + base,
                               static_cast<std::size_t>(sym.st_size)});
+        function_bindings_.push_back(ELF64_ST_BIND(sym.st_info));
       } else {
         global_index_[name].push_back(globals_.size());
         globals_.push_back({name, static_cast<std::uintptr_t>(sym.st_value) + base,
@@ -122,8 +126,9 @@ process_symbols::process_symbols() {
     }
   }
 
-  neko::log(log_level::info, "process symbols: %zu functions, %zu globals\n", functions_.size(),
-            globals_.size());
+  manifest_ = symbol_manifest::discover("/proc/self/exe");
+  neko::log(log_level::info, "process symbols: %zu functions, %zu globals%s\n", functions_.size(),
+            globals_.size(), manifest_.empty() ? "" : ", symbol manifest loaded");
 }
 
 std::vector<function_info> process_symbols::all_functions() const {
@@ -165,6 +170,49 @@ void* process_symbols::map_global(std::string_view name) {
   return it != global_index_.end() && !it->second.empty()
              ? reinterpret_cast<void*>(globals_[it->second.front()].address)
              : nullptr;
+}
+
+std::optional<function_info>
+process_symbols::function_in_unit(std::string_view name, std::uint8_t binding,
+                                  const std::vector<std::string>& unit_symbols) const {
+  const auto it = function_index_.find(std::string(name));
+  if (it == function_index_.end() || it->second.empty()) {
+    return std::nullopt;
+  }
+
+  // A global name is unique in a linked program — the linker enforces that —
+  // so when the fresh object exports the symbol, the candidate that is also
+  // global is the one it refers to, and no further evidence is needed. Only a
+  // local name (a file-static function) is genuinely ambiguous.
+  if (binding == STB_GLOBAL) {
+    std::optional<function_info> only_global;
+    for (const auto index : it->second) {
+      if (function_bindings_[index] == STB_GLOBAL) {
+        if (only_global.has_value()) {
+          return std::nullopt; // two globals with one name: not our call to make
+        }
+        only_global = functions_[index];
+      }
+    }
+    if (only_global.has_value()) {
+      return only_global;
+    }
+  }
+
+  // Otherwise the offline manifest decides, if one was found: it knows which
+  // source file defined each address, and the object's symbol list says which
+  // translation unit this is.
+  const auto link_time = manifest_.address_in_unit(name, unit_symbols);
+  if (!link_time.has_value()) {
+    return std::nullopt;
+  }
+  const auto runtime_address = static_cast<std::uintptr_t>(*link_time) + load_base_;
+  for (const auto index : it->second) {
+    if (functions_[index].address == runtime_address) {
+      return functions_[index];
+    }
+  }
+  return std::nullopt;
 }
 
 void* process_symbols::resolve_external(std::string_view name) {

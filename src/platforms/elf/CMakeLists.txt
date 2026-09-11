@@ -3,10 +3,12 @@
 # object_file     minimal ELF64 relocatable reader (sections/symbols/rela)
 # process_symbols /proc/self/exe .symtab + dlsym; symbol_provider+state_manager
 # code_pages      mmap arena near old code, entry patching (code_substituter)
+# symbol_manifest the offline symbol-to-source map (disambiguation)
 # loader          the runtime mini-link (object_loader)
 add_library(neko_backend_elf STATIC
   object_file.cpp
   process_symbols.cpp
+  symbol_manifest.cpp
   code_pages.cpp
   loader.cpp
   elf.cpp)
