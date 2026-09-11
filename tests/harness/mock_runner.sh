@@ -37,7 +37,7 @@ stage=0; calls=0; counter=0; recovered=0
 # its single offer is a valid reload (stage 10), not a rejection. It must exit
 # cleanly regardless of the fault mode: the injected nonzero exit belongs to
 # the main runner, not to this boundary probe.
-if [[ "$watched" == *boundary* ]]; then stage=9; boundary=1; fi
+if [[ "$watched" == *boundary* ]]; then stage=10; boundary=1; fi
 while [ ! -f "$stop_file" ]; do
   if [ -f "$watched" ]; then
     mv "$watched" "$watched.consumed"
@@ -48,17 +48,20 @@ while [ ! -f "$stop_file" ]; do
       3) if [ "$mode" != reject_stale_truncated ]; then echo "truncated object file"; fi ;;
       4) echo "reload applied" ;;
       5) echo "new globals are not supported yet" ;;
-      6) echo "cross-translation-unit references are not supported yet" ;;
-      7) echo "inconsistent state anchors — the global layout changed" ;;
-      8) echo "GOT-style relocs need -fno-pic" ;;
-      9)
+      6) # cross-TU call into the host: applies, and the host function runs
+        echo "reload applied"
+        echo "[host] host_only called" ;;
+      7) echo "cannot resolve external symbol '_Z18missing_everywherev'" ;;
+      8) echo "inconsistent state anchors — the global layout changed" ;;
+      9) echo "GOT-style relocs need -fno-pic" ;;
+      10)
         if [ "$mode" != reject_stale_final ]; then
           echo "reload applied"
           if [ "$mode" != reject_ignored_final ]; then recovered=1; fi
         fi
         if [ "$mode" = reject_state_reset ]; then calls=0; counter=0; fi
         ;;
-      10) echo "reload applied" ;; # arena boundary: a valid reload that must apply
+      11) echo "reload applied" ;; # arena boundary: a valid reload that must apply
       *) echo "unexpected offer" >&2; exit 2 ;;
     esac
   fi

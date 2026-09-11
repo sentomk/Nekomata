@@ -24,16 +24,18 @@
 #include <neko/runtime/fwd.hpp>
 #include <neko/runtime/object_loader.hpp>
 
+#include "process_symbols.hpp"
+
 namespace neko::elf {
 
 class loader final : public object_loader {
 public:
-  loader(symbol_provider& symbols, state_manager& state, code_substituter& substituter);
+  loader(process_symbols& symbols, state_manager& state, code_substituter& substituter);
 
   loaded_image load(const std::uint8_t* object_data, std::size_t size) override;
 
 private:
-  symbol_provider& symbols_;
+  process_symbols& symbols_;
   state_manager& state_;
   code_substituter& substituter_;
 };

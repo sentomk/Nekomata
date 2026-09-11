@@ -59,7 +59,7 @@ void write_trampoline(std::uint8_t* out, std::uintptr_t target) {
 
 } // namespace
 
-loader::loader(symbol_provider& symbols, state_manager& state, code_substituter& substituter)
+loader::loader(process_symbols& symbols, state_manager& state, code_substituter& substituter)
     : symbols_(symbols), state_(state), substituter_(substituter) {}
 
 loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
@@ -97,10 +97,11 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     if (sym.section_index != SHN_UNDEF || trampoline_offset_for_symbol.count(rel.symbol_index)) {
       continue;
     }
-    void* target = process_symbols::resolve_external(sym.name);
+    void* target = symbols_.resolve_external(sym.name);
     if (target == nullptr) {
       throw std::runtime_error("cannot resolve external symbol '" + sym.name +
-                               "' (cross-translation-unit references are not supported yet)");
+                               "' — the process defines no such symbol and the dynamic linker "
+                               "cannot see one either");
     }
     image_size = align_up(image_size, kSectionAlign);
     trampoline_offset_for_symbol[rel.symbol_index] = image_size;
@@ -142,7 +143,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
     std::memcpy(image.data() + section_offset[sec.index], sec.bytes.data(), sec.bytes.size());
   }
   for (const auto& [sym_index, offset] : trampoline_offset_for_symbol) {
-    void* target = process_symbols::resolve_external(obj.symbols[sym_index].name);
+    void* target = symbols_.resolve_external(obj.symbols[sym_index].name);
     write_trampoline(image.data() + offset, reinterpret_cast<std::uintptr_t>(target));
   }
 
@@ -192,9 +193,11 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
       if (auto fn = symbols_.function_by_name(sym.name)) {
         return fn->address;
       }
-      void* external = process_symbols::resolve_external(sym.name);
+      void* external = symbols_.resolve_external(sym.name);
       if (external == nullptr) {
-        throw std::runtime_error("cannot resolve external symbol '" + sym.name + "'");
+        throw std::runtime_error("cannot resolve external symbol '" + sym.name +
+                                 "' — the process defines no such symbol and the dynamic linker "
+                                 "cannot see one either");
       }
       return reinterpret_cast<std::uintptr_t>(external);
     }

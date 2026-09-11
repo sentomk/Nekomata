@@ -168,6 +168,27 @@ void* process_symbols::map_global(std::string_view name) {
 }
 
 void* process_symbols::resolve_external(std::string_view name) {
+  // The process's own symbol table comes first. Patching already trusts it — a
+  // function defined in this executable is redirected by name — and asking the
+  // dynamic linker alone made that an asymmetry: the same function could be
+  // redirected but not called, because a symbol that is not exported is
+  // invisible to dlsym. A reloaded function calling a helper defined in the
+  // main program is the ordinary case, not an exotic one.
+  //
+  // Only an unambiguous name is taken from here. Two entries can share one
+  // (a local symbol in each of two translation units, an alias), and for those
+  // the dynamic linker is the one that knows which definition the reference
+  // bound to — it is the same authority that resolved the main program.
+  if (count_functions(name) == 1) {
+    if (const auto fn = function_by_name(name)) {
+      return reinterpret_cast<void*>(fn->address);
+    }
+  }
+  if (count_globals(name) == 1) {
+    if (const auto global = global_by_name(name)) {
+      return reinterpret_cast<void*>(global->address);
+    }
+  }
   return dlsym(RTLD_DEFAULT, std::string(name).c_str());
 }
 

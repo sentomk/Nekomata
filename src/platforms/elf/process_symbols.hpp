@@ -39,8 +39,10 @@ public:
 
   void* map_global(std::string_view name) override;
 
-  /// Resolve an external symbol (libc, libstdc++, ...) by name.
-  static void* resolve_external(std::string_view name);
+  /// Resolve a symbol the process references but does not define here: a
+  /// function or global in the executable itself, or one the dynamic linker
+  /// can see in a shared library.
+  void* resolve_external(std::string_view name);
 
 private:
   std::vector<function_info> functions_;
