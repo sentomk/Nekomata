@@ -1,13 +1,17 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/nekomata-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/nekomata-light.svg">
+    <img alt="Nekomata — native hot-reload for C/C++" src="assets/nekomata-light.svg" width="420">
+  </picture>
+</p>
+
 # Nekomata
 
-> Native hot-reload for C/C++ — code that lives long enough grows a second tail.
-> No restarts, no refactor.
-
-Nekomata is an open-source, **true-native hot-reload tool for C/C++** — the same
-category of capability as [Live++](https://liveplusplus.tech/), built in the
-open. It recompiles changed translation units while your program runs,
-relocates the fresh machine code against the live process's real addresses, and
-redirects function entry points:
+Nekomata is an open-source, **true-native hot-reload tool for C/C++**. It
+recompiles changed translation units while your program runs, relocates the
+fresh machine code against the live process's real addresses, and redirects
+function entry points:
 
 - **no restarts** — the process keeps running, the next call takes the new code
 - **no refactor** — no plugins, no interface indirection, no library splits
@@ -15,22 +19,28 @@ redirects function entry points:
 
 [![CI](https://github.com/sentomk/Nekomata/actions/workflows/ci.yml/badge.svg)](https://github.com/sentomk/Nekomata/actions/workflows/ci.yml)
 
-## Status: pre-alpha (Phase 1 prototype working)
+## Status
 
-The core mechanism is proven end-to-end on Linux/ELF: edit a function, drop a
-fresh object file, and the running process takes the new code on the next
-call — with globals and statics preserved. To set expectations honestly:
+The core mechanism works end to end on Linux/ELF. What follows is the honest
+boundary: what Nekomata does today, and what it refuses rather than what nobody
+has tried yet.
 
-| Capability | Today | Target |
-|---|---|---|
-| Hot reload | ✅ single TU, `-O0`, Linux/ELF (see the demo below) | whole programs, real projects |
-| Platforms | Linux/ELF (kernel builds everywhere) | then Windows/PE |
-| Compilers (as reload source) | GCC, Clang ≥ 14 | MSVC (Phase 3) |
-| PIE binaries | — (`-no-pie` for now) | Phase 2 |
-| Optimization (`-O2`) builds | — | late phase (inline handling) |
-| Class layout migration | — | late phase (Phase 5) |
+| Capability | Today |
+|---|---|
+| Hot reload | one translation unit at a time, `-O0`, Linux/ELF |
+| State preservation | globals and statics keep their values across reloads |
+| Multiple functions per reload | yes — applied all-or-nothing; a failed attempt rolls back |
+| PIE binaries | yes, when hot objects are built `-fpie` (GOT-style `-fpic` is not supported yet) |
+| Cross-TU references | not supported yet — a reloaded function cannot call into another unit |
+| New globals, changed global layout | not supported yet — refused with a diagnostic |
+| Optimized builds (`-O2`) | not supported yet — an inlined function has no body of its own |
+| Platforms | Linux/ELF; the kernel itself builds on macOS, without a backend |
+| Compilers | GCC and Clang ≥ 14 as the source of reloads |
 
-### Try it (Linux)
+Threading is the caller's business for now: reloads happen at a quiescent point
+between `update()` calls, on one thread.
+
+## Try it (Linux)
 
 ```sh
 cmake --preset debug && cmake --build --preset debug
@@ -38,259 +48,34 @@ bash build/debug/examples/hello_reload/run_demo.sh
 ```
 
 The demo edits `tick()` from `++g_counter` to `g_counter += 10` while the
-process runs, and asserts the counter continues from its old value:
-state survives the swap, no restart. Expected transcript:
+process runs, and asserts the counter continues from its old value: state
+survives the swap, no restart. Expected transcript:
 `examples/hello_reload/expected_output.txt`.
 
-### Inspect a binary (Linux, read-only)
+## Inspect a binary (Linux, read-only)
 
 ```sh
-./build/debug/tools/nekomata/nekomata inspect \
-  ./build/debug/tests/dwarf/neko_dwarf_fixture
-ctest --test-dir build/debug -R 'neko.dwarf' --output-on-failure
+./build/debug/tools/nekomata/nekomata inspect <binary>
 ```
 
-`inspect` reads an existing binary without executing it, attaching to a process,
-or modifying the file. It reports compilation units, function names, optional
-linkage names, and half-open code ranges `[begin, end)`. Same-name local functions
-remain separate records under their own compilation units. Addresses are
-**link-time virtual addresses**, not file offsets or relocated process addresses.
-The binary plus CU/DIE offsets identify records within that file; offsets are
-not stable identities across rebuilds. Missing linkage names are printed as
-unavailable, never guessed from source names.
+`inspect` reads an existing binary without running it, attaching to a process,
+or modifying the file: compilation units, function names, declaration
+locations, code ranges, and how each DWARF function associates with the ELF
+symbol table. Exit code zero means the inspection finished, not that every
+function is safe to patch.
 
-Functions also report declaration file, line and column from `DW_AT_decl_*`.
-Missing attributes and explicitly unspecified (zero) coordinates are printed
-as `<unavailable>`. `DW_AT_specification` / `DW_AT_abstract_origin` inheritance
-is followed, with direct values taking precedence. An inherited file index is
-resolved against the **originating DIE's** compilation unit, including references
-across CUs. This describes the declaration recorded by the compiler, not the
-function's full source extent, an address-to-line map, or a stable identity
-across rebuilds. It may refer to a header rather than the CU's main source.
+The details — what is matched, what is refused, the resource budgets, and the
+libdwarf dependency — are in [docs/inspect.md](docs/inspect.md).
 
-File paths combine the DWARF 4 line-table header's filename/include directory
-with the recorded compilation directory. Absolute paths stay absolute; relative
-paths stay relative if the recorded directories are relative or missing.
-No source file is opened, and paths are not canonicalized against the machine
-running the inspector. Missing line tables leave the file unknown without
-discarding independently known line/column values. Invalid indexes, malformed
-coordinates and unsupported line-table formats fail inspection. Dynamically
-added file entries (`DW_LNE_define_file`) are not resolved by this header-only
-file-table reader; references beyond the header's entries are rejected.
-
-The initial supported input is an x86-64 ELF `ET_EXEC` with embedded DWARF 4,
-DWARF32 offsets and 8-byte addresses, built with `-O0 -g -gdwarf-4`, `-fno-pie`
-and linked with `-no-pie`. These options belong to the **inspected project's**
-build, not to Nekomata itself. PIE/shared libraries, relocatable `.o` files,
-DWARF 5, split/compressed debug information, inline instances and function range
-lists are not supported yet. Declarations are skipped; definitions without
-emitted ranges are reported separately. Missing or unsupported information
-causes a diagnostic and nonzero exit instead of a partial successful listing.
-
-The internal ELF-only reader additionally indexes functions in x86-64 `ET_REL`
-objects, including separate function sections. Their symbol values are offsets
-within the recorded section, not virtual addresses. This does not yet enable
-`.o` input in `nekomata inspect`: relocatable DWARF reading and section-aware
-ELF/DWARF association remain unsupported, and runtime loading is unchanged.
-
-The ELF-only reader can also inspect relocations targeting `.debug_info` in
-`ET_REL` files. It follows section links rather than relocation-section names,
-retains relocation and symbol-table identities, and computes section-relative
-`S + A` offsets for `R_X86_64_32` and `R_X86_64_64` RELA entries. It does not
-apply relocations or decode DWARF. Missing `.debug_info` is distinct from a
-present section without relocations. Undefined/special symbol references,
-compressed/split/grouped debug information, other relocation types, overlapping
-fields, overflow and out-of-bounds references fail explicitly. An offset equal
-to the referenced section's size is retained as a possible exclusive endpoint;
-this is not approval of a function range. The reader limits total relocation
-entries and entries in referenced symbol tables to one million each, and total
-section-name/symbol string-table reads to 64 MiB per call.
-
-The inspector also associates DWARF functions with defined ELF `STT_FUNC`
-entries from `.symtab`, retaining table/entry identity, section, binding,
-visibility, address and size. It reads both through one open file descriptor;
-do not modify that file in place during inspection. A match requires a unique
-entry address on both sides, an exact nonzero size, and an equal linkage name
-when DWARF provides one. Missing linkage names remain unavailable, not guessed.
-Same-name local symbols stay distinct. Multiple symbols at an entry (including
-aliases), or multiple DWARF definitions there, remain `ambiguous` even if one
-name matches. Zero symbol size means unknown, not an empty function.
-
-Each emitted function reports `match=matched`, `missing-symtab`,
-`missing-symbol`, `ambiguous`, `unknown-size`, `range-mismatch`, or
-`linkage-mismatch`, followed by every candidate's ELF metadata. ELF functions
-without a DWARF entry (such as startup code) are listed separately. Missing
-`.symtab` is reported without substituting `.dynsym`; malformed tables fail
-inspection. Extended section numbering and special function section indexes
-are currently rejected. Per inspection, symbol-table entries and stored
-association candidates are each limited to one million; total string-table
-bytes and copied function-name bytes are each limited to 64 MiB. Inputs that
-exceed these limits fail explicitly rather than returning a partial index.
-DWARF inspection additionally budgets 64 MiB each for cumulative copied string
-bytes (including temporary path assembly) and source-table headers, one million
-source file/directory entries across loaded CU tables, and eight million
-attribute-reference traversal steps. Source-table entries use direct indexing;
-resolved paths are cached per CU/index. Budget failures produce no partial listing.
-libdwarf 2.3.2 expands line-program rows when opening a line context, so this
-inspector decodes only the bounded DWARF 4 header from the same ELF descriptor.
-It does not read, execute or validate the line program. libdwarf remains the
-reader for compilation units, DIEs and attributes.
-
-This is an offline foundation, not an expansion of the runtime's hot-reload
-support or a cross-build matching API. Exit code zero means inspection finished,
-**not** that every function is matched or safe to patch. The runtime still uses
-its original symbol lookup. Tests compare fixture ranges and linkage names
-with GNU `nm`, and cover duplicate local names, aliases, overloads, out-of-line
-members, malformed input, missing metadata and repeated inspection.
-`readelf --debug-dump=info <binary>` or
-`llvm-dwarfdump --debug-info <binary>` can provide another independent reference.
-
-Linux inspection builds fetch checksum-pinned **libdwarf 2.3.2**, built as a
-shared library and linked only into the inspection tooling. Its headers do not
-enter Nekomata's public API or the runtime. The upstream library is LGPL-2.1;
-its license and notices remain in the fetched source tree. See
-[upstream licensing](https://github.com/davea42/libdwarf-code/blob/v2.3.2/COPYING).
-This build does not include `dwarfdump` or debug-section decompression libraries.
-
-For an offline build, supply an already extracted copy of that exact version:
-
-```sh
-cmake --preset debug \
-  -DFETCHCONTENT_SOURCE_DIR_LIBDWARF=/absolute/path/to/libdwarf-code-2.3.2
-```
-
-Alternatively, `-DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF` keeps the existing runtime
-and its tests buildable without downloading libdwarf. macOS/Windows builds do
-not fetch this dependency and report that `inspect` is unavailable.
-
-## What "true-native" means
-
-Four acceptance criteria guide the project:
-
-1. **Zero code changes** — no plugin/interface/function-pointer rewrites.
-2. **In-process replacement** — reload without restarting; next call runs new code.
-3. **State preservation** — globals/statics stay consistent across reloads.
-4. **Multi-platform, multi-compiler** — at least Linux/ELF + Windows/PE, Clang and MSVC.
-
-## How a reload works
-
-```
-edit .cpp
-  -> compiler frontend emits fresh .o (relocations against a zero base)
-  -> symbol backend locates functions (address + size) in the live process
-  -> relocations are fixed up against real runtime addresses (a runtime mini-link)
-  -> binary backend writes the new body into executable-reserved pages
-  -> the old function entry is overwritten with a 5-byte `jmp rel32`
-  -> the next call takes the new code
-```
-
-## Architecture
-
-A platform-neutral kernel sits behind five interfaces. Everything
-platform-specific is a pluggable backend in its own directory with its own
-tests.
-
-```
-              +------------------------------------------+
-   ChangedSet |  kernel (platform-neutral, include/neko)  |
- ------------->  patch_planner    what must be recompiled? |
-              |  symbol_provider where is everything?     |
-              |  object_loader    mini-link the fresh .o   |
-              |  code_substituter exec memory + redirect  |
-              |  state_manager    keep state alive        |
-              +--------------------+---------------------+
-                                   |
-        +--------------------------+--------------------------+
-        v                          v                          v
-   Linux backends             Windows backends           future backends
-   Clang / DWARF / ELF        MSVC / PDB(DIA) / PE       (ARM, …)
-   in-process agent           in-process agent
-   (mmap/mprotect)            (VirtualProtect)
-```
-
-## Repository layout
-
-Nekomata is a compiled library, not a header-only library. Common public APIs
-have short entry points; extension APIs are grouped by module. Implementation
-files and private headers live under `src/`:
-
-```text
-include/neko/
-  neko.hpp             # convenience umbrella for core + runtime
-  fwd.hpp              # public forward-declaration umbrella
-  log.hpp              # diagnostic API declarations
-  session.hpp          # reload session API
-  version.hpp          # configured by CMake into the build include directory
-  core/                # shared public types and fwd.hpp
-  runtime/             # public backend extension interfaces and fwd.hpp
-  platforms/elf.hpp    # public Linux backend factory
-src/
-  core/                # compiled core implementation
-  runtime/             # compiled runtime implementation
-  platforms/           # platform implementations and private headers
-tests/
-  headers/             # standalone public-header and forward-declaration checks
-  rejections/          # runtime rejection tests
-  vendor/              # third-party test dependencies
-examples/              # runnable consumers
-tools/                 # command-line programs
-```
-
-Use `<neko/session.hpp>` and `<neko/platforms/elf.hpp>` for the Linux
-reload entry point, and `<neko/log.hpp>` for diagnostics. `<neko/neko.hpp>`
-remains the convenience include, but is
-not an amalgamated single-file distribution and still requires linking the
-library. CMake target names remain `nekomata::neko` and
-`nekomata::backends::elf`; directory names do not change those target aliases
-or the `neko::elf` namespace.
-
-The common headers declare the API directly instead of forwarding to private
-implementation headers. For example, logging is implemented in
-`src/core/log.cpp`; terminal detection and formatting code are not included by
-consumers. The public `core/` and `runtime/` headers describe shared types and
-extension contracts, not the private ELF parser, loader, or code-page machinery.
-Private source directories need not mirror the public API layout.
-
-Module `fwd.hpp` files hold forward declarations and lightweight type aliases.
-`<neko/fwd.hpp>` aggregates those public declarations.
-Use them when only names, pointers, or references are needed; include the
-defining header when a complete type is required. Do not duplicate declarations
-at call sites or create empty forward headers for factory-only directories.
-Public headers must be self-contained and must not include anything from
-`src/`. Implementation include paths must not leak through public CMake usage
-requirements. With tests enabled, the normal build compiles every public header
-independently, including the configured version header. A separate consumer
-test also links and exercises the short public entry points.
-
-New C++ sources use `.cpp`, C++ headers use `.hpp`, and generated header
-templates use `.hpp.in`. Reserve `.h` for headers that can be included from
-both C and C++, and `.c` for C implementations. A future C API belongs under
-`include/neko/c/`, with its C++ bridge under `src/c/`; no C API is exposed yet.
-Such headers must guard `extern "C"` with `#ifdef __cplusplus`, expose C-compatible
-types, and keep C++ exceptions, containers, and ownership details behind the
-boundary. When that API is introduced, compile its headers as both C and C++
-and test a C consumer linked to the bridge; file extensions or `extern "C"`
-alone do not establish ABI stability.
-
-## Roadmap
-
-| Phase | Scope | Status |
-|---|---|---|
-| 1 · Single-function prototype | Linux/ELF, `-O0`, one TU, fixed-moment swap | ✅ done |
-| 2 · Real-world usable | DWARF ranges, whole-TU reloads, dependency graph, safe points, PIE | ⏳ next |
-| 3 · Windows | PE/PDB (DIA), MSVC + `/hotpatch` | ⏳ |
-| 4 · Optimized builds | `-O2` inline units (`DW_TAG_inlined_subroutine`), COMDAT folding | ⏳ high risk |
-| 5 · Class layout migration | object migration + vtable updates | ⏳ hardest |
-
-## When you should NOT use nekomata
+## When you should NOT use Nekomata
 
 Being honest about the boundary is part of the design:
 
 - **Restarts cost seconds?** Use mold/lld + ccache + incremental builds — faster
-  and more reproducible. nekomata sells *state preservation*, not raw speed.
+  and more reproducible. Nekomata sells *state preservation*, not raw speed.
 - **Stateless, rolling-restart services?** Hot reload is a non-need.
 - **Compliance-forbid self-modifying code** (finance/aviation/medical)? Skip.
-  nekomata is a development-time tool, not a production hot-patcher.
+  Nekomata is a development-time tool, not a production hot-patcher.
 - **Verification & release builds** must stay reproducible and clean — hot reload
   serves iteration only and never enters shipped artifacts.
 
@@ -298,9 +83,6 @@ Being honest about the boundary is part of the design:
 
 Requirements: CMake ≥ 3.21, Ninja, a C++20 compiler (GCC ≥ 11 / Clang ≥ 14 /
 MSVC 2022).
-
-Linux inspection also needs a C compiler for libdwarf, and network access on
-first configuration unless its source directory is supplied as described above.
 
 ```sh
 cmake --preset debug          # configure (Ninja, build/debug)
@@ -311,42 +93,48 @@ ctest --preset debug          # test
 
 Presets: `debug`, `release`, `asan` (ASan + UBSan), `tidy` (clang-tidy).
 
-CI uses clang-format 18 with two-space indentation. The same script checks or
-formats all tracked and new non-ignored C/C++ sources, headers, and header
-templates, including backends and examples; vendored code is excluded:
-
-```sh
-bash scripts/format.sh --check
-bash scripts/format.sh --fix
-```
-
-Set `CLANG_FORMAT` if the version-18 executable has a different name or path.
-
-Static analysis runs on the kernel, enabled backends, and CLI targets, including
-their project headers. Tests and examples are still built and executed but are
-not analyzed. CI pins clang-tidy 18 and treats enabled diagnostics as errors:
+Static analysis runs on the kernel, enabled backends and CLI targets; tests and
+examples are built and executed but not analyzed. CI pins clang-tidy 18 and
+treats enabled diagnostics as errors:
 
 ```sh
 CC=clang-18 CXX=clang++-18 cmake --preset tidy \
   -DNEKOMATA_CLANG_TIDY_EXECUTABLE=clang-tidy-18
 cmake --build --preset tidy
-ctest --preset tidy
 ```
 
-The `tidy` build directory is separate from normal builds. To repeat analysis
-without source changes, use `cmake --build --preset tidy --clean-first`.
+Formatting is enforced in CI:
+
+```sh
+bash scripts/format.sh --check   # or --fix
+```
+
+The Linux inspector needs a C compiler for libdwarf 2.3.2, and network access
+on first configuration unless its source directory is supplied:
+
+```sh
+cmake --preset debug \
+  -DFETCHCONTENT_SOURCE_DIR_LIBDWARF=/absolute/path/to/libdwarf-code-2.3.2
+```
+
+`-DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF` builds the runtime and its tests
+without that dependency. The TUI is optional and off by default; it fetches
+[Glyph](https://github.com/sentomk/Glyph) and is enabled with
+`-DNEKOMATA_TUI=ON`.
 
 Platform notes:
 
-- **Linux** — the primary target; all backends will live here (Phase 1–2).
-- **macOS / other** — kernel-only build, verified in CI, by design.
-- **Windows** — arrives with Phase 3.
+- **Linux** — the primary target; every backend lives here.
+- **macOS** — kernel-only build, verified in CI, by design.
+- **Windows** — the kernel and the TUI build and run under CI; there is no PE/PDB
+  backend yet.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions, the testing
-doctrine, and the suite map; [AGENTS.md](AGENTS.md) carries the same
-rules for AI coding agents.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions, the testing doctrine,
+and the suite map; [AGENTS.md](AGENTS.md) carries the same rules for AI coding
+agents. The planned work — including what is deliberately out of scope — is in
+[docs/roadmap.md](docs/roadmap.md).
 
 ## License
 
@@ -354,9 +142,9 @@ Nekomata is licensed under the [MIT License](LICENSE).
 
 ## Credits & prior art
 
-- [Live++](https://liveplusplus.tech/) (Molecular Matters GmbH) — the mature
-  commercial reference this project benchmarks against. Stefan Reinalter's
-  ongoing implementation blog series: [Introduction](https://liveplusplus.tech/blog/posts/2026-01-26-introduction.html),
+- [Live++](https://liveplusplus.tech/) — a commercial hot-reload tool for C/C++,
+  with an implementation blog series worth reading:
+  [Introduction](https://liveplusplus.tech/blog/posts/2026-01-26-introduction.html),
   [Phase 0](https://liveplusplus.tech/blog/posts/2026-02-09-phase_0_motivation_goals.html),
   [Phase 1](https://liveplusplus.tech/blog/posts/2026-02-23-phase_1_build_information.html).
 - [RuntimeCompiledCPlusPlus](https://github.com/RuntimeCompiledCPlusPlus/RuntimeCompiledCPlusPlus) —
