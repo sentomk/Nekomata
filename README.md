@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/nekomata-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="assets/nekomata-light.svg">
-    <img alt="Nekomata — native hot-reload for C/C++" src="assets/nekomata-light.svg" width="420">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/Nekomata_dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/Nekomata_light.png">
+    <img alt="Nekomata — native hot-reload for C/C++" src="assets/Nekomata_light.png" width="420">
   </picture>
 </p>
 
