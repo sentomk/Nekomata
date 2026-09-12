@@ -286,7 +286,32 @@ expect_case size_change "$WORK/staging.o" "inconsistent state anchors — the gl
   -c "$SRC/hot.cpp" -o "$WORK/staging.o"
 expect_case got_style "$WORK/staging.o" "GOT-style relocs need -fno-pic"
 
-# 13. arena boundary: image sections sized so the laid-out image stays
+# 13. a vtable in the hot TU: at -fno-pic the vtable lands in .rodata with
+#     absolute relocations. Copying those bytes without applying them would
+#     install a vtable of zeroed pointers — the crash would come at the
+#     first virtual call, not at load time. Must be refused with the
+#     contract message, never silently loaded.
+build_variant 's|#include <cstdio>|#include <cstdio>\nstruct shape { virtual ~shape() = default; virtual int sides() { return 0; } };\nstruct triangle : shape { int sides() override { return 3; } };|; s|++s_calls;|++s_calls; triangle t; g_counter += t.sides();|'
+expect_case vtable "$WORK/staging.o" "relocated constant tables"
+
+# 14. over-aligned rodata APPLIES: an alignas(32) constant must keep its
+#     alignment in the arena — under the old fixed 16-byte layout the
+#     aligned AVX load would fault on the first tick after the reload.
+build_variant 's|#include <cstdio>|#include <cstdio>\n#include <immintrin.h>\nalignas(32) const int k_vec[8] = {3, 1, 4, 1, 5, 9, 2, 6};|; s|++g_counter;|{ __m256i v = _mm256_load_si256(reinterpret_cast<const __m256i*>(k_vec)); g_counter += _mm256_extract_epi32(v, 0); }|' -mavx
+align_cursor=$(log_cursor "$OUT")
+mv "$WORK/staging.o" "$WORK/bad.new.o"
+wait_for "reload applied" 15 aligned_rodata "$align_cursor"
+alive || { echo "FAIL(aligned_rodata): runner died after the aligned reload"; exit 1; }
+sleep 0.6
+alive || { echo "FAIL(aligned_rodata): aligned AVX load faulted after the reload"; exit 1; }
+align_ticks_before=$(count '\[hot\] tick')
+sleep 0.6
+align_ticks_after=$(count '\[hot\] tick')
+[ "$align_ticks_after" -gt "$align_ticks_before" ] || {
+  echo "FAIL(aligned_rodata): ticks did not continue after the aligned reload"; exit 1; }
+echo "PASS aligned_rodata"
+
+# 15. arena boundary: image sections sized so the laid-out image stays
 #    within one page while at least one trampoline slot follows (printf
 #    remains an undefined call). The reservation must cover the trampoline
 #    bytes; before the fix the commit wrote past the reserved page span.

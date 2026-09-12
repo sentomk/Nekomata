@@ -33,6 +33,7 @@ has tried yet.
 | PIE binaries | yes, when hot objects are built `-fpie` (GOT-style `-fpic` is not supported yet) |
 | Cross-TU references | not supported yet — a reloaded function cannot call into another unit |
 | New globals, changed global layout | not supported yet — refused with a diagnostic |
+| Virtual functions | not supported yet — a vtable that needs relocation is refused with a diagnostic |
 | Optimized builds (`-O2`) | not supported yet — an inlined function has no body of its own |
 | Platforms | Linux/ELF; the kernel itself builds on macOS, without a backend |
 | Compilers | GCC and Clang ≥ 14 as the source of reloads |

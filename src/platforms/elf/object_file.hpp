@@ -30,6 +30,10 @@ struct section {
   section_class cls = section_class::other;
   std::uint16_t index = 0;
   std::uint64_t size = 0;
+  /// sh_addralign (0/1 normalized to 1); the loader must honor it when
+  /// placing the section in the arena — an under-aligned constant faults
+  /// the first aligned SIMD load from the fresh code.
+  std::uint64_t align = 1;
   /// Raw bytes for PROGBITS sections; empty for SHT_NOBITS (.bss).
   std::vector<std::uint8_t> bytes;
 };

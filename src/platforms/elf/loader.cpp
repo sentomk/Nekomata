@@ -2,6 +2,7 @@
 
 #include <elf.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <optional>
@@ -22,6 +23,11 @@ namespace neko::elf {
 namespace {
 
 constexpr std::uint64_t kSectionAlign = 16;
+
+/// Sections may not ask for more than a page of alignment: the arena base
+/// is page-aligned, so anything larger is not representable, and absurd
+/// values would overflow align_up() before any check could fire.
+constexpr std::uint64_t kMaxSectionAlign = 4096;
 
 std::uint64_t align_up(std::uint64_t v, std::uint64_t a) {
   return (v + a - 1) / a * a;
@@ -85,7 +91,12 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     if (sec.cls != section_class::text && sec.cls != section_class::rodata) {
       continue;
     }
-    image_size = align_up(image_size, kSectionAlign);
+    if (sec.align > kMaxSectionAlign) {
+      throw std::runtime_error("section '" + sec.name + "' requires alignment " +
+                               std::to_string(sec.align) +
+                               " — over-aligned sections beyond a page are not supported yet");
+    }
+    image_size = align_up(image_size, std::max(kSectionAlign, sec.align));
     section_offset[sec.index] = image_size;
     image_size += sec.size;
   }
@@ -250,7 +261,21 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     }
     const auto& target = obj.sections[rel.target_section];
     if (target.cls != section_class::text) {
-      continue; // .rela.data/.rela.eh_frame etc. — not handled yet
+      // .rela.eh_frame is skipped on purpose: the arena copy is never
+      // registered for unwinding, so it stays inert. Every OTHER read-only
+      // section with relocations is a trap: its bytes are copied into the
+      // arena and USED by the fresh code, but the pointer slots would stay
+      // zero — a vtable, jump table or const pointer array built that way
+      // crashes at first use, not at load time. Refuse loudly instead.
+      // Data-class relocations (.rela.data, .rela.init_array) are benign:
+      // data sections are never copied — symbols anchor to existing
+      // storage, so the fresh bytes are unreachable.
+      if (target.cls == section_class::rodata && target.name.rfind(".eh_frame", 0) != 0) {
+        throw std::runtime_error("section '" + target.name +
+                                 "' carries relocations — relocated constant tables (vtables, jump "
+                                 "tables) are not supported yet");
+      }
+      continue;
     }
     if (rel.symbol_index >= obj.symbols.size()) {
       throw std::runtime_error("relocation with bad symbol index");
@@ -301,6 +326,12 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
   out.code = arena;
   out.code_size = image_size;
 
+  // Functions that end up with no redirect are not necessarily wrong (a new
+  // static helper has nothing to replace), but a skipped name that LIVE code
+  // also carries is how signature changes and overloads quietly keep running
+  // old code. Record every skip and report them after the load.
+  std::vector<std::pair<std::string, std::size_t>> not_redirected;
+
   for (const auto& sym : obj.symbols) {
     if (sym.type != STT_FUNC || sym.section_index == 0 ||
         sym.section_index >= obj.sections.size()) {
@@ -322,6 +353,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
         // manifest that otherwise knows this source, is a newly introduced
         // function. It stays in the fresh arena and redirects nothing.
         if (sym.bind == STB_GLOBAL || symbols_.contains_source(source_path)) {
+          not_redirected.emplace_back(sym.name, duplicates);
           continue;
         }
         throw std::runtime_error(
@@ -338,6 +370,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
       const auto same_unit = symbols_.function_in_source(sym.name, sym.bind, source_path);
       if (!same_unit.has_value()) {
         if (symbols_.contains_source(source_path)) {
+          not_redirected.emplace_back(sym.name, duplicates);
           continue; // a new file-static function in a known translation unit
         }
         throw std::runtime_error(
@@ -348,8 +381,11 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
       old = same_unit;
     }
     if (!old) {
-      continue; // fresh code introduced a new static helper — fine, it
-                // just lives in the arena; nothing to redirect
+      // Fresh code introduced a new static helper — fine, it just lives in
+      // the arena; nothing to redirect. When the process happens to carry
+      // the same name, say so: that is the signature-change smell.
+      not_redirected.emplace_back(sym.name, duplicates);
+      continue;
     }
     if (old->size != 0 && old->size < 8) {
       throw std::runtime_error("function '" + sym.name + "' is too small to patch safely (" +
@@ -372,6 +408,19 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     neko::log(log_level::info, "  %s -> %p (+0x%x)\n", repl.name.c_str(),
               static_cast<void*>(reinterpret_cast<std::uint8_t*>(out.code) + repl.offset_in_image),
               repl.offset_in_image);
+  }
+  for (const auto& [name, live_count] : not_redirected) {
+    if (live_count > 1) {
+      neko::log(log_level::warn,
+                "not redirected: '%s' — %zu live functions share the name and none was "
+                "confirmed as this unit's; keeping old code\n",
+                name.c_str(), live_count);
+    } else {
+      neko::log(log_level::info,
+                "not redirected: '%s' — no live entry to replace; the fresh body stays "
+                "in the arena\n",
+                name.c_str());
+    }
   }
   return out;
 }

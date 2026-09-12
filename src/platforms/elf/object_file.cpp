@@ -85,6 +85,11 @@ object_file parse_object(const std::uint8_t* data, std::size_t size) {
     sec.name = section_name(sh.sh_name);
     sec.cls = classify(sh.sh_flags);
     sec.size = sh.sh_size;
+    if (sh.sh_addralign != 0) {
+      require((sh.sh_addralign & (sh.sh_addralign - 1)) == 0,
+              "section alignment is not a power of two");
+      sec.align = sh.sh_addralign;
+    }
     if (sh.sh_type == SHT_PROGBITS && sec.cls != section_class::other) {
       const std::uint8_t* start = at(data, size, sh.sh_offset, sh.sh_size, sec.name.c_str());
       sec.bytes.assign(start, start + sh.sh_size);
