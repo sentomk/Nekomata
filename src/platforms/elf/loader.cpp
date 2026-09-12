@@ -153,6 +153,9 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     if (sec.cls != section_class::text && sec.cls != section_class::rodata) {
       continue;
     }
+    if (sec.bytes.empty()) {
+      continue; // an empty section carries no bytes; its data pointer may be null
+    }
     std::memcpy(image.data() + section_offset[sec.index], sec.bytes.data(), sec.bytes.size());
   }
   for (const auto& [sym_index, offset] : trampoline_offset_for_symbol) {
