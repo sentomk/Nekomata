@@ -48,13 +48,21 @@ bool is_call_to_undefined(std::uint32_t type) {
   return type == kRelPlt32;
 }
 
-/// movabs rax, imm64 ; jmp rax — a 10-byte PLT for out-of-range externals.
+/// movabs r11, imm64 ; jmp r11 — a 13-byte PLT for out-of-range externals.
+/// Never rax: at a call site AL is live — it carries the SSE-argument
+/// count into variadic callees (printf & co.). Clobbering rax left AL at
+/// the mercy of the target address's low byte; when that byte was 0 the
+/// callee skipped its SSE save area and every %.1f silently read zeros
+/// (caught by the playground demo, whose HUD doubles all printed 0.0).
+/// r11 is the classic PLT scratch register; note its jmp needs REX.B,
+/// making this stub one byte longer than the rax form.
 void write_trampoline(std::uint8_t* out, std::uintptr_t target) {
-  out[0] = 0x48;
-  out[1] = 0xB8;
+  out[0] = 0x49; // REX.WB
+  out[1] = 0xBB; // movabs r11, imm64
   std::memcpy(out + 2, &target, sizeof(target));
-  out[10] = 0xFF;
-  out[11] = 0xE0;
+  out[10] = 0x41; // REX.B
+  out[11] = 0xFF;
+  out[12] = 0xE3; // jmp r11
 }
 
 } // namespace
@@ -110,7 +118,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     }
     image_size = align_up(image_size, kSectionAlign);
     trampoline_offset_for_symbol[rel.symbol_index] = image_size;
-    image_size += 12; // movabs rax, imm64 (10) + jmp rax (2)
+    image_size += 13; // movabs r11, imm64 (10) + jmp r11 (3, needs REX.B)
   }
 
   // ---- 3. arena near the code being replaced ---------------------------

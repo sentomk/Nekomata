@@ -54,3 +54,19 @@ nekomata_apply_warnings(neko_elf_guard_tests)
 nekomata_apply_sanitizers(neko_elf_guard_tests)
 add_test(NAME neko.elf.guard_pages COMMAND neko_elf_guard_tests)
 set_tests_properties(neko.elf.guard_pages PROPERTIES TIMEOUT 30)
+
+# Trampoline regression: variadic callees rely on AL surviving the PLT stub.
+add_library(neko_elf_trampoline_object OBJECT fixtures/plt_call.cpp)
+target_compile_options(neko_elf_trampoline_object PRIVATE
+  -O0 -g0 -fno-inline -fno-pie -fno-lto -fno-function-sections)
+nekomata_apply_warnings(neko_elf_trampoline_object)
+add_executable(neko_elf_trampoline_tests plt_trampoline.cpp)
+target_include_directories(neko_elf_trampoline_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/elf")
+target_link_libraries(neko_elf_trampoline_tests PRIVATE neko_backend_elf)
+nekomata_apply_warnings(neko_elf_trampoline_tests)
+nekomata_apply_sanitizers(neko_elf_trampoline_tests)
+add_dependencies(neko_elf_trampoline_tests neko_elf_trampoline_object)
+add_test(NAME neko.elf.plt_trampoline COMMAND neko_elf_trampoline_tests
+  $<TARGET_OBJECTS:neko_elf_trampoline_object> COMMAND_EXPAND_LISTS)
+set_tests_properties(neko.elf.plt_trampoline PROPERTIES TIMEOUT 30)
