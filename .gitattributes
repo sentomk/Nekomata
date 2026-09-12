@@ -1,0 +1,7 @@
+# LF everywhere, on every platform. Client settings (core.autocrlf) do not
+# get a say: checkouts materialize LF and commits store LF, so Windows,
+# WSL and CI all see the same bytes.
+* text=auto eol=lf
+
+# Fuzz corpus seeds are binary payloads; never line-ending-convert them.
+*.bin -text
