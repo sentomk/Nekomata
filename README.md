@@ -37,6 +37,7 @@ has tried yet.
 | Optimized builds (`-O2`) | not supported yet — an inlined function has no body of its own |
 | Platforms | Linux/ELF; the kernel itself builds on macOS, without a backend |
 | Compilers | GCC and Clang ≥ 14 as the source of reloads |
+| TUI reload control | experimental — its manual trigger does not coordinate application threads yet |
 
 Thread coordination is the caller's responsibility. `reload_session` performs
 no internal synchronization, so its member calls must be externally serialized.
@@ -141,7 +142,9 @@ Platform notes:
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions, the testing doctrine,
 and the suite map; [AGENTS.md](AGENTS.md) carries the same rules for AI coding
-agents. The planned work — including what is deliberately out of scope — is in
+agents. [docs/reload-model.md](docs/reload-model.md) records the intended runtime
+API, transaction and TUI responsibility boundaries. The planned work —
+including what is deliberately out of scope — is in
 [docs/roadmap.md](docs/roadmap.md).
 
 ## License
