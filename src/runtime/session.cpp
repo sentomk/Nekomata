@@ -58,6 +58,10 @@ public:
   }
 };
 
+struct reload_session::prepared_reload {
+  loaded_image image;
+};
+
 reload_session::reload_session(backend_bundle backends) : backends_(std::move(backends)) {
   if (!backends_.loader || !backends_.symbols || !backends_.state || !backends_.substituter) {
     throw std::runtime_error("reload_session: incomplete backend bundle");
@@ -91,7 +95,8 @@ bool reload_session::update() {
   bool reloaded = false;
   for (const auto& watched : watched_) {
     try {
-      if (try_load(watched)) {
+      if (auto prepared = try_prepare(watched)) {
+        commit(*prepared);
         reloaded = true;
       }
     } catch (const std::exception& e) {
@@ -103,11 +108,12 @@ bool reload_session::update() {
   return reloaded;
 }
 
-bool reload_session::try_load(const watched_object& watched) {
+std::unique_ptr<reload_session::prepared_reload>
+reload_session::try_prepare(const watched_object& watched) {
   const auto& path = watched.object_path;
   std::error_code ec;
   if (!std::filesystem::is_regular_file(path, ec)) {
-    return false;
+    return nullptr;
   }
 
   // Claim the file atomically before touching it, so a writer mid-flight
@@ -117,14 +123,15 @@ bool reload_session::try_load(const watched_object& watched) {
   const auto claimed_path = claimed.parent_path() / (claimed.filename().string() + ".claimed");
   std::filesystem::rename(claimed, claimed_path, ec);
   if (ec) {
-    return false; // someone else claimed it first, or it vanished
+    return nullptr; // someone else claimed it first, or it vanished
   }
 
   const auto bytes = read_file(claimed_path);
   std::filesystem::remove(claimed_path, ec);
 
   const auto source_path = watched.source_path.generic_string();
-  const loaded_image image = backends_.loader->load(bytes.data(), bytes.size(), source_path);
+  auto prepared = std::make_unique<prepared_reload>();
+  prepared->image = backends_.loader->load(bytes.data(), bytes.size(), source_path);
 
   // Plan first (the planner owns "what does this object cover"): it is the
   // seam the future dependency graph grows into.
@@ -133,9 +140,9 @@ bool reload_session::try_load(const watched_object& watched) {
   const auto plans = backends_.planner->plan(changes);
   neko::log(neko::log_level::info, "plan covers %zu translation unit(s)\n", plans.size());
 
-  // Two-phase commit: precheck EVERY entry without writing a byte, snapshot
-  // every entry, then patch. Any failure rolls already-written entries back
-  // in reverse order, so a reload is all-or-nothing.
+  // Complete every zero-write check during preparation. A rejected object
+  // therefore cannot reach the commit path or alter a live function entry.
+  const auto& image = prepared->image;
   for (const auto& replacement : image.replacements) {
     auto* target = static_cast<std::uint8_t*>(image.code) + replacement.offset_in_image;
     if (!backends_.substituter->precheck_entry(replacement.old_entry, target)) {
@@ -143,6 +150,14 @@ bool reload_session::try_load(const watched_object& watched) {
                                replacement.name);
     }
   }
+
+  return prepared;
+}
+
+void reload_session::commit(const prepared_reload& prepared) {
+  const auto& image = prepared.image;
+
+  // Snapshot and patch only after the complete object passed preparation.
   struct saved_entry {
     std::uintptr_t entry;
     std::uint8_t original[5];
@@ -187,7 +202,6 @@ bool reload_session::try_load(const watched_object& watched) {
             image.replacements.size());
   ++applied_;
   last_result_ = "applied " + std::to_string(image.replacements.size()) + " function(s)";
-  return true;
 }
 
 } // namespace neko

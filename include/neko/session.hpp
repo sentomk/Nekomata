@@ -87,7 +87,9 @@ private:
     std::filesystem::path source_path;
   };
 
-  bool try_load(const watched_object& watched);
+  struct prepared_reload;
+  std::unique_ptr<prepared_reload> try_prepare(const watched_object& watched);
+  void commit(const prepared_reload& prepared);
 
   backend_bundle backends_;
   std::vector<watched_object> watched_;
