@@ -28,6 +28,7 @@ has tried yet.
 | Capability | Today |
 |---|---|
 | Hot reload | one or more translation units per atomically published generation, `-O0`, Linux/ELF |
+| Dependency discovery | GCC/Clang Make depfiles through `depfile_planner`; incomplete graphs are rejected |
 | State preservation | globals and statics keep their values across reloads |
 | Multiple functions per reload | yes — applied all-or-nothing; a failed attempt rolls back |
 | PIE binaries | yes, when hot objects are built `-fpie` (GOT-style `-fpic` is not supported yet) |

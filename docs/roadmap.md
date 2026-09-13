@@ -12,7 +12,7 @@ strings, where a reader has no way to map the numbered milestones.
 | Phase | Scope | Acceptance bar | Status |
 |---|---|---|---|
 | 1 · Single-function prototype | Linux/ELF, `-O0`, one TU, fixed-moment swap | State survives a transactional function-entry redirect | ✅ done |
-| 2 · Multi-TU projects | Dependency discovery and complete build generations | Every affected TU is prepared, validated and committed or rejected as one generation | ⏳ next |
+| 2 · Multi-TU projects | Dependency discovery and complete build generations | Every affected TU is prepared, validated and committed or rejected as one generation | ✅ done |
 | 3 · Multithreaded applications | Caller-coordinated quiescent points | Expensive preparation happens before the pause; entry redirects happen only while the caller keeps reloadable code quiescent | ⏳ |
 | 4 · Template code | Instantiations, linkage, COMDAT groups and header fan-out | Concrete template instances are identified without guessing and every affected TU joins the generation | ⏳ |
 | 5 · Optimized builds | `-O2`, inline units and optimized-away bodies | Inlined and out-of-line copies cannot leave observable stale behavior after an accepted generation | ⏳ high risk |

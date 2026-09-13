@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# A ready marker publishes two translation units as one generation.
+# Compiler depfiles expand one changed header to a two-TU generation, whose
+# ready marker publishes both objects as one atomic offer.
 set -euo pipefail
 
 CXX="@CMAKE_CXX_COMPILER@"
@@ -12,6 +13,8 @@ OUT="$WORK/out.txt"
 BASE="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
 MANIFEST="$WORK/generation.ready"
 STOP="$WORK/stop"
+DEPS="$WORK/deps"
+mkdir -p "$DEPS"
 
 runner_pid=""
 cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
@@ -43,36 +46,57 @@ wait_after() { # pattern first-line timeout label
 build_a() { # generation value
   local generation="$1" value="$2" dir="$WORK/$1"
   mkdir -p "$dir"
-  printf 'int a_value() { return %s; }\n' "$value" > "$dir/a.variant.cpp"
-  "$CXX" $BASE -c "$dir/a.variant.cpp" -o "$dir/a.staging.o"
+  "$CXX" $BASE "-Dneko_multi_tu_value=$value" -MMD -MP \
+    -MF "$dir/a.d" -MT "$dir/a.o" \
+    -c "$SRC/a.cpp" -o "$dir/a.staging.o"
   mv "$dir/a.staging.o" "$dir/a.o"
 }
 build_b() { # generation value include-unpatchable-guard
   local generation="$1" value="$2" guard="$3" dir="$WORK/$1"
+  local guard_options=()
   mkdir -p "$dir"
-  printf 'int b_value() { return %s; }\n' "$value" > "$dir/b.variant.cpp"
-  if [ "$guard" = 1 ]; then
-    printf '%s\n' '__attribute__((naked)) void b_guard() { __asm__ volatile("nop\n\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n\tret"); }' >> "$dir/b.variant.cpp"
+  if [ "$guard" = 0 ]; then
+    guard_options=(-Dneko_multi_tu_omit_guard=1)
   fi
-  "$CXX" $BASE -c "$dir/b.variant.cpp" -o "$dir/b.staging.o"
+  "$CXX" $BASE "-Dneko_multi_tu_value=$value" "${guard_options[@]}" -MMD -MP \
+    -MF "$dir/b.d" -MT "$dir/b.o" \
+    -c "$SRC/b.cpp" -o "$dir/b.staging.o"
   mv "$dir/b.staging.o" "$dir/b.o"
 }
-publish() { # generation
-  local generation="$1" dir="$WORK/$1" staging="$MANIFEST.staging"
+promote_dependencies() { # generation
+  local dir="$WORK/$1"
+  cp "$dir/a.d" "$DEPS/a.staging.d"
+  cp "$dir/b.d" "$DEPS/b.staging.d"
+  mv "$DEPS/a.staging.d" "$DEPS/a.d"
+  mv "$DEPS/b.staging.d" "$DEPS/b.d"
+}
+publish() { # generation value include-unpatchable-guard
+  local generation="$1" value="$2" guard="$3" dir="$WORK/$1"
+  local staging="$MANIFEST.staging" b_build="$BASE -Dneko_multi_tu_value=$value"
+  if [ "$guard" = 0 ]; then
+    b_build="$b_build -Dneko_multi_tu_omit_guard=1"
+  fi
   {
     printf 'nekomata-generation-v1\n'
     printf 'id "%s"\n' "$generation"
-    printf 'changed "%s"\n' "$SRC/a.cpp"
-    printf 'changed "%s"\n' "$SRC/b.cpp"
-    printf 'object "%s" "%s" "%s"\n' "$dir/a.o" "$SRC/a.cpp" "$BASE"
-    printf 'object "%s" "%s" "%s"\n' "$dir/b.o" "$SRC/b.cpp" "$BASE"
+    printf 'changed "%s"\n' "$SRC/shared.hpp"
+    printf 'object "%s" "%s" "%s -Dneko_multi_tu_value=%s"\n' \
+      "$dir/a.o" "$SRC/a.cpp" "$BASE" "$value"
+    printf 'object "%s" "%s" "%s"\n' "$dir/b.o" "$SRC/b.cpp" "$b_build"
   } > "$staging"
   mv "$staging" "$MANIFEST"
 }
 
 echo "== neko.multi_tu (workdir: $WORK) =="
 
-"$HERE/multi_tu_runner" "$MANIFEST" "$STOP" > "$OUT" 2>&1 &
+# The active dependency snapshot comes from the last completed build. A new
+# snapshot is promoted only after its generation has been consumed.
+build_a seed 1
+build_b seed 1 0
+promote_dependencies seed
+
+"$HERE/multi_tu_runner" "$MANIFEST" "$STOP" \
+  "$SRC/a.cpp" "$DEPS/a.d" "$SRC/b.cpp" "$DEPS/b.d" "$SRC" > "$OUT" 2>&1 &
 runner_pid=$!
 wait_count '\[pair 1 1\]' 2 10 startup
 
@@ -84,18 +108,20 @@ if grep -aq "reload generation 'g2' applied" "$OUT"; then
   fail "partial generation applied before publication"
 fi
 build_b g2 2 0
-publish g2
+publish g2 2 0
 wait_count "reload generation 'g2' applied: 2 function(s) redirected" 1 15 v2-applied
 wait_count '\[pair 2 2\]' 2 15 v2-live
+promote_dependencies g2
 
 # B's unpatchable guard rejects the generation during preparation. A must not
 # become visible even though its object was prepared first.
 v3_line=$(( $(wc -l < "$OUT") + 1 ))
 build_a g3 3
 build_b g3 3 1
-publish g3
+publish g3 3 1
 wait_after 'rejected before any write: cannot patch entry of .*b_guard' "$v3_line" 15 v3-rejected
 wait_after '\[pair 2 2\]' "$v3_line" 5 v2-still-live
+promote_dependencies g3
 sleep 0.5
 if grep -aq '\[pair 3 3\]' "$OUT"; then
   fail "rejected generation became visible"
@@ -104,9 +130,10 @@ fi
 # The next complete generation still applies after the rejection.
 build_a g4 4
 build_b g4 4 0
-publish g4
+publish g4 4 0
 wait_count "reload generation 'g4' applied: 2 function(s) redirected" 1 15 v4-applied
 wait_count '\[pair 4 4\]' 2 15 v4-live
+promote_dependencies g4
 
 if awk '/\[pair / { gsub(/]/, "", $3); if ($2 != $3) mixed = 1 } END { exit !mixed }' "$OUT"; then
   fail "observed a mixed-TU generation"
@@ -116,5 +143,5 @@ touch "$STOP"
 wait "$runner_pid" || fail "runner exited unsuccessfully"
 runner_pid=""
 
-echo "MULTI-TU PASS — two objects committed and rejected as indivisible generations"
+echo "MULTI-TU PASS — one header expanded to two indivisible translation units"
 echo "output kept at: $OUT"

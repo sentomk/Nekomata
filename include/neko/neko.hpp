@@ -8,6 +8,7 @@
 #include <neko/core/types.hpp>
 #include <neko/log.hpp>
 #include <neko/runtime/code_substituter.hpp>
+#include <neko/runtime/depfile_planner.hpp>
 #include <neko/runtime/object_loader.hpp>
 #include <neko/runtime/patch_planner.hpp>
 #include <neko/runtime/state_manager.hpp>

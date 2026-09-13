@@ -16,6 +16,7 @@ static_assert(!complete_type<neko::type_layout>);
 static_assert(!complete_type<neko::change_set>);
 static_assert(!complete_type<neko::patch_plan>);
 static_assert(!complete_type<neko::code_substituter>);
+static_assert(!complete_type<neko::depfile_planner>);
 static_assert(!complete_type<neko::object_loader>);
 static_assert(!complete_type<neko::patch_planner>);
 static_assert(!complete_type<neko::state_manager>);
@@ -24,6 +25,7 @@ static_assert(!complete_type<neko::reload_session>);
 static_assert(!complete_type<neko::function_replacement>);
 static_assert(!complete_type<neko::loaded_image>);
 static_assert(!complete_type<neko::backend_bundle>);
+static_assert(!complete_type<neko::depfile_entry>);
 static_assert(!complete_type<neko::generation_watch>);
 
 } // namespace

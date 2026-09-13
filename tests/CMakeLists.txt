@@ -29,6 +29,14 @@ nekomata_apply_warnings(neko_session_transaction)
 nekomata_apply_sanitizers(neko_session_transaction)
 add_test(NAME neko.session_transaction COMMAND neko_session_transaction)
 
+add_executable(neko_depfile_planner depfile_planner.cpp)
+target_include_directories(neko_depfile_planner
+  PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+target_link_libraries(neko_depfile_planner PRIVATE nekomata::neko)
+nekomata_apply_warnings(neko_depfile_planner)
+nekomata_apply_sanitizers(neko_depfile_planner)
+add_test(NAME neko.depfile_planner COMMAND neko_depfile_planner)
+
 add_subdirectory(headers)
 add_subdirectory(harness)
 add_subdirectory(tooling)

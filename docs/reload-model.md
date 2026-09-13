@@ -53,8 +53,7 @@ versioned format:
 ```text
 nekomata-generation-v1
 id "2026-09-13T01:42:18Z-17"
-changed "/project/src/widget.cpp"
-changed "/project/src/view.cpp"
+changed "/project/include/ui.hpp"
 object "generations/17/widget.o" "/project/src/widget.cpp" "-std=c++20 -O0 -g"
 object "generations/17/view.o" "/project/src/view.cpp" "-std=c++20 -O0 -g"
 ```
@@ -83,8 +82,41 @@ it again is rejected.
 
 The configured patch planner must produce exactly the source identities listed
 by the manifest. The default planner treats every `changed` path as one
-translation unit, which covers direct source changes. Header dependency fanout
-requires a dependency-aware planner.
+translation unit, which covers direct source changes. GCC and Clang builds can
+expand header changes through their GNU Make-compatible dependency files:
+
+```cpp
+auto planner = std::make_shared<neko::depfile_planner>(
+    std::vector<neko::depfile_entry>{
+        {"src/widget.cpp", "build/widget.d", "/project"},
+        {"src/view.cpp", "build/view.d", "/project"},
+    });
+
+auto backend = neko::elf::create_backend();
+backend.planner = planner;
+neko::reload_session session{std::move(backend)};
+session.watch(neko::generation_watch{"build/nekomata/generation.ready"});
+```
+
+Compile each registered translation unit with dependency output enabled, for
+example `-MMD -MP -MF build/widget.next.d`. The planner reads every registered
+file when planning and returns all translation units that depend on any
+`changed` path, in registration order. Relative translation-unit and depfile
+paths use the entry's compilation working directory. Missing or malformed
+files reject planning rather than silently omitting a translation unit.
+
+The configured `.d` files are the active snapshot used to plan and validate a
+generation. A build writes its next dependency files to staging or
+generation-specific paths, publishes the generation, waits until that manifest
+has been consumed, and only then atomically promotes the next dependency
+snapshot. Keeping the prior graph through validation matters when an edit
+removes the include edge that triggered the build.
+
+This parser deliberately supports the GNU Make depfile format emitted by GCC
+and Clang; dependency output is not compiler-universal. MSVC exposes include
+information through `/showIncludes` or `/sourceDependencies` JSON, which will
+require a separate provider adapter rather than pretending those formats are
+`.d` files.
 
 Independent watch targets may still produce independent generations. Their
 results must remain distinguishable rather than being collapsed into one

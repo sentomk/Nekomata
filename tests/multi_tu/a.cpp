@@ -1,3 +1,5 @@
+#include "shared.hpp"
+
 int a_value() {
-  return 1;
+  return neko_multi_tu_value;
 }
