@@ -59,7 +59,12 @@ public:
 };
 
 struct reload_session::prepared_reload {
+  std::string watch_key;
   loaded_image image;
+};
+
+struct reload_session::prepared_generation {
+  std::vector<std::unique_ptr<prepared_reload>> reloads;
 };
 
 reload_session::reload_session(backend_bundle backends) : backends_(std::move(backends)) {
@@ -92,20 +97,25 @@ void reload_session::watch(std::filesystem::path object_path,
 }
 
 bool reload_session::update() {
-  bool reloaded = false;
-  for (const auto& watched : watched_) {
-    try {
+  try {
+    prepared_generation generation;
+    for (const auto& watched : watched_) {
       if (auto prepared = try_prepare(watched)) {
-        commit(*prepared);
-        reloaded = true;
+        generation.reloads.push_back(std::move(prepared));
       }
-    } catch (const std::exception& e) {
-      ++rejected_;
-      last_result_ = e.what();
-      throw; // the caller decides how to surface the failure
     }
+    if (generation.reloads.empty()) {
+      return false;
+    }
+
+    validate_generation(generation);
+    commit(generation);
+    return true;
+  } catch (const std::exception& e) {
+    ++rejected_;
+    last_result_ = e.what();
+    throw; // the caller decides how to surface the failure
   }
-  return reloaded;
 }
 
 std::unique_ptr<reload_session::prepared_reload>
@@ -131,6 +141,7 @@ reload_session::try_prepare(const watched_object& watched) {
 
   const auto source_path = watched.source_path.generic_string();
   auto prepared = std::make_unique<prepared_reload>();
+  prepared->watch_key = path.lexically_normal().generic_string();
   prepared->image = backends_.loader->load(bytes.data(), bytes.size(), source_path);
 
   // Plan first (the planner owns "what does this object cover"): it is the
@@ -154,54 +165,91 @@ reload_session::try_prepare(const watched_object& watched) {
   return prepared;
 }
 
-void reload_session::commit(const prepared_reload& prepared) {
-  const auto& image = prepared.image;
+void reload_session::validate_generation(const prepared_generation& generation) const {
+  std::unordered_map<std::uintptr_t, std::string> entries;
+  for (const auto& prepared : generation.reloads) {
+    for (const auto& replacement : prepared->image.replacements) {
+      if (!entries.emplace(replacement.old_entry, replacement.name).second) {
+        throw std::runtime_error("reload rejected before any write: multiple objects replace entry "
+                                 "of " +
+                                 replacement.name);
+      }
+    }
+  }
+}
 
-  // Snapshot and patch only after the complete object passed preparation.
+void reload_session::commit(const prepared_generation& generation) {
+  // Snapshot and patch only after the complete ready-object batch passed
+  // preparation. The saved list spans every object, so rollback does too.
   struct saved_entry {
     std::uintptr_t entry;
+    void* target;
+    const std::string* name;
     std::uint8_t original[5];
   };
+
+  std::size_t replacement_count = 0;
+  for (const auto& prepared : generation.reloads) {
+    replacement_count += prepared->image.replacements.size();
+  }
+
   std::vector<saved_entry> saved;
-  saved.reserve(image.replacements.size());
-  for (const auto& replacement : image.replacements) {
-    auto* target = static_cast<std::uint8_t*>(image.code) + replacement.offset_in_image;
-    saved_entry entry{};
-    entry.entry = replacement.old_entry;
-    if (!backends_.substituter->snapshot_entry(replacement.old_entry, entry.original) ||
-        !backends_.substituter->patch_entry(replacement.old_entry, target)) {
-      for (auto it = saved.rbegin(); it != saved.rend(); ++it) {
-        backends_.substituter->restore_entry(it->entry, it->original);
+  saved.reserve(replacement_count);
+
+  // Capture every rollback image before the first live write.
+  for (const auto& prepared : generation.reloads) {
+    const auto& image = prepared->image;
+    for (const auto& replacement : image.replacements) {
+      saved_entry entry{};
+      entry.entry = replacement.old_entry;
+      entry.target = static_cast<std::uint8_t*>(image.code) + replacement.offset_in_image;
+      entry.name = &replacement.name;
+      if (!backends_.substituter->snapshot_entry(entry.entry, entry.original)) {
+        throw std::runtime_error(
+            "reload rejected and rolled back 0 entries: cannot patch entry of " + *entry.name);
       }
-      throw std::runtime_error("reload rejected and rolled back " + std::to_string(saved.size()) +
-                               " entr" + (saved.size() == 1 ? "y" : "ies") +
-                               ": cannot patch entry of " + replacement.name);
-    }
-    saved.push_back(entry);
-  }
-
-  // Warn about functions this load dropped: their old entries still jump to
-  // the previous arena copy, so calls silently run stale code.
-  for (const auto& previous : last_redirected_) {
-    const auto& name = previous.first;
-    const bool still_present =
-        std::any_of(image.replacements.begin(), image.replacements.end(),
-                    [&](const function_replacement& repl) { return repl.name == name; });
-    if (!still_present) {
-      neko::log(neko::log_level::warn,
-                "stale redirect: '%s' was removed but its entry still jumps to old code\n",
-                name.c_str());
+      saved.push_back(entry);
     }
   }
-  last_redirected_.clear();
-  for (const auto& replacement : image.replacements) {
-    last_redirected_[replacement.name] = replacement.old_entry;
+
+  std::size_t patched = 0;
+  for (const auto& entry : saved) {
+    if (!backends_.substituter->patch_entry(entry.entry, entry.target)) {
+      for (std::size_t index = patched; index > 0; --index) {
+        const auto& written = saved[index - 1];
+        backends_.substituter->restore_entry(written.entry, written.original);
+      }
+      throw std::runtime_error("reload rejected and rolled back " + std::to_string(patched) +
+                               " entr" + (patched == 1 ? "y" : "ies") + ": cannot patch entry of " +
+                               *entry.name);
+    }
+    ++patched;
   }
 
-  neko::log(neko::log_level::ok, "reload applied: %zu function(s) redirected\n",
-            image.replacements.size());
+  // Warn about functions an updated object dropped. An object not present in
+  // this transaction keeps its prior redirects and must not look stale.
+  for (const auto& prepared : generation.reloads) {
+    auto& last_redirected = last_redirected_by_object_[prepared->watch_key];
+    for (const auto& previous : last_redirected) {
+      const auto& name = previous.first;
+      const bool still_present = std::any_of(
+          prepared->image.replacements.begin(), prepared->image.replacements.end(),
+          [&](const function_replacement& replacement) { return replacement.name == name; });
+      if (!still_present) {
+        neko::log(neko::log_level::warn,
+                  "stale redirect: '%s' was removed but its entry still jumps to old code\n",
+                  name.c_str());
+      }
+    }
+    last_redirected.clear();
+    for (const auto& replacement : prepared->image.replacements) {
+      last_redirected[replacement.name] = replacement.old_entry;
+    }
+  }
+
+  neko::log(neko::log_level::ok, "reload applied: %zu function(s) redirected\n", replacement_count);
   ++applied_;
-  last_result_ = "applied " + std::to_string(image.replacements.size()) + " function(s)";
+  last_result_ = "applied " + std::to_string(replacement_count) + " function(s)";
 }
 
 } // namespace neko

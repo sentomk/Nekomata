@@ -14,8 +14,8 @@
 // Threading model: reload_session performs no internal synchronization. The
 // caller must serialize all member calls and establish a quiescent point for
 // reloadable code before update(), keeping it quiescent until update() returns.
-// Replacements from one claimed object are committed all-or-nothing; a failed
-// commit restores entries already written for that object.
+// All objects claimed by one update() are committed all-or-nothing; a failed
+// commit restores entries already written for that transaction.
 
 #pragma once
 
@@ -59,13 +59,12 @@ public:
   /// or canonicalizing the source file).
   void watch(std::filesystem::path object_path, const std::filesystem::path& source_path);
 
-  /// Pick up newly offered object files in watch registration order. Each
-  /// claimed object is a separate transaction: all of its function entries
-  /// are redirected, or entries already written for that object are restored.
-  /// Returns true when at least one reload was applied. Throws
-  /// std::runtime_error on the first rejected offer; an earlier offer handled
-  /// by the same call may already have been applied, and later watches are not
-  /// examined.
+  /// Pick up newly offered object files in watch registration order. Every
+  /// object claimed by one call is prepared and validated before any live
+  /// function entry is changed, then all ready objects are committed as one
+  /// transaction. Returns true when that transaction was applied. Throws
+  /// std::runtime_error if an object is rejected or commit fails; no entry
+  /// changed by this call remains modified after a failed transaction.
   ///
   /// Before calling, the caller must ensure that no thread can enter or execute
   /// reloadable code, and must preserve that quiescent state until this method
@@ -88,15 +87,18 @@ private:
   };
 
   struct prepared_reload;
+  struct prepared_generation;
   std::unique_ptr<prepared_reload> try_prepare(const watched_object& watched);
-  void commit(const prepared_reload& prepared);
+  void validate_generation(const prepared_generation& generation) const;
+  void commit(const prepared_generation& generation);
 
   backend_bundle backends_;
   std::vector<watched_object> watched_;
-  /// Functions redirected by the last fully-applied load, by name. Used to
-  /// warn when a later load drops a function whose entry still jumps to
-  /// stale arena code.
-  std::unordered_map<std::string, std::uintptr_t> last_redirected_;
+  /// Functions redirected by the last fully-applied load of each watched
+  /// object. Used to warn when a later load of that same object drops a
+  /// function whose entry still jumps to stale arena code.
+  std::unordered_map<std::string, std::unordered_map<std::string, std::uintptr_t>>
+      last_redirected_by_object_;
   std::size_t applied_ = 0;
   std::size_t rejected_ = 0;
   std::string last_result_ = "no offers yet";

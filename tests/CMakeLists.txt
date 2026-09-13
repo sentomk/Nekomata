@@ -21,6 +21,14 @@ add_test(NAME neko.public_api
     -P "${CMAKE_CURRENT_SOURCE_DIR}/check_output.cmake")
 set_tests_properties(neko.public_api PROPERTIES TIMEOUT 15)
 
+add_executable(neko_session_transaction session_transaction.cpp)
+target_include_directories(neko_session_transaction
+  PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+target_link_libraries(neko_session_transaction PRIVATE nekomata::neko)
+nekomata_apply_warnings(neko_session_transaction)
+nekomata_apply_sanitizers(neko_session_transaction)
+add_test(NAME neko.session_transaction COMMAND neko_session_transaction)
+
 add_subdirectory(headers)
 add_subdirectory(harness)
 
@@ -63,6 +71,7 @@ if(NEKOMATA_TARGET_LINUX)
   add_subdirectory(rejections)
   add_subdirectory(soak)
   add_subdirectory(atomicity)
+  add_subdirectory(multi_tu)
   add_subdirectory(duplicate_names)
   if(NEKOMATA_BUILD_FUZZ AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_subdirectory(fuzz)

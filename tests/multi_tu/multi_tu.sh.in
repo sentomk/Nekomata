@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# One explicit update commits two ready translation units as one transaction.
+set -euo pipefail
+
+CXX="@CMAKE_CXX_COMPILER@"
+SRC="@CMAKE_CURRENT_SOURCE_DIR@"
+HERE="@CMAKE_CURRENT_BINARY_DIR@"
+WORK="${1:-$(mktemp -d /tmp/neko-multi-tu.XXXXXX)}"
+OUT="$WORK/out.txt"
+: > "$OUT"
+
+BASE="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
+A_OFFER="$WORK/a.new.o"
+B_OFFER="$WORK/b.new.o"
+TRIGGER="$WORK/update.trigger"
+STOP="$WORK/stop"
+
+runner_pid=""
+cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+trap cleanup EXIT
+
+fail() { echo "FAIL: $1"; tail -10 "$OUT"; exit 1; }
+wait_count() { # pattern min timeout label
+  local pattern="$1" min="$2" timeout="$3" label="$4" waited=0 n
+  while :; do
+    n=$(grep -ac -- "$pattern" "$OUT" || true)
+    [ "$n" -ge "$min" ] && return 0
+    sleep 0.15; waited=$((waited + 1))
+    if [ "$waited" -gt $((timeout * 6)) ]; then
+      echo "FAIL($label): '$pattern' x$n < $min"; tail -10 "$OUT"; exit 1
+    fi
+  done
+}
+wait_after() { # pattern first-line timeout label
+  local pattern="$1" first="$2" timeout="$3" label="$4" waited=0
+  while :; do
+    awk -v pattern="$pattern" -v first="$first" \
+      'NR >= first && $0 ~ pattern { found = 1 } END { exit !found }' "$OUT" && return 0
+    sleep 0.15; waited=$((waited + 1))
+    if [ "$waited" -gt $((timeout * 6)) ]; then
+      echo "FAIL($label): no new '$pattern'"; tail -10 "$OUT"; exit 1
+    fi
+  done
+}
+build_a() { # value
+  local value="$1"
+  printf 'int a_value() { return %s; }\n' "$value" > "$WORK/a.variant.cpp"
+  "$CXX" $BASE -c "$WORK/a.variant.cpp" -o "$WORK/a.staging.o"
+}
+build_b() { # value include-unpatchable-guard
+  local value="$1" guard="$2"
+  printf 'int b_value() { return %s; }\n' "$value" > "$WORK/b.variant.cpp"
+  if [ "$guard" = 1 ]; then
+    printf '%s\n' '__attribute__((naked)) void b_guard() { __asm__ volatile("nop\n\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n\tret"); }' >> "$WORK/b.variant.cpp"
+  fi
+  "$CXX" $BASE -c "$WORK/b.variant.cpp" -o "$WORK/b.staging.o"
+}
+publish() {
+  mv "$WORK/a.staging.o" "$A_OFFER"
+  mv "$WORK/b.staging.o" "$B_OFFER"
+  touch "$TRIGGER"
+}
+
+echo "== neko.multi_tu (workdir: $WORK) =="
+
+"$HERE/multi_tu_runner" "$A_OFFER" "$SRC/a.cpp" "$B_OFFER" "$SRC/b.cpp" \
+  "$TRIGGER" "$STOP" > "$OUT" 2>&1 &
+runner_pid=$!
+wait_count '\[pair 1 1\]' 2 10 startup
+
+# A valid generation changes both translation units together.
+build_a 2
+build_b 2 0
+publish
+wait_count 'reload applied: 2 function(s) redirected' 1 15 v2-applied
+wait_count '\[pair 2 2\]' 2 15 v2-live
+
+# B's unpatchable guard rejects the generation during preparation. A must not
+# become visible even though its object was prepared first.
+v3_line=$(( $(wc -l < "$OUT") + 1 ))
+build_a 3
+build_b 3 1
+publish
+wait_after 'rejected before any write: cannot patch entry of .*b_guard' "$v3_line" 15 v3-rejected
+wait_after '\[pair 2 2\]' "$v3_line" 5 v2-still-live
+sleep 0.5
+if grep -aq '\[pair 3 3\]' "$OUT"; then
+  fail "rejected generation became visible"
+fi
+
+# The next complete generation still applies after the rejection.
+build_a 4
+build_b 4 0
+publish
+wait_count 'reload applied: 2 function(s) redirected' 2 15 v4-applied
+wait_count '\[pair 4 4\]' 2 15 v4-live
+
+if awk '/\[pair / { gsub(/]/, "", $3); if ($2 != $3) mixed = 1 } END { exit !mixed }' "$OUT"; then
+  fail "observed a mixed-TU generation"
+fi
+
+touch "$STOP"
+wait "$runner_pid" || fail "runner exited unsuccessfully"
+runner_pid=""
+
+echo "MULTI-TU PASS — two objects committed and rejected as indivisible generations"
+echo "output kept at: $OUT"
