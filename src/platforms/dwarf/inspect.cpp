@@ -1,5 +1,5 @@
 #include "inspect.hpp"
-#include "../elf/binary_file.hpp"
+#include <platforms/elf/binary_file.hpp>
 
 #include <dwarf.h>
 #include <elf.h>

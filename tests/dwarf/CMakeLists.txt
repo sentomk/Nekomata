@@ -22,7 +22,7 @@ nekomata_apply_warnings(neko_dwarf_fixture_v5)
 
 add_executable(neko_function_index_tests function_index.cpp)
 target_include_directories(neko_function_index_tests PRIVATE
-  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/elf")
+  "${PROJECT_SOURCE_DIR}/tests/vendor")
 target_link_libraries(neko_function_index_tests PRIVATE neko_function_index)
 nekomata_apply_warnings(neko_function_index_tests)
 nekomata_apply_sanitizers(neko_function_index_tests)

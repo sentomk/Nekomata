@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
 
-#include "function_index.hpp"
+#include <platforms/elf/function_index.hpp>
 
 #include <elf.h>
 #include <unistd.h>

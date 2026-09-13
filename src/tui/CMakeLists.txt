@@ -57,6 +57,6 @@ target_link_libraries(neko_tui
   PRIVATE glyph::glyph)
 
 target_include_directories(neko_tui
-  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include>)
+  PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
 
 nekomata_apply_warnings(neko_tui)

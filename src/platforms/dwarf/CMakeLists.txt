@@ -29,6 +29,8 @@ nekomata_add_libdwarf()
 add_library(neko_backend_dwarf STATIC inspect.cpp)
 add_library(nekomata::backends::dwarf ALIAS neko_backend_dwarf)
 target_link_libraries(neko_backend_dwarf PRIVATE libdwarf::dwarf-shared neko_elf_file)
+target_include_directories(neko_backend_dwarf PRIVATE
+  "${PROJECT_SOURCE_DIR}/src")
 # Keep third-party header diagnostics outside Nekomata's warning/tidy policy.
 # Use SYSTEM includes explicitly to retain compatibility with CMake 3.21.
 target_include_directories(neko_backend_dwarf SYSTEM PRIVATE
@@ -36,10 +38,3 @@ target_include_directories(neko_backend_dwarf SYSTEM PRIVATE
 nekomata_apply_warnings(neko_backend_dwarf)
 nekomata_apply_sanitizers(neko_backend_dwarf)
 nekomata_apply_clang_tidy(neko_backend_dwarf)
-
-# Joins the two offline readers; the runtime does not depend on this target.
-add_library(neko_function_index STATIC ../elf/function_index.cpp)
-target_link_libraries(neko_function_index PRIVATE neko_elf_file neko_backend_dwarf)
-nekomata_apply_warnings(neko_function_index)
-nekomata_apply_sanitizers(neko_function_index)
-nekomata_apply_clang_tidy(neko_function_index)
