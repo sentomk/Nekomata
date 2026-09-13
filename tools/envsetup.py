@@ -102,6 +102,38 @@ def verify_tools(paths: dict[str, Path], pins: dict[str, str]) -> list[str]:
     return versions
 
 
+def pip_available(python: Path) -> bool:
+    if not python.is_file():
+        return False
+    try:
+        result = subprocess.run(
+            [str(python), "-m", "pip", "--version"],
+            cwd=repository_root,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0
+
+
+def create_environment() -> None:
+    try:
+        venv.EnvBuilder(with_pip=True, clear=True).create(environment_path)
+    except (OSError, subprocess.CalledProcessError):
+        fail(
+            "could not create .tools/venv with pip; install Python's venv/ensurepip "
+            "support (Debian/Ubuntu: python3-venv) and rerun"
+        )
+
+    if not pip_available(environment_python()):
+        fail(
+            "created .tools/venv without pip; install Python's venv/ensurepip support "
+            "(Debian/Ubuntu: python3-venv) and rerun"
+        )
+
+
 def setup_environment(verbose: bool = False) -> None:
     pins = read_pins()
     paths = tool_paths()
@@ -115,8 +147,8 @@ def setup_environment(verbose: bool = False) -> None:
     if not installed:
         print("Installing pinned build tools into .tools/venv ...", flush=True)
         tool_root.mkdir(parents=True, exist_ok=True)
-        if not environment_python().is_file():
-            venv.EnvBuilder(with_pip=True, clear=True).create(environment_path)
+        if not pip_available(environment_python()):
+            create_environment()
         subprocess.run(
             [
                 str(environment_python()),

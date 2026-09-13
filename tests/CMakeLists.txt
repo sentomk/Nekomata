@@ -31,6 +31,7 @@ add_test(NAME neko.session_transaction COMMAND neko_session_transaction)
 
 add_subdirectory(headers)
 add_subdirectory(harness)
+add_subdirectory(tooling)
 
 # The manifest needs the offline DWARF inspector and a fixture binary built
 # with debug information; both are Linux-only and optional.
