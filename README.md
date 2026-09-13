@@ -43,13 +43,14 @@ Thread coordination is the caller's responsibility. `reload_session` performs
 no internal synchronization, so its member calls must be externally serialized.
 Before calling `update()`, the caller must ensure that no thread can enter or
 execute reloadable code, and keep that code quiescent until `update()` returns.
-Within one offered object, all function redirects are committed together or
-rolled back together.
+All objects claimed by one `update()` are committed together or rolled back
+together.
 
 ## Try it (Linux)
 
 ```sh
-cmake --preset debug && cmake --build --preset debug
+python3 tools/dev.py configure debug
+python3 tools/dev.py build debug
 bash build/debug/examples/hello_reload/run_demo.sh
 ```
 
@@ -90,15 +91,23 @@ Being honest about the boundary is part of the design:
 
 ## Building from source
 
-Requirements: CMake ≥ 3.21, Ninja, a C++20 compiler (GCC ≥ 11 / Clang ≥ 14 /
-MSVC 2022).
+Requirements: Python ≥ 3.8 with `venv`, plus a C++20 compiler (GCC ≥ 11 /
+Clang ≥ 14 / MSVC 2022).
 
 ```sh
-cmake --preset debug          # configure (Ninja, build/debug)
-cmake --build --preset debug  # build
-ctest --preset debug          # test
+python3 tools/dev.py configure debug  # configure (Ninja, build/debug)
+python3 tools/dev.py build debug
+python3 tools/dev.py test debug
 ./build/debug/tools/nekomata/nekomata --version
 ```
+
+On Windows, invoke the same frontend as `python tools/dev.py`. It installs
+CMake 3.31.10, Ninja 1.13.2 and clang-format 22.1.8 into the ignored
+`.tools/venv` directory on first use. Exact pins live in
+`tools/requirements.txt`, which is the single version source shared by local
+development and CI. The initial bootstrap needs network access. Native CMake
+presets remain available for environments that already provide CMake ≥ 3.21
+and Ninja.
 
 Presets: `debug`, `release`, `asan` (ASan + UBSan), `tidy` (clang-tidy).
 
@@ -107,22 +116,22 @@ examples are built and executed but not analyzed. CI pins clang-tidy 18 and
 treats enabled diagnostics as errors:
 
 ```sh
-CC=clang-18 CXX=clang++-18 cmake --preset tidy \
+CC=clang-18 CXX=clang++-18 python3 tools/dev.py configure tidy -- \
   -DNEKOMATA_CLANG_TIDY_EXECUTABLE=clang-tidy-18
-cmake --build --preset tidy
+python3 tools/dev.py build tidy
 ```
 
-Formatting is enforced in CI:
+Formatting is enforced in CI with the pinned clang-format 22:
 
 ```sh
-bash scripts/format.sh --check   # or --fix
+python3 tools/dev.py format --check  # or --fix
 ```
 
 The Linux inspector needs a C compiler for libdwarf 2.3.2, and network access
 on first configuration unless its source directory is supplied:
 
 ```sh
-cmake --preset debug \
+python3 tools/dev.py configure debug -- \
   -DFETCHCONTENT_SOURCE_DIR_LIBDWARF=/absolute/path/to/libdwarf-code-2.3.2
 ```
 

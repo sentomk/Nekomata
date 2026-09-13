@@ -23,10 +23,10 @@ CLI (`tools/nekomata inspect` is a development utility only).
 ## Verify before declaring done
 
 ```sh
-cmake --preset debug && cmake --build --preset debug && ctest --preset debug
-find include src tests tools examples -type f \( -name '*.cpp' -o -name '*.hpp' \) \
-  -print0 | xargs -0 clang-format --dry-run --Werror
+python3 tools/dev.py check debug
 ```
+
+This uses the repository-pinned CMake, Ninja and clang-format 22 toolchain.
 
 On macOS this builds the kernel only. The ELF/DWARF platforms and the
 reload/rejections suites require Linux — a Linux box or CI. If you only

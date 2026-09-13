@@ -154,7 +154,7 @@ binary_file::binary_file(const std::filesystem::path& path)
     throw std::runtime_error("cannot open binary: " + std::string(std::strerror(errno)));
   }
   try {
-    struct stat status {};
+    struct stat status{};
     if (fstat(fd_, &status) != 0 || !S_ISREG(status.st_mode) || status.st_size < 0) {
       throw std::runtime_error("binary must be a readable regular file");
     }

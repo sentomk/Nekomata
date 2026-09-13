@@ -304,7 +304,7 @@ public:
     // success, and still reports 0x0 afterwards. The monitor reads the size
     // every frame, so a late size is picked up.
     ::usleep(300 * 1000);
-    struct winsize ws {};
+    struct winsize ws{};
     ws.ws_col = kCols;
     ws.ws_row = kRows;
     ::ioctl(master_, TIOCSWINSZ, &ws);
@@ -342,7 +342,7 @@ public:
       }
       const auto left =
           std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
-      struct pollfd pfd {};
+      struct pollfd pfd{};
       pfd.fd = master_;
       pfd.events = POLLIN;
       if (::poll(&pfd, 1, static_cast<int>(std::max<std::int64_t>(left, 1))) <= 0) {
@@ -500,7 +500,7 @@ TEST_CASE("monitor: terminal mode sizes its own pty from the host terminal") {
   const std::string host_slave_path = ::ptsname(host_master);
   const int host_slave = ::open(host_slave_path.c_str(), O_RDWR | O_NOCTTY);
   REQUIRE(host_slave >= 0);
-  struct winsize host_ws {};
+  struct winsize host_ws{};
   host_ws.ws_col = kHostCols;
   host_ws.ws_row = kHostRows;
   ::ioctl(host_slave, TIOCSWINSZ, &host_ws);
@@ -564,7 +564,7 @@ TEST_CASE("monitor: terminal mode sizes its own pty from the host terminal") {
 
   const int peek = ::open(monitor_slave.c_str(), O_RDONLY | O_NOCTTY);
   REQUIRE(peek >= 0);
-  struct winsize got {};
+  struct winsize got{};
   const int rc = ::ioctl(peek, TIOCGWINSZ, &got);
   ::close(peek);
 

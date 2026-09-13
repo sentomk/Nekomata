@@ -7,14 +7,22 @@ same ground for AI coding agents.
 ## Build & test
 
 ```sh
-cmake --preset debug && cmake --build --preset debug   # Ninja, build/debug
-ctest --preset debug                                   # run everything
+python3 tools/dev.py configure debug  # configure build/debug
+python3 tools/dev.py build debug
+python3 tools/dev.py test debug
 ```
 
-Requirements: CMake ≥ 3.21, Ninja, C++20 (GCC ≥ 11 / Clang ≥ 14). The
-kernel builds on every platform; the ELF/DWARF platforms and their test
+`tools/dev.py` creates `.tools/venv` on first use and installs the exact
+versions recorded in `tools/requirements.txt`: CMake 3.31.10, Ninja 1.13.2
+and clang-format 22.1.8. Python ≥ 3.8 with `venv` and a C++20 compiler
+(GCC ≥ 11 / Clang ≥ 14) are the only bootstrap requirements. The initial
+tool installation needs network access; native CMake presets remain usable
+with preinstalled CMake ≥ 3.21 and Ninja in restricted environments.
+
+The kernel builds on every platform; the ELF/DWARF platforms and their test
 suites build on Linux only. DWARF support is optional
-(`-DNEKO_DWARF=OFF` builds without it, e.g. on restricted networks).
+(`-DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF` builds without it, e.g. on
+restricted networks).
 
 ## Conventions
 
@@ -25,7 +33,8 @@ suites build on Linux only. DWARF support is optional
   user-facing strings. Say "not supported yet", "planned", or name the
   feature. The published roadmap lives in `docs/roadmap.md` — that
   is the only place phase vocabulary appears.
-- **Formatting**: `clang-format` (`.clang-format`); CI enforces it.
+- **Formatting**: pinned clang-format 22 (`python3 tools/dev.py format
+  --check`, or `--fix`); CI enforces it.
 
 ## Layout, headers and file names
 
@@ -125,7 +134,7 @@ Two rules follow from this:
 
 ## CI
 
-PRs run the build matrix (GCC/Clang, DWARF on/off, release),
-sanitizers, clang-format and clang-tidy — including a real hot reload
+PRs run the build matrix (GCC/Clang, DWARF on/off, release), sanitizers,
+pinned clang-format 22 and clang-tidy — including a real hot reload
 on every leg. Keep the PR suite fast; anything long-form belongs in the
 nightly lane, not in front of every pull request.

@@ -100,7 +100,7 @@ public:
       // This must happen *after* the slave has been opened: macOS accepts
       // TIOCSWINSZ on a master whose slave has never been opened, returns
       // success, and still reports 0x0 afterwards. Linux is happy either way.
-      struct winsize host_ws {};
+      struct winsize host_ws{};
       if (::ioctl(STDERR_FILENO, TIOCGWINSZ, &host_ws) == 0 && host_ws.ws_col > 0) {
         ::ioctl(slave_fd_, TIOCSWINSZ, &host_ws);
       }
@@ -161,7 +161,7 @@ public:
       ::fcntl(in_fd_, F_SETFL, flags | O_NONBLOCK);
     }
 
-    struct pollfd pfd {};
+    struct pollfd pfd{};
     pfd.fd = in_fd_;
     pfd.events = POLLIN;
     if (::poll(&pfd, 1, static_cast<int>(wait.count())) > 0) {
@@ -186,7 +186,7 @@ public:
   }
 
   glyph::core::Size size() override {
-    struct winsize ws {};
+    struct winsize ws{};
     if (::ioctl(out_fd_, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0 && ws.ws_row > 0) {
       return glyph::core::Size{static_cast<glyph::core::coord_t>(ws.ws_col),
                                static_cast<glyph::core::coord_t>(ws.ws_row)};
@@ -211,7 +211,7 @@ private:
   int raw_fd_ = -1;
   bool raw_active_ = false;
   bool closed_ = false;
-  struct termios saved_ {};
+  struct termios saved_{};
   std::string slave_path_;
 };
 

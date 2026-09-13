@@ -1,9 +1,13 @@
 # Build trees (one subdirectory per CMake preset)
 build/
 
+# Pinned build tools installed by tools/dev.py
+.tools/
+
 # Editor / tooling
 compile_commands.json
 .cache/
+__pycache__/
 .vscode/
 .idea/
 .DS_Store
