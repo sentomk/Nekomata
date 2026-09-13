@@ -49,8 +49,8 @@ together.
 ## Try it (Linux)
 
 ```sh
-python3 tools/dev.py configure debug
-python3 tools/dev.py build debug
+bash scripts/configure.sh debug
+bash scripts/build.sh debug
 bash build/debug/examples/hello_reload/run_demo.sh
 ```
 
@@ -95,15 +95,16 @@ Requirements: Python ≥ 3.8 with `venv`, plus a C++20 compiler (GCC ≥ 11 /
 Clang ≥ 14 / MSVC 2022).
 
 ```sh
-python3 tools/dev.py configure debug  # configure (Ninja, build/debug)
-python3 tools/dev.py build debug
-python3 tools/dev.py test debug
+bash scripts/configure.sh debug  # configure (Ninja, build/debug)
+bash scripts/build.sh debug
+bash scripts/test.sh debug
 ./build/debug/tools/nekomata/nekomata --version
 ```
 
-On Windows, invoke the same frontend as `python tools/dev.py`. It installs
-CMake 3.31.10, Ninja 1.13.2 and clang-format 22.1.8 into the ignored
-`.tools/venv` directory on first use. Exact pins live in
+The shell entrypoints invoke `tools/envsetup.py` automatically. That Python
+script only installs and verifies CMake 3.31.10, Ninja 1.13.2 and clang-format
+22.1.8 in the ignored `.tools/venv` directory; configuration, builds, tests and
+formatting remain in `scripts/*.sh`. Exact pins live in
 `tools/requirements.txt`, which is the single version source shared by local
 development and CI. The initial bootstrap needs network access. Native CMake
 presets remain available for environments that already provide CMake ≥ 3.21
@@ -116,22 +117,22 @@ examples are built and executed but not analyzed. CI pins clang-tidy 18 and
 treats enabled diagnostics as errors:
 
 ```sh
-CC=clang-18 CXX=clang++-18 python3 tools/dev.py configure tidy -- \
+CC=clang-18 CXX=clang++-18 bash scripts/configure.sh tidy \
   -DNEKOMATA_CLANG_TIDY_EXECUTABLE=clang-tidy-18
-python3 tools/dev.py build tidy
+bash scripts/build.sh tidy
 ```
 
 Formatting is enforced in CI with the pinned clang-format 22:
 
 ```sh
-python3 tools/dev.py format --check  # or --fix
+bash scripts/format.sh --check  # or --fix
 ```
 
 The Linux inspector needs a C compiler for libdwarf 2.3.2, and network access
 on first configuration unless its source directory is supplied:
 
 ```sh
-python3 tools/dev.py configure debug -- \
+bash scripts/configure.sh debug \
   -DFETCHCONTENT_SOURCE_DIR_LIBDWARF=/absolute/path/to/libdwarf-code-2.3.2
 ```
 

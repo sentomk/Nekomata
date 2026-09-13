@@ -34,14 +34,14 @@ jobs:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
         run: >
-          python3 tools/dev.py configure ${{ matrix.preset }} --
+          bash scripts/configure.sh ${{ matrix.preset }}
           -DNEKOMATA_ENABLE_DWARF_INSPECTION=${{ matrix.dwarf }}
 
       - name: Build
-        run: python3 tools/dev.py build ${{ matrix.preset }}
+        run: bash scripts/build.sh ${{ matrix.preset }}
 
       - name: Test
-        run: python3 tools/dev.py test ${{ matrix.preset }}
+        run: bash scripts/test.sh ${{ matrix.preset }}
 
   # The kernel is platform-neutral; building it on macOS keeps it honest.
   # Backend directories are skipped by design on this platform.
@@ -52,13 +52,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure
-        run: python3 tools/dev.py configure debug
+        run: bash scripts/configure.sh debug
 
       - name: Build
-        run: python3 tools/dev.py build debug
+        run: bash scripts/build.sh debug
 
       - name: Test
-        run: python3 tools/dev.py test debug
+        run: bash scripts/test.sh debug
 
   # neko::tui is optional and off by default (turning it on fetches Glyph), so
   # no other job builds it — and it is the one place with a platform layer: a
@@ -78,15 +78,15 @@ jobs:
 
       - name: Configure
         run: >
-          python3 tools/dev.py configure debug --
+          bash scripts/configure.sh debug
           -DNEKOMATA_TUI=ON
           -DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF
 
       - name: Build the TUI and its tests
-        run: python3 tools/dev.py build debug -- --target neko_tui_layout neko_tui_monitor_input
+        run: bash scripts/build.sh debug --target neko_tui_layout neko_tui_monitor_input
 
       - name: Test
-        run: python3 tools/dev.py test debug -- -R neko.tui
+        run: bash scripts/test.sh debug -R neko.tui
 
   # Windows has no backend yet (pe/pdb are stubs), so this job covers what
   # does run there: the kernel (log, session, harness, public_api) and
@@ -103,15 +103,15 @@ jobs:
 
       - name: Configure
         run: >
-          python tools/dev.py configure debug --
+          bash scripts/configure.sh debug
           -DNEKOMATA_TUI=ON
           -DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF
 
       - name: Build
-        run: python tools/dev.py build debug
+        run: bash scripts/build.sh debug
 
       - name: Test
-        run: python tools/dev.py test debug
+        run: bash scripts/test.sh debug
 
   sanitizers:
     name: sanitizers / ASan + UBSan
@@ -123,13 +123,13 @@ jobs:
         env:
           CC: clang
           CXX: clang++
-        run: python3 tools/dev.py configure asan
+        run: bash scripts/configure.sh asan
 
       - name: Build
-        run: python3 tools/dev.py build asan
+        run: bash scripts/build.sh asan
 
       - name: Test
-        run: python3 tools/dev.py test asan
+        run: bash scripts/test.sh asan
 
   tidy:
     name: clang-tidy / LLVM 18
@@ -149,13 +149,13 @@ jobs:
         env:
           CC: clang-18
           CXX: clang++-18
-        run: python3 tools/dev.py configure tidy -- -DNEKOMATA_CLANG_TIDY_EXECUTABLE=clang-tidy-18
+        run: bash scripts/configure.sh tidy -DNEKOMATA_CLANG_TIDY_EXECUTABLE=clang-tidy-18
 
       - name: Build and analyze
-        run: python3 tools/dev.py build tidy
+        run: bash scripts/build.sh tidy
 
       - name: Test
-        run: python3 tools/dev.py test tidy
+        run: bash scripts/test.sh tidy
 
   format:
     name: clang-format 22
@@ -164,7 +164,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check formatting with clang-format 22
-        run: python3 tools/dev.py format --check
+        run: bash scripts/format.sh --check
 
   fuzz:
     name: fuzz burst / libFuzzer, 4 min
@@ -173,10 +173,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure
-        run: python3 tools/dev.py configure fuzz
+        run: bash scripts/configure.sh fuzz
 
       - name: Build fuzz targets
-        run: python3 tools/dev.py build fuzz
+        run: bash scripts/build.sh fuzz
 
       - name: Replay corpus + explore (4 min)
         run: |

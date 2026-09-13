@@ -23,7 +23,7 @@ CLI (`tools/nekomata inspect` is a development utility only).
 ## Verify before declaring done
 
 ```sh
-python3 tools/dev.py check debug
+bash scripts/check.sh debug
 ```
 
 This uses the repository-pinned CMake, Ninja and clang-format 22 toolchain.

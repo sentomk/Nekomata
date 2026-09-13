@@ -14,7 +14,7 @@ offline `manifest` artifact; it does not link the DWARF reader into the process.
 ```sh
 ./build/debug/tools/nekomata/nekomata inspect \
   ./build/debug/tests/dwarf/neko_dwarf_fixture
-python3 tools/dev.py test debug -- -R 'neko.dwarf'
+bash scripts/test.sh debug -R 'neko.dwarf'
 ```
 
 `inspect` reads an existing binary without executing it, attaching to a process,
@@ -143,7 +143,7 @@ This build does not include `dwarfdump` or debug-section decompression libraries
 For an offline build, supply an already extracted copy of that exact version:
 
 ```sh
-python3 tools/dev.py configure debug -- \
+bash scripts/configure.sh debug \
   -DFETCHCONTENT_SOURCE_DIR_LIBDWARF=/absolute/path/to/libdwarf-code-2.3.2
 ```
 

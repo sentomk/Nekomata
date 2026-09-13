@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Nekomata's pinned build and formatting tools."""
+"""Install and verify Nekomata's pinned development environment."""
 
 from __future__ import annotations
 
@@ -102,7 +102,7 @@ def verify_tools(paths: dict[str, Path], pins: dict[str, str]) -> list[str]:
     return versions
 
 
-def bootstrap(verbose: bool = False) -> dict[str, Path]:
+def setup_environment(verbose: bool = False) -> None:
     pins = read_pins()
     paths = tool_paths()
     digest = requirements_digest()
@@ -141,146 +141,23 @@ def bootstrap(verbose: bool = False) -> dict[str, Path]:
     if verbose:
         for version in versions:
             print(version)
-    return paths
-
-
-def child_environment() -> dict[str, str]:
-    child = os.environ.copy()
-    child["PATH"] = f"{scripts_path()}{os.pathsep}{child.get('PATH', '')}"
-    return child
-
-
-def run(command: list[str]) -> int:
-    return subprocess.run(
-        command,
-        cwd=repository_root,
-        env=child_environment(),
-        check=False,
-    ).returncode
-
-
-def split_preset(arguments: list[str]) -> tuple[str, list[str]]:
-    arguments = list(arguments)
-    preset = "debug"
-    if arguments and arguments[0] != "--":
-        preset = arguments.pop(0)
-    if arguments[:1] == ["--"]:
-        arguments.pop(0)
-    return preset, arguments
-
-
-def source_files() -> list[str]:
-    pathspecs = [
-        "*.c",
-        "*.cc",
-        "*.cpp",
-        "*.cxx",
-        "*.h",
-        "*.hh",
-        "*.hpp",
-        "*.hxx",
-        "*.h.in",
-        "*.hpp.in",
-        ":(exclude)tests/vendor/**",
-        ":(exclude)third_party/**",
-        ":(exclude)vendor/**",
-    ]
-    result = subprocess.run(
-        [
-            "git",
-            "-c",
-            f"safe.directory={repository_root.as_posix()}",
-            "ls-files",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "-z",
-            "--",
-            *pathspecs,
-        ],
-        cwd=repository_root,
-        check=True,
-        stdout=subprocess.PIPE,
-    )
-    return [os.fsdecode(path) for path in result.stdout.split(b"\0") if path]
-
-
-def format_sources(formatter: Path, arguments: list[str]) -> int:
-    mode = arguments or ["--check"]
-    if mode == ["--check"]:
-        formatter_arguments = ["--dry-run", "--Werror"]
-    elif mode == ["--fix"]:
-        formatter_arguments = ["-i"]
-    else:
-        fail("usage: tools/dev.py format [--check|--fix]")
-
-    files = source_files()
-    if not files:
-        print("No C/C++ files to format.")
-        return 0
-    print(f"{capture_first_line([str(formatter), '--version'])}; {len(files)} C/C++ files")
-    return run([str(formatter), *formatter_arguments, *files])
-
-
-def run_action(action: str, paths: dict[str, Path], arguments: list[str]) -> int:
-    preset, forwarded = split_preset(arguments)
-    if action == "configure":
-        ninja = paths["ninja"].resolve().as_posix()
-        return run(
-            [
-                str(paths["cmake"]),
-                "--preset",
-                preset,
-                f"-DCMAKE_MAKE_PROGRAM:FILEPATH={ninja}",
-                *forwarded,
-            ]
-        )
-    if action == "build":
-        return run([str(paths["cmake"]), "--build", "--preset", preset, *forwarded])
-    if action == "test":
-        return run([str(paths["ctest"]), "--preset", preset, *forwarded])
-    fail(f"unknown action: {action}")
 
 
 def usage() -> None:
-    print(
-        "usage: tools/dev.py <bootstrap|versions|configure|build|test|format|check> [arguments]\n"
-        "  configure [preset] [-- cmake arguments]\n"
-        "  build     [preset] [-- build arguments]\n"
-        "  test      [preset] [-- ctest arguments]\n"
-        "  format    [--check|--fix]\n"
-        "  check     [preset]",
-        file=sys.stderr,
-    )
+    print("usage: tools/envsetup.py [--versions]", file=sys.stderr)
 
 
 def main() -> int:
-    if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help"}:
+    arguments = sys.argv[1:]
+    if arguments in [["-h"], ["--help"]]:
         usage()
-        return 0 if len(sys.argv) >= 2 else 2
-
-    action = sys.argv[1]
-    arguments = sys.argv[2:]
-    if action not in {"bootstrap", "versions", "configure", "build", "test", "format", "check"}:
+        return 0
+    if arguments not in [[], ["--versions"]]:
         usage()
         return 2
 
-    paths = bootstrap(verbose=action in {"bootstrap", "versions"})
-    if action in {"bootstrap", "versions"}:
-        return 0
-    if action == "format":
-        return format_sources(paths["clang-format"], arguments)
-    if action in {"configure", "build", "test"}:
-        return run_action(action, paths, arguments)
-
-    preset, forwarded = split_preset(arguments)
-    if forwarded:
-        fail("usage: tools/dev.py check [preset]")
-    for step in ("configure", "build", "test"):
-        result = run_action(step, paths, [preset])
-        if result != 0:
-            return result
-    return format_sources(paths["clang-format"], ["--check"])
+    setup_environment(verbose=arguments == ["--versions"])
+    return 0
 
 
 if __name__ == "__main__":

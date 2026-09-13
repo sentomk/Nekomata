@@ -7,17 +7,21 @@ same ground for AI coding agents.
 ## Build & test
 
 ```sh
-python3 tools/dev.py configure debug  # configure build/debug
-python3 tools/dev.py build debug
-python3 tools/dev.py test debug
+bash scripts/configure.sh debug  # configure build/debug
+bash scripts/build.sh debug
+bash scripts/test.sh debug
 ```
 
-`tools/dev.py` creates `.tools/venv` on first use and installs the exact
-versions recorded in `tools/requirements.txt`: CMake 3.31.10, Ninja 1.13.2
-and clang-format 22.1.8. Python ≥ 3.8 with `venv` and a C++20 compiler
-(GCC ≥ 11 / Clang ≥ 14) are the only bootstrap requirements. The initial
-tool installation needs network access; native CMake presets remain usable
-with preinstalled CMake ≥ 3.21 and Ninja in restricted environments.
+The shell entrypoints invoke `tools/envsetup.py` automatically. That Python
+script only creates `.tools/venv` and installs or verifies the exact versions
+recorded in `tools/requirements.txt`: CMake 3.31.10, Ninja 1.13.2 and
+clang-format 22.1.8. Configuration, builds, tests and formatting remain in
+`scripts/*.sh`.
+
+Python ≥ 3.8 with `venv` and a C++20 compiler (GCC ≥ 11 / Clang ≥ 14) are the
+only bootstrap requirements. The initial tool installation needs network
+access; native CMake presets remain usable with preinstalled CMake ≥ 3.21 and
+Ninja in restricted environments.
 
 The kernel builds on every platform; the ELF/DWARF platforms and their test
 suites build on Linux only. DWARF support is optional
@@ -33,8 +37,8 @@ restricted networks).
   user-facing strings. Say "not supported yet", "planned", or name the
   feature. The published roadmap lives in `docs/roadmap.md` — that
   is the only place phase vocabulary appears.
-- **Formatting**: pinned clang-format 22 (`python3 tools/dev.py format
-  --check`, or `--fix`); CI enforces it.
+- **Formatting**: pinned clang-format 22 (`bash scripts/format.sh --check`, or
+  `--fix`); CI enforces it.
 
 ## Layout, headers and file names
 

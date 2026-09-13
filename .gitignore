@@ -1,7 +1,7 @@
 # Build trees (one subdirectory per CMake preset)
 build/
 
-# Pinned build tools installed by tools/dev.py
+# Pinned build tools installed by tools/envsetup.py
 .tools/
 
 # Editor / tooling
