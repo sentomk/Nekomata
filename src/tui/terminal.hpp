@@ -18,6 +18,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -27,7 +28,7 @@
 namespace neko::tui::detail {
 
 /// Where the panel is drawn.
-enum class placement {
+enum class placement : std::uint8_t {
   current, ///< take over the terminal nekomata was started from
   pty,     ///< create a separate terminal and print how to attach to it
 };
