@@ -11,8 +11,11 @@
 // path. The file is claimed atomically (renamed away) before loading, so a
 // half-written object is never picked up.
 //
-// Current constraints: single
-// thread, swap at a known-quiet point (between update() calls), no rollback.
+// Threading model: reload_session performs no internal synchronization. The
+// caller must serialize all member calls and establish a quiescent point for
+// reloadable code before update(), keeping it quiescent until update() returns.
+// Replacements from one claimed object are committed all-or-nothing; a failed
+// commit restores entries already written for that object.
 
 #pragma once
 
@@ -56,9 +59,17 @@ public:
   /// or canonicalizing the source file).
   void watch(std::filesystem::path object_path, const std::filesystem::path& source_path);
 
-  /// Pick up any newly offered object file. Returns true when a reload was
-  /// applied. Throws std::runtime_error on a failed reload attempt — the
-  /// process keeps running the previously loaded code afterwards.
+  /// Pick up newly offered object files in watch registration order. Each
+  /// claimed object is a separate transaction: all of its function entries
+  /// are redirected, or entries already written for that object are restored.
+  /// Returns true when at least one reload was applied. Throws
+  /// std::runtime_error on the first rejected offer; an earlier offer handled
+  /// by the same call may already have been applied, and later watches are not
+  /// examined.
+  ///
+  /// Before calling, the caller must ensure that no thread can enter or execute
+  /// reloadable code, and must preserve that quiescent state until this method
+  /// returns.
   bool update();
 
   /// Read-only session statistics for observers (TUI, logging, tests).

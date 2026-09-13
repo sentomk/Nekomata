@@ -11,7 +11,7 @@ strings, where a reader has no way to map "Phase 2" to anything.
 | Phase | Scope | Status |
 |---|---|---|
 | 1 · Single-function prototype | Linux/ELF, `-O0`, one TU, fixed-moment swap | ✅ done |
-| 2 · Real-world usable | DWARF ranges, whole-TU reloads, dependency graph, safe points, PIE | ⏳ next |
+| 2 · Real-world usable | DWARF ranges, whole-TU reloads, dependency graph, library-managed safe points, PIE | ⏳ next |
 | 3 · Windows | PE/PDB (DIA), MSVC + `/hotpatch` | ⏳ |
 | 4 · Optimized builds | `-O2` inline units (`DW_TAG_inlined_subroutine`), COMDAT folding | ⏳ high risk |
 | 5 · Class layout migration | object migration + vtable updates | ⏳ hardest |

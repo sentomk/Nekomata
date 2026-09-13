@@ -38,8 +38,12 @@ has tried yet.
 | Platforms | Linux/ELF; the kernel itself builds on macOS, without a backend |
 | Compilers | GCC and Clang ≥ 14 as the source of reloads |
 
-Threading is the caller's business for now: reloads happen at a quiescent point
-between `update()` calls, on one thread.
+Thread coordination is the caller's responsibility. `reload_session` performs
+no internal synchronization, so its member calls must be externally serialized.
+Before calling `update()`, the caller must ensure that no thread can enter or
+execute reloadable code, and keep that code quiescent until `update()` returns.
+Within one offered object, all function redirects are committed together or
+rolled back together.
 
 ## Try it (Linux)
 
