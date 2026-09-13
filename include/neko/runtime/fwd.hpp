@@ -13,5 +13,6 @@ class reload_session;
 struct function_replacement;
 struct loaded_image;
 struct backend_bundle;
+struct generation_watch;
 
 } // namespace neko

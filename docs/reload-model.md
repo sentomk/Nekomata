@@ -39,20 +39,52 @@ the precondition is met.
 
 ## Complete build generations
 
-A multi-TU reload is a generation, not a collection of unrelated files that
-happened to appear during the same poll.
+A multi-TU reload uses a generation manifest rather than relying on unrelated
+files happening to appear during the same poll:
 
-Each generation needs:
+```cpp
+neko::reload_session session{neko::elf::create_backend()};
+session.watch(neko::generation_watch{"build/nekomata/generation.ready"});
+```
 
-- a stable generation identifier;
-- the complete set of object files affected by the source or header change;
-- source identity and build information for every object;
-- an explicit publication marker written only after all artifacts are ready.
+The watched manifest is itself the ready marker. It has this line-oriented,
+versioned format:
+
+```text
+nekomata-generation-v1
+id "2026-09-13T01:42:18Z-17"
+changed "/project/src/widget.cpp"
+changed "/project/src/view.cpp"
+object "generations/17/widget.o" "/project/src/widget.cpp" "-std=c++20 -O0 -g"
+object "generations/17/view.o" "/project/src/view.cpp" "-std=c++20 -O0 -g"
+```
+
+- Every value is a C++-style quoted string; escapes and spaces are supported.
+- Relative object and source paths are resolved against the manifest directory.
+- `id` identifies one build attempt and must not be reused after it applies.
+- Each `changed` row records an input that triggered the build.
+- Each `object` row records an immutable object, its translation-unit source
+  identity, and its complete build-information string.
+- Blank lines and lines whose first non-space character is `#` are ignored.
+
+The build integration writes every object to a generation-specific path, closes
+the files, writes the manifest to a staging path on the same filesystem, and
+renames that staging file to the watched path. It must never modify a listed
+object after publication. Nekomata atomically claims and consumes only the
+manifest; it reads listed objects without renaming or deleting them.
 
 Nekomata claims and prepares the complete generation, validates every affected
 function, detects conflicting replacements, and commits the generation
 all-or-nothing. An incomplete or rejected generation must never leak a subset
-of its redirects into the running process.
+of its redirects into the running process. A rejected marker is consumed, but
+its immutable artifacts remain available for diagnostics, and the producer may
+republish the corrected attempt with the same ID. Once an ID applies, publishing
+it again is rejected.
+
+The configured patch planner must produce exactly the source identities listed
+by the manifest. The default planner treats every `changed` path as one
+translation unit, which covers direct source changes. Header dependency fanout
+requires a dependency-aware planner.
 
 Independent watch targets may still produce independent generations. Their
 results must remain distinguishable rather than being collapsed into one

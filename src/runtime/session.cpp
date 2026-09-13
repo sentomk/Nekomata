@@ -1,5 +1,7 @@
 #include <neko/session.hpp>
 
+#include "generation.hpp"
+
 #include <neko/log.hpp>
 #include <neko/runtime/code_substituter.hpp>
 #include <neko/runtime/object_loader.hpp>
@@ -7,11 +9,12 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace neko {
@@ -40,6 +43,77 @@ std::filesystem::path normalized_source_path(const std::filesystem::path& path) 
   return (ec ? path : absolute).lexically_normal();
 }
 
+class claimed_files {
+public:
+  claimed_files() = default;
+
+  ~claimed_files() {
+    for (const auto& path : paths_) {
+      std::error_code ec;
+      std::filesystem::remove(path, ec);
+    }
+  }
+
+  claimed_files(const claimed_files&) = delete;
+  claimed_files& operator=(const claimed_files&) = delete;
+
+  void add(std::filesystem::path path) { paths_.push_back(std::move(path)); }
+
+  const std::filesystem::path& operator[](std::size_t index) const { return paths_[index]; }
+
+private:
+  std::vector<std::filesystem::path> paths_;
+};
+
+std::filesystem::path claimed_path_for(const std::filesystem::path& path) {
+  return path.parent_path() / (path.filename().string() + ".claimed");
+}
+
+std::size_t validate_generation_membership(const detail::generation_offer& offer,
+                                           const patch_planner& planner) {
+  change_set changes;
+  changes.changed_files.reserve(offer.changed_files.size());
+  for (const auto& changed : offer.changed_files) {
+    changes.changed_files.push_back(changed.generic_string());
+  }
+
+  const auto plans = planner.plan(changes);
+  std::vector<std::string> expected_order;
+  std::unordered_set<std::string> expected;
+  for (const auto& plan : plans) {
+    for (const auto& translation_unit : plan.translation_units) {
+      const auto key = normalized_source_path(translation_unit).generic_string();
+      if (expected.insert(key).second) {
+        expected_order.push_back(key);
+      }
+    }
+  }
+  if (expected.empty()) {
+    throw std::runtime_error("reload generation '" + offer.id +
+                             "' rejected before any write: planner returned no translation units");
+  }
+
+  std::unordered_set<std::string> actual;
+  for (const auto& object : offer.objects) {
+    actual.insert(object.source_path.generic_string());
+  }
+  for (const auto& expected_source : expected_order) {
+    if (!actual.contains(expected_source)) {
+      throw std::runtime_error("reload generation '" + offer.id +
+                               "' rejected before any write: missing planned source '" +
+                               expected_source + "'");
+    }
+  }
+  for (const auto& object : offer.objects) {
+    const auto source = object.source_path.generic_string();
+    if (!expected.contains(source)) {
+      throw std::runtime_error("reload generation '" + offer.id +
+                               "' rejected before any write: unplanned source '" + source + "'");
+    }
+  }
+  return expected.size();
+}
+
 } // namespace
 
 // Trivial planner: every changed file is one translation unit to rebuild.
@@ -60,10 +134,13 @@ public:
 
 struct reload_session::prepared_reload {
   std::string watch_key;
+  std::string build_information;
   loaded_image image;
 };
 
 struct reload_session::prepared_generation {
+  std::string id;
+  std::string manifest_key;
   std::vector<std::unique_ptr<prepared_reload>> reloads;
 };
 
@@ -84,6 +161,9 @@ reload_session::stats reload_session::session_stats() const {
   for (const auto& watched : watched_) {
     out.watched_paths.push_back(watched.object_path.string());
   }
+  for (const auto& watched : generation_watches_) {
+    out.watched_paths.push_back(watched.manifest_path.string());
+  }
   return out;
 }
 
@@ -96,9 +176,22 @@ void reload_session::watch(std::filesystem::path object_path,
   watched_.push_back({std::move(object_path), normalized_source_path(source_path)});
 }
 
+void reload_session::watch(generation_watch generation) {
+  generation.manifest_path = normalized_source_path(generation.manifest_path);
+  generation_watches_.push_back(std::move(generation));
+}
+
 bool reload_session::update() {
   try {
     prepared_generation generation;
+    for (const auto& watched : generation_watches_) {
+      if (auto offered_generation = try_prepare(watched)) {
+        validate_generation(*offered_generation);
+        commit(*offered_generation);
+        return true;
+      }
+    }
+
     for (const auto& watched : watched_) {
       if (auto prepared = try_prepare(watched)) {
         generation.reloads.push_back(std::move(prepared));
@@ -129,20 +222,17 @@ reload_session::try_prepare(const watched_object& watched) {
   // Claim the file atomically before touching it, so a writer mid-flight
   // cannot hand us a partial object. The rename is the "explicit confirm"
   // of the reload trigger model.
-  const auto& claimed = path;
-  const auto claimed_path = claimed.parent_path() / (claimed.filename().string() + ".claimed");
-  std::filesystem::rename(claimed, claimed_path, ec);
+  const auto claimed_path = claimed_path_for(path);
+  std::filesystem::rename(path, claimed_path, ec);
   if (ec) {
     return nullptr; // someone else claimed it first, or it vanished
   }
+  claimed_files cleanup;
+  cleanup.add(claimed_path);
 
   const auto bytes = read_file(claimed_path);
-  std::filesystem::remove(claimed_path, ec);
 
   const auto source_path = watched.source_path.generic_string();
-  auto prepared = std::make_unique<prepared_reload>();
-  prepared->watch_key = path.lexically_normal().generic_string();
-  prepared->image = backends_.loader->load(bytes.data(), bytes.size(), source_path);
 
   // Plan first (the planner owns "what does this object cover"): it is the
   // seam the future dependency graph grows into.
@@ -150,6 +240,57 @@ reload_session::try_prepare(const watched_object& watched) {
   changes.changed_files.push_back(source_path.empty() ? path.string() : source_path);
   const auto plans = backends_.planner->plan(changes);
   neko::log(neko::log_level::info, "plan covers %zu translation unit(s)\n", plans.size());
+  return prepare_object(bytes, path.lexically_normal().generic_string(), watched.source_path, {});
+}
+
+std::unique_ptr<reload_session::prepared_generation>
+reload_session::try_prepare(const generation_watch& watched) {
+  auto offered = detail::try_claim_generation_manifest(watched.manifest_path);
+  if (!offered) {
+    return nullptr;
+  }
+  auto offer = std::move(*offered);
+
+  const auto manifest_key = watched.manifest_path.generic_string();
+  const auto applied = applied_generation_ids_by_manifest_.find(manifest_key);
+  if (applied != applied_generation_ids_by_manifest_.end() && applied->second.contains(offer.id)) {
+    throw std::runtime_error("reload generation '" + offer.id + "' was already applied");
+  }
+
+  const auto planned_count = validate_generation_membership(offer, *backends_.planner);
+  neko::log(neko::log_level::info, "generation '%s' covers %zu translation unit(s)\n",
+            offer.id.c_str(), planned_count);
+
+  for (const auto& object : offer.objects) {
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(object.object_path, ec)) {
+      throw std::runtime_error(
+          "reload generation '" + offer.id +
+          "' rejected before any write: object file is not ready: " + object.object_path.string());
+    }
+  }
+
+  auto generation = std::make_unique<prepared_generation>();
+  generation->id = offer.id;
+  generation->manifest_key = manifest_key;
+  generation->reloads.reserve(offer.objects.size());
+  for (const auto& object : offer.objects) {
+    const auto bytes = read_file(object.object_path);
+    generation->reloads.push_back(prepare_object(bytes, object.source_path.generic_string(),
+                                                 object.source_path, object.build_information));
+  }
+  return generation;
+}
+
+std::unique_ptr<reload_session::prepared_reload>
+reload_session::prepare_object(const std::vector<std::uint8_t>& bytes, std::string watch_key,
+                               const std::filesystem::path& source_path,
+                               std::string build_information) {
+  auto prepared = std::make_unique<prepared_reload>();
+  prepared->watch_key = std::move(watch_key);
+  prepared->build_information = std::move(build_information);
+  prepared->image =
+      backends_.loader->load(bytes.data(), bytes.size(), source_path.generic_string());
 
   // Complete every zero-write check during preparation. A rejected object
   // therefore cannot reach the commit path or alter a live function entry.
@@ -247,9 +388,19 @@ void reload_session::commit(const prepared_generation& generation) {
     }
   }
 
-  neko::log(neko::log_level::ok, "reload applied: %zu function(s) redirected\n", replacement_count);
   ++applied_;
-  last_result_ = "applied " + std::to_string(replacement_count) + " function(s)";
+  if (generation.id.empty()) {
+    neko::log(neko::log_level::ok, "reload applied: %zu function(s) redirected\n",
+              replacement_count);
+    last_result_ = "applied " + std::to_string(replacement_count) + " function(s)";
+    return;
+  }
+
+  applied_generation_ids_by_manifest_[generation.manifest_key].insert(generation.id);
+  neko::log(neko::log_level::ok, "reload generation '%s' applied: %zu function(s) redirected\n",
+            generation.id.c_str(), replacement_count);
+  last_result_ = "applied generation '" + generation.id +
+                 "': " + std::to_string(replacement_count) + " function(s)";
 }
 
 } // namespace neko

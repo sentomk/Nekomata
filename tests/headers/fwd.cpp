@@ -24,5 +24,6 @@ static_assert(!complete_type<neko::reload_session>);
 static_assert(!complete_type<neko::function_replacement>);
 static_assert(!complete_type<neko::loaded_image>);
 static_assert(!complete_type<neko::backend_bundle>);
+static_assert(!complete_type<neko::generation_watch>);
 
 } // namespace

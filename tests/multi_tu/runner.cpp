@@ -12,34 +12,26 @@ int a_value();
 int b_value();
 
 int main(int argc, char** argv) {
-  if (argc != 7) {
+  if (argc != 3) {
     return 2;
   }
 
-  const std::filesystem::path a_offer = argv[1];
-  const std::filesystem::path a_source = argv[2];
-  const std::filesystem::path b_offer = argv[3];
-  const std::filesystem::path b_source = argv[4];
-  const std::filesystem::path trigger = argv[5];
-  const std::filesystem::path stop = argv[6];
+  const std::filesystem::path manifest = argv[1];
+  const std::filesystem::path stop = argv[2];
 
   std::setvbuf(stdout, nullptr, _IOLBF, 0);
   neko::reload_session session{neko::elf::create_backend()};
-  session.watch(a_offer, a_source);
-  session.watch(b_offer, b_source);
+  session.watch(neko::generation_watch{manifest});
 
   for (int i = 0; i < 3000; ++i) {
     std::printf("[pair %d %d]\n", a_value(), b_value());
 
-    std::error_code ec;
-    if (std::filesystem::remove(trigger, ec)) {
-      try {
-        static_cast<void>(session.update());
-      } catch (const std::exception& exception) {
-        neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n",
-                  exception.what());
-      }
+    try {
+      static_cast<void>(session.update());
+    } catch (const std::exception& exception) {
+      neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n", exception.what());
     }
+    std::error_code ec;
     if (std::filesystem::exists(stop, ec)) {
       return 0;
     }

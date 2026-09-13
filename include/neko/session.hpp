@@ -6,24 +6,27 @@
 //     session.watch("hot.new.o", "src/hot.cpp");
 //     ... session.update() once per frame / loop iteration ...
 //
-// Trigger model: compilation is the caller's business; a
-// reload is applied only when a complete object file appears at a watched
-// path. The file is claimed atomically (renamed away) before loading, so a
-// half-written object is never picked up.
+// Trigger model: compilation is the caller's business. An individual object
+// watch is claimed atomically when a complete file appears. A generation watch
+// is claimed only when its manifest appears, after the producer has published
+// its complete immutable object set. Half-written or unpublished objects are
+// never picked up.
 //
 // Threading model: reload_session performs no internal synchronization. The
 // caller must serialize all member calls and establish a quiescent point for
 // reloadable code before update(), keeping it quiescent until update() returns.
-// All objects claimed by one update() are committed all-or-nothing; a failed
-// commit restores entries already written for that transaction.
+// Every complete offer handled by one update() is committed all-or-nothing.
+// A failed commit restores entries already written for that transaction.
 
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <neko/runtime/fwd.hpp>
@@ -39,6 +42,14 @@ struct backend_bundle {
   std::shared_ptr<state_manager> state;
   std::shared_ptr<code_substituter> substituter;
   std::shared_ptr<patch_planner> planner;
+};
+
+/// Watches an atomically published build-generation manifest. The manifest is
+/// the ready marker: it names the generation, changed files, and the complete
+/// object/source/build-information set. See docs/reload-model.md for its
+/// on-disk format.
+struct generation_watch {
+  std::filesystem::path manifest_path;
 };
 
 class reload_session {
@@ -59,10 +70,16 @@ public:
   /// or canonicalizing the source file).
   void watch(std::filesystem::path object_path, const std::filesystem::path& source_path);
 
-  /// Pick up newly offered object files in watch registration order. Every
-  /// object claimed by one call is prepared and validated before any live
-  /// function entry is changed, then all ready objects are committed as one
-  /// transaction. Returns true when that transaction was applied. Throws
+  /// Watch complete build generations published at `manifest_path`. Unlike
+  /// individual object watches, no object is claimed before the manifest is
+  /// atomically published.
+  void watch(generation_watch generation);
+
+  /// Pick up the first ready generation, or batch ready individual object
+  /// watches in registration order. Every object in the selected offer is
+  /// prepared and validated before any live function entry is changed, then
+  /// the offer is committed as one transaction. Returns true when that
+  /// transaction was applied. Throws
   /// std::runtime_error if an object is rejected or commit fails; no entry
   /// changed by this call remains modified after a failed transaction.
   ///
@@ -89,11 +106,19 @@ private:
   struct prepared_reload;
   struct prepared_generation;
   std::unique_ptr<prepared_reload> try_prepare(const watched_object& watched);
+  std::unique_ptr<prepared_generation> try_prepare(const generation_watch& watched);
+  std::unique_ptr<prepared_reload> prepare_object(const std::vector<std::uint8_t>& bytes,
+                                                  std::string watch_key,
+                                                  const std::filesystem::path& source_path,
+                                                  std::string build_information);
   void validate_generation(const prepared_generation& generation) const;
   void commit(const prepared_generation& generation);
 
   backend_bundle backends_;
   std::vector<watched_object> watched_;
+  std::vector<generation_watch> generation_watches_;
+  std::unordered_map<std::string, std::unordered_set<std::string>>
+      applied_generation_ids_by_manifest_;
   /// Functions redirected by the last fully-applied load of each watched
   /// object. Used to warn when a later load of that same object drops a
   /// function whose entry still jumps to stale arena code.

@@ -27,7 +27,7 @@ has tried yet.
 
 | Capability | Today |
 |---|---|
-| Hot reload | one translation unit at a time, `-O0`, Linux/ELF |
+| Hot reload | one or more translation units per atomically published generation, `-O0`, Linux/ELF |
 | State preservation | globals and statics keep their values across reloads |
 | Multiple functions per reload | yes — applied all-or-nothing; a failed attempt rolls back |
 | PIE binaries | yes, when hot objects are built `-fpie` (GOT-style `-fpic` is not supported yet) |
@@ -43,8 +43,9 @@ Thread coordination is the caller's responsibility. `reload_session` performs
 no internal synchronization, so its member calls must be externally serialized.
 Before calling `update()`, the caller must ensure that no thread can enter or
 execute reloadable code, and keep that code quiescent until `update()` returns.
-All objects claimed by one `update()` are committed together or rolled back
-together.
+All objects in one published generation are prepared before the first entry
+write and committed together or rolled back together. See the
+[reload model](docs/reload-model.md) for the ready-marker format.
 
 ## Try it (Linux)
 
