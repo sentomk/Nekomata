@@ -38,9 +38,8 @@ bool is_beneath(const std::filesystem::path& child, const std::filesystem::path&
 } // namespace
 
 generation_stream::generation_stream(group_descriptor descriptor,
-                                     std::filesystem::path generation_root)
-    : descriptor_(std::move(descriptor)),
-      root_(std::filesystem::absolute(std::move(generation_root))),
+                                     const std::filesystem::path& generation_root)
+    : descriptor_(std::move(descriptor)), root_(std::filesystem::absolute(generation_root)),
       cursor_(descriptor_.baseline_sequence) {
   validate_group_descriptor(descriptor_);
 }

@@ -333,13 +333,15 @@ TEST_CASE("consumption never modifies published files") {
   auto stream = fixture.make_stream();
   REQUIRE(stream.poll().status == neko::detail::stream_status::consumed);
 
-  for (const auto& [path, bytes] : fixture.published()) {
-    INFO(path.generic_string());
-    REQUIRE(std::filesystem::exists(path));
-    std::ifstream input(path, std::ios::binary);
+  // Structured bindings stay out of the assertions: older clang rejects
+  // capturing a local binding inside doctest's macro lambdas.
+  for (const auto& published : fixture.published()) {
+    INFO(published.first.generic_string());
+    REQUIRE(std::filesystem::exists(published.first));
+    std::ifstream input(published.first, std::ios::binary);
     const std::string content{std::istreambuf_iterator<char>(input),
                               std::istreambuf_iterator<char>()};
-    CHECK(content == bytes);
+    CHECK(content == published.second);
   }
 }
 

@@ -51,7 +51,7 @@ struct generation_stream_observation {
 /// greatest generation ID as the deterministic tie-break.
 class generation_stream {
 public:
-  generation_stream(group_descriptor descriptor, std::filesystem::path generation_root);
+  generation_stream(group_descriptor descriptor, const std::filesystem::path& generation_root);
 
   [[nodiscard]] const group_descriptor& descriptor() const noexcept { return descriptor_; }
   [[nodiscard]] const std::filesystem::path& generation_root() const noexcept { return root_; }
