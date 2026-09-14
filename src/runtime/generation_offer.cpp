@@ -165,8 +165,8 @@ void validate_reference(const generation_offer_reference& reference, std::string
 } // namespace
 
 generation_offer_error::generation_offer_error(generation_offer_error_code code, std::size_t line,
-                                               std::string message)
-    : std::runtime_error(std::move(message)), code_(code), line_(line) {}
+                                               const std::string& message)
+    : std::runtime_error(message), code_(code), line_(line) {}
 
 std::string_view generation_offer_error_code_name(generation_offer_error_code code) noexcept {
   switch (code) {

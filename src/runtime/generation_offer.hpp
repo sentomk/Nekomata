@@ -67,7 +67,8 @@ enum class generation_offer_error_code : std::uint8_t {
 
 class generation_offer_error final : public std::runtime_error {
 public:
-  generation_offer_error(generation_offer_error_code code, std::size_t line, std::string message);
+  generation_offer_error(generation_offer_error_code code, std::size_t line,
+                         const std::string& message);
 
   [[nodiscard]] generation_offer_error_code code() const noexcept { return code_; }
   [[nodiscard]] std::size_t line() const noexcept { return line_; }

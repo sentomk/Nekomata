@@ -126,8 +126,8 @@ void require_end(std::istringstream& row, std::string_view source, std::size_t l
 } // namespace
 
 descriptor_error::descriptor_error(descriptor_error_code code, std::size_t line,
-                                   std::string message)
-    : std::runtime_error(std::move(message)), code_(code), line_(line) {}
+                                   const std::string& message)
+    : std::runtime_error(message), code_(code), line_(line) {}
 
 std::string_view descriptor_error_code_name(descriptor_error_code code) noexcept {
   switch (code) {

@@ -39,7 +39,7 @@ enum class descriptor_error_code : std::uint8_t {
 
 class descriptor_error final : public std::runtime_error {
 public:
-  descriptor_error(descriptor_error_code code, std::size_t line, std::string message);
+  descriptor_error(descriptor_error_code code, std::size_t line, const std::string& message);
 
   [[nodiscard]] descriptor_error_code code() const noexcept { return code_; }
   [[nodiscard]] std::size_t line() const noexcept { return line_; }
