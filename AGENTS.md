@@ -5,20 +5,24 @@ contributors: see `CONTRIBUTING.md` — the conventions are the same.
 
 ## What this is
 
-nekomata is an open-source native hot-reload library for C/C++: it
-recompiles changed translation units and redirects function entries in a
-live process, preserving program state. The product surface is the
-library API (`neko::reload_session`); there is deliberately no driver
-CLI (`tools/nekomata inspect` is a development utility only).
+nekomata is an open-source native hot-reload library for C/C++. Application
+build integration produces changed object files; the library applies complete
+generations and redirects function entries in a live process while preserving
+program state. The product surface is the library API
+(`neko::reload_session`). There is deliberately no supported driver CLI;
+everything under `tools/` is development infrastructure.
 
 ## Layout
 
-- `include/neko/{core,runtime}/` — public kernel headers (module split)
-- `src/core/`, `src/runtime/` — kernel implementation
-- `src/platforms/{elf,dwarf}/` — Linux platforms; gated to Linux builds
-- `examples/hello_reload/` — acceptance demo, doubles as the end-to-end test
+- `include/neko/{core,runtime,tui}/` — public module headers; TUI is optional
+- `src/core/`, `src/runtime/` — platform-neutral kernel implementation
+- `src/platforms/{elf,dwarf}/` — Linux backends; gated to Linux builds
+- `src/tui/` — optional TUI library; enabled with `-DNEKOMATA_TUI=ON`
+- `examples/hello_reload/` — acceptance demo, doubles as an end-to-end test
 - `examples/playground/` — manual playground (bouncing ball)
 - `tests/` — see the suite map in `CONTRIBUTING.md`
+- `scripts/` — configure, build, test and formatting entrypoints
+- `tools/` — pinned environment setup and development-only utilities
 
 ## Verify before declaring done
 
@@ -28,11 +32,11 @@ bash scripts/check.sh debug
 
 This uses the repository-pinned CMake, Ninja and clang-format 22 toolchain.
 
-On macOS this builds the kernel only. The ELF/DWARF platforms and the
-reload/rejections suites require Linux — a Linux box or CI. If you only
-touched kernel code, the macOS run is sufficient verification; if you
-touched `src/platforms/` or anything affecting reload behavior, a Linux
-run (or pushing and watching CI) is mandatory.
+The ELF/DWARF backends and live-reload suites require Linux. macOS and
+Windows validate the platform-neutral kernel, and both build the TUI when it
+is enabled. If a change affects platform or reload behavior, verify it on the
+relevant platform or push and watch CI; a kernel-only portability build is
+not enough for Linux runtime changes.
 
 ## Hard rules
 
@@ -51,6 +55,9 @@ run (or pushing and watching CI) is mandatory.
 6. New dependencies must be justified against the vendored-doctest
    precedent: configure must not require network unless the feature is
    optional and off by default in restricted environments.
+7. The supported product surface is the library API. Do not present
+   development utilities under `tools/` as a user-facing CLI or add public
+   compatibility promises for them.
 
 ## Known sharp edges
 
@@ -60,5 +67,3 @@ run (or pushing and watching CI) is mandatory.
 - The playground and demo scripts compile the hot TU with exact flag
   sets ("build information"); changing those flags changes test
   semantics — keep `rebuild_hot.sh.in` in sync with the CMake target.
-- Kerberos-authed dev boxes expire tickets; `ssh` failing with
-  `gssapi-with-mic` means the human needs to `kinit`, not a repo problem.

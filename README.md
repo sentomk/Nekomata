@@ -8,10 +8,11 @@
 
 # Nekomata
 
-Nekomata is an open-source, **true-native hot-reload tool for C/C++**. It
-recompiles changed translation units while your program runs, relocates the
-fresh machine code against the live process's real addresses, and redirects
-function entry points:
+Nekomata is an open-source, **true-native hot-reload library for C/C++**. It
+maps changed source and header inputs to affected translation units, consumes
+complete object-file generations produced by the application's build
+integration, relocates them against the live process's real addresses, and
+redirects function entry points:
 
 - **no restarts** — the process keeps running, the next call takes the new code
 - **no refactor** — no plugins, no interface indirection, no library splits
@@ -36,8 +37,8 @@ has tried yet.
 | New globals, changed global layout | not supported yet — refused with a diagnostic |
 | Virtual functions | not supported yet — a vtable that needs relocation is refused with a diagnostic |
 | Optimized builds (`-O2`) | not supported yet — an inlined function has no body of its own |
-| Platforms | Linux/ELF; the kernel itself builds on macOS, without a backend |
-| Compilers | GCC and Clang ≥ 14 as the source of reloads |
+| Platforms | Linux/ELF runtime; kernel and TUI portability builds on macOS and Windows |
+| Compilers | GCC and Clang ≥ 14 for live reload; MSVC 2022 for portability builds |
 | TUI reload control | experimental — its manual trigger does not coordinate application threads yet |
 
 Thread coordination is the caller's responsibility. `reload_session` performs
@@ -61,24 +62,6 @@ process runs, and asserts the counter continues from its old value: state
 survives the swap, no restart. Expected transcript:
 `examples/hello_reload/expected_output.txt`.
 
-## Inspect a binary (Linux, read-only)
-
-```sh
-./build/debug/tools/nekomata/nekomata inspect <binary>
-```
-
-`inspect` reads an existing binary without running it, attaching to a process,
-or modifying the file: compilation units, function names, declaration
-locations, code ranges, and how each DWARF function associates with the ELF
-symbol table. `manifest` writes the same analysis for the runtime to consume.
-Registering an object with `session.watch(object, source)` gives that map an
-explicit translation-unit identity, so a reload can tell two same-named static
-functions apart without guessing from the edited object's symbol set. Exit code
-zero means the inspection finished, not that every function is safe to patch.
-
-The details — what is matched, what is refused, the resource budgets, and the
-libdwarf dependency — are in [docs/inspect.md](docs/inspect.md).
-
 ## When you should NOT use Nekomata
 
 Being honest about the boundary is part of the design:
@@ -93,30 +76,87 @@ Being honest about the boundary is part of the design:
 
 ## Building from source
 
+### Requirements and pinned tools
+
 Requirements: Python ≥ 3.8 with `venv`, plus a C++20 compiler (GCC ≥ 11 /
-Clang ≥ 14 / MSVC 2022).
+Clang ≥ 14 / MSVC 2022). A default developer build is:
 
 ```sh
-bash scripts/configure.sh debug  # configure (Ninja, build/debug)
+bash scripts/configure.sh debug
 bash scripts/build.sh debug
 bash scripts/test.sh debug
-./build/debug/tools/nekomata/nekomata --version
 ```
 
-The shell entrypoints invoke `tools/envsetup.py` automatically. That Python
-script only installs and verifies CMake 3.31.10, Ninja 1.13.2 and clang-format
-22.1.8 in the ignored `.tools/venv` directory; configuration, builds, tests and
-formatting remain in `scripts/*.sh`. Exact pins live in
-`tools/requirements.txt`, which is the single version source shared by local
-development and CI. The initial bootstrap needs network access. Native CMake
-presets remain available for environments that already provide CMake ≥ 3.21
-and Ninja.
+`configure.sh` takes a preset name first and forwards any remaining arguments
+to CMake. `build.sh` and `test.sh` likewise forward additional arguments to
+`cmake --build` and CTest. All shell entrypoints invoke `tools/envsetup.py`
+automatically; it only installs and verifies CMake 3.31.10, Ninja 1.13.2 and
+clang-format 22.1.8 in the ignored `.tools/venv`. Exact pins live in
+`tools/requirements.txt`, shared by local development and CI. The first
+bootstrap needs network access unless that environment is already populated.
 
-Presets: `debug`, `release`, `asan` (ASan + UBSan), `tidy` (clang-tidy).
+### CMake options
 
-Static analysis runs on the kernel, enabled backends and CLI targets; tests and
-examples are built and executed but not analyzed. CI pins clang-tidy 18 and
-treats enabled diagnostics as errors:
+| Option | Default | Effect |
+|---|---:|---|
+| `NEKOMATA_BUILD_TESTS` | `ON` | Build the test suites and register them with CTest. |
+| `NEKOMATA_BUILD_TOOLS` | `ON` | Build development-only utilities; these are not a supported driver CLI. |
+| `NEKOMATA_BUILD_EXAMPLES` | `ON` | Build the Linux acceptance demo and playground. |
+| `NEKOMATA_BUILD_FUZZ` | `OFF` | Build the Linux/Clang libFuzzer targets; normally enabled by the `fuzz` preset. |
+| `NEKOMATA_TUI` | `OFF` | Build the optional `nekomata::tui` library and TUI tests. |
+| `NEKOMATA_WARNINGS_AS_ERRORS` | `ON` | Promote project warnings to errors. |
+| `NEKOMATA_ENABLE_SANITIZERS` | `OFF` | Enable sanitizers; normally enabled by the `asan` preset. |
+| `NEKOMATA_ENABLE_CLANG_TIDY` | `OFF` | Run clang-tidy on library, platform and development-tool targets. |
+| `NEKOMATA_ENABLE_DWARF_INSPECTION` | `ON` | Build Linux DWARF metadata support and its tests. |
+
+For a smaller library-only build:
+
+```sh
+bash scripts/configure.sh release \
+  -DNEKOMATA_BUILD_TESTS=OFF \
+  -DNEKOMATA_BUILD_TOOLS=OFF \
+  -DNEKOMATA_BUILD_EXAMPLES=OFF \
+  -DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF
+bash scripts/build.sh release --target neko
+```
+
+### Enabling the TUI
+
+The TUI is an optional library, not a separate product driver. Enable it at
+configure time, then link `nekomata::tui` alongside `nekomata::neko`:
+
+```sh
+bash scripts/configure.sh debug -DNEKOMATA_TUI=ON
+bash scripts/build.sh debug
+bash scripts/test.sh debug -R '^neko\.tui\.'
+```
+
+The build first tries an installed Glyph package. Point CMake at that prefix
+with `-DCMAKE_PREFIX_PATH=/path/to/prefix`. If Glyph is not installed, CMake
+fetches the pinned Glyph v0.4.0 source, which requires network access on first
+configuration. Restricted or offline environments can provide a checkout
+directly:
+
+```sh
+bash scripts/configure.sh debug \
+  -DNEKOMATA_TUI=ON \
+  -DFETCHCONTENT_SOURCE_DIR_GLYPH=/absolute/path/to/Glyph
+```
+
+Reconfigure the same preset with `-DNEKOMATA_TUI=OFF` to disable it.
+
+### Presets and development checks
+
+- `debug` — unoptimized developer build.
+- `release` — optimized build of the library itself; live reload at `-O2` is not
+  supported yet.
+- `asan` — debug build with AddressSanitizer and UndefinedBehaviorSanitizer.
+- `tidy` — debug build with clang-tidy enabled.
+- `fuzz` — Linux/Clang build of the fuzz targets.
+
+Static analysis builds tests and examples but analyzes only the library, enabled
+platforms and development utilities. CI pins clang-tidy 18 and treats enabled
+diagnostics as errors:
 
 ```sh
 CC=clang-18 CXX=clang++-18 bash scripts/configure.sh tidy \
@@ -130,24 +170,25 @@ Formatting is enforced in CI with the pinned clang-format 22:
 bash scripts/format.sh --check  # or --fix
 ```
 
-The Linux inspector needs a C compiler for libdwarf 2.3.2, and network access
-on first configuration unless its source directory is supplied:
+Linux DWARF metadata support needs a C compiler for libdwarf 2.3.2. It is
+enabled by default for repository development and fetches the pinned source on
+first configuration. Either disable it with
+`-DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF` or provide an existing source tree:
 
 ```sh
 bash scripts/configure.sh debug \
   -DFETCHCONTENT_SOURCE_DIR_LIBDWARF=/absolute/path/to/libdwarf-code-2.3.2
 ```
 
-`-DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF` builds the runtime and its tests
-without that dependency. The TUI is optional and off by default; it fetches
-[Glyph](https://github.com/sentomk/Glyph) and is enabled with
-`-DNEKOMATA_TUI=ON`.
+Native CMake presets remain available directly to environments that already
+provide CMake ≥ 3.21 and Ninja.
 
 Platform notes:
 
-- **Linux** — the primary target; every backend lives here.
-- **macOS** — kernel-only build, verified in CI, by design.
-- **Windows** — the kernel and the TUI build and run under CI; there is no PE/PDB
+- **Linux** — the primary target and the only live-reload runtime today.
+- **macOS** — the platform-neutral kernel builds; the TUI also builds when
+  enabled, but there is no runtime backend.
+- **Windows** — the kernel and TUI build under MSVC; there is no PE/PDB runtime
   backend yet.
 
 ## Contributing
