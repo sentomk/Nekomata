@@ -3,6 +3,8 @@ add_library(neko STATIC
   core/log.cpp
   core/version.cpp
   runtime/depfile_planner.cpp
+  runtime/descriptor_discovery.cpp
+  runtime/descriptor_section.cpp
   runtime/generation.cpp
   runtime/generation_offer.cpp
   runtime/generation_stream.cpp

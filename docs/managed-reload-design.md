@@ -306,8 +306,16 @@ Members are unique and their declared order is significant. Opaque identity and
 location strings are nonempty and contain no ASCII control characters. They are
 not interpreted or path-normalized by the payload codec.
 
-This payload is platform-neutral. Executable-section framing, retention, and
-application discovery are separate contracts and are not defined by the codec.
+This payload is platform-neutral. Its executable-section framing is one input
+section named `neko_groups`: a contiguous sequence of records, each a
+four-byte little-endian payload length followed by exactly that many payload
+bytes. Zero bytes after the final record are alignment padding and are
+ignored. ELF linkers synthesize `__start_neko_groups` and `__stop_neko_groups`
+for input sections whose names are valid C identifiers; discovery reads that
+range through weak symbols and reports no groups where the section is absent.
+Identical duplicate records collapse; two records sharing a `group_id` with
+different contents are a configuration error. The section carries descriptors
+only — never object files, compiler commands, or absolute artifact paths.
 
 Logical identity MUST NOT depend on canonical absolute paths, symlink
 expansion, inode numbers, or hardlink identity.
@@ -895,7 +903,8 @@ The codec layer defines `nekomata-generation-v2` values and validates them
 against descriptors, and `generation_stream` reads local publication streams:
 it scans immutable offers, selects the newest by sequence, verifies object
 digests, and keeps one cursor per consumer. Neither is exposed to a managed
-session yet: embedded descriptor discovery and the `watch()` wiring are still
+session yet: embedded descriptors are discovered and validated through the
+`neko_groups` linker section, but the managed `watch()` wiring is still
 missing, so the v2 protocol is not consumable end to end.
 
 It does not implement this complete managed contract. In particular,

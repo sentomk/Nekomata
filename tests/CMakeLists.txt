@@ -77,6 +77,26 @@ nekomata_apply_warnings(neko_sha256)
 nekomata_apply_sanitizers(neko_sha256)
 add_test(NAME neko.sha256 COMMAND neko_sha256)
 
+add_executable(neko_descriptor_section descriptor_section.cpp)
+target_include_directories(neko_descriptor_section
+  PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+target_link_libraries(neko_descriptor_section PRIVATE nekomata::neko)
+nekomata_apply_warnings(neko_descriptor_section)
+nekomata_apply_sanitizers(neko_descriptor_section)
+add_test(NAME neko.descriptor_section COMMAND neko_descriptor_section)
+
+add_executable(neko_descriptor_discovery descriptor_discovery.cpp)
+target_include_directories(neko_descriptor_discovery
+  PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+target_link_libraries(neko_descriptor_discovery PRIVATE nekomata::neko)
+nekomata_apply_warnings(neko_descriptor_discovery)
+nekomata_apply_sanitizers(neko_descriptor_discovery)
+add_test(NAME neko.descriptor_discovery COMMAND neko_descriptor_discovery)
+
 add_subdirectory(headers)
 add_subdirectory(harness)
 add_subdirectory(tooling)
@@ -122,6 +142,18 @@ if(NEKOMATA_TARGET_LINUX)
   add_subdirectory(atomicity)
   add_subdirectory(multi_tu)
   add_subdirectory(duplicate_names)
+
+  # Requires the linker's __start_/__stop_ section markers, which are an
+  # ELF linking property.
+  add_executable(neko_descriptor_embedded descriptor_embedded.cpp)
+  target_include_directories(neko_descriptor_embedded
+    PRIVATE
+      "${PROJECT_SOURCE_DIR}/src"
+      "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+  target_link_libraries(neko_descriptor_embedded PRIVATE nekomata::neko)
+  nekomata_apply_warnings(neko_descriptor_embedded)
+  nekomata_apply_sanitizers(neko_descriptor_embedded)
+  add_test(NAME neko.descriptor_embedded COMMAND neko_descriptor_embedded)
   if(NEKOMATA_BUILD_FUZZ AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_subdirectory(fuzz)
   endif()
