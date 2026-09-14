@@ -57,6 +57,16 @@ nekomata_apply_warnings(neko_generation_offer)
 nekomata_apply_sanitizers(neko_generation_offer)
 add_test(NAME neko.generation_offer COMMAND neko_generation_offer)
 
+add_executable(neko_sha256 sha256.cpp)
+target_include_directories(neko_sha256
+  PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+target_link_libraries(neko_sha256 PRIVATE nekomata::neko)
+nekomata_apply_warnings(neko_sha256)
+nekomata_apply_sanitizers(neko_sha256)
+add_test(NAME neko.sha256 COMMAND neko_sha256)
+
 add_subdirectory(headers)
 add_subdirectory(harness)
 add_subdirectory(tooling)

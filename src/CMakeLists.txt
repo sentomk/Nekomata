@@ -6,7 +6,8 @@ add_library(neko STATIC
   runtime/generation.cpp
   runtime/generation_offer.cpp
   runtime/group_descriptor.cpp
-  runtime/session.cpp)
+  runtime/session.cpp
+  runtime/sha256.cpp)
 add_library(nekomata::neko ALIAS neko)
 target_include_directories(neko
   PUBLIC
