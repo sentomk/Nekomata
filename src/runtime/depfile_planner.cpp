@@ -27,7 +27,7 @@ std::filesystem::path normalized_path(std::filesystem::path path,
   std::error_code ec;
   const auto absolute = std::filesystem::absolute(path, ec);
   if (ec) {
-    throw std::runtime_error("cannot resolve dependency path '" + path.string() +
+    throw std::runtime_error("cannot resolve dependency path '" + path.generic_string() +
                              "': " + ec.message());
   }
   return absolute.lexically_normal();
@@ -36,11 +36,11 @@ std::filesystem::path normalized_path(std::filesystem::path path,
 std::string read_depfile(const std::filesystem::path& path) {
   std::ifstream input(path, std::ios::binary);
   if (!input) {
-    throw std::runtime_error("cannot open dependency file: " + path.string());
+    throw std::runtime_error("cannot open dependency file: " + path.generic_string());
   }
   const std::string text{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
   if (input.bad()) {
-    throw std::runtime_error("cannot read dependency file: " + path.string());
+    throw std::runtime_error("cannot read dependency file: " + path.generic_string());
   }
   return text;
 }
@@ -93,7 +93,7 @@ std::size_t rule_separator(std::string_view line) {
 
 [[noreturn]] void reject_depfile(const std::filesystem::path& path, std::size_t line,
                                  std::string_view reason) {
-  throw std::runtime_error("invalid dependency file '" + path.string() + "' at line " +
+  throw std::runtime_error("invalid dependency file '" + path.generic_string() + "' at line " +
                            std::to_string(line) + ": " + std::string(reason));
 }
 
@@ -163,7 +163,7 @@ std::unordered_set<std::string> dependencies_for(const depfile_entry& entry) {
   }
   const auto translation_unit = entry.translation_unit.generic_string();
   if (!dependencies.contains(translation_unit)) {
-    throw std::runtime_error("dependency file '" + entry.dependency_file.string() +
+    throw std::runtime_error("dependency file '" + entry.dependency_file.generic_string() +
                              "' does not describe translation unit '" + translation_unit + "'");
   }
   return dependencies;
@@ -191,7 +191,7 @@ depfile_planner::depfile_planner(std::vector<depfile_entry> entries)
     entry.dependency_file = normalized_path(entry.dependency_file, entry.working_directory);
     if (!translation_units.insert(entry.translation_unit.generic_string()).second) {
       throw std::invalid_argument("depfile_planner: duplicate translation unit '" +
-                                  entry.translation_unit.string() + "'");
+                                  entry.translation_unit.generic_string() + "'");
     }
   }
 }

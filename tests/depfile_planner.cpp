@@ -115,7 +115,7 @@ TEST_CASE("a missing depfile rejects an incomplete dependency graph") {
       {"source/widget.cpp", "deps/missing.d", root},
   }};
 
-  const auto message = "cannot open dependency file: " + depfile.string();
+  const auto message = "cannot open dependency file: " + depfile.generic_string();
   CHECK_THROWS_WITH_AS(planner.plan(changed(root / "include/shared.hpp")), message.c_str(),
                        std::runtime_error);
 }
@@ -139,23 +139,23 @@ TEST_CASE("malformed depfiles are rejected instead of returning partial plans") 
     return planner.plan(changed(root / "include/shared.hpp"));
   };
 
-  CHECK_THROWS_WITH_AS(
-      plan_with(no_rule),
-      ("invalid dependency file '" + no_rule.string() + "' at line 3: missing dependency rule")
-          .c_str(),
-      std::runtime_error);
-  CHECK_THROWS_WITH_AS(
-      plan_with(no_colon),
-      ("invalid dependency file '" + no_colon.string() + "' at line 1: expected ':' after target")
-          .c_str(),
-      std::runtime_error);
-  CHECK_THROWS_WITH_AS(
-      plan_with(dangling_escape),
-      ("invalid dependency file '" + dangling_escape.string() + "' at line 1: dangling escape")
-          .c_str(),
-      std::runtime_error);
+  CHECK_THROWS_WITH_AS(plan_with(no_rule),
+                       ("invalid dependency file '" + no_rule.generic_string() +
+                        "' at line 3: missing dependency rule")
+                           .c_str(),
+                       std::runtime_error);
+  CHECK_THROWS_WITH_AS(plan_with(no_colon),
+                       ("invalid dependency file '" + no_colon.generic_string() +
+                        "' at line 1: expected ':' after target")
+                           .c_str(),
+                       std::runtime_error);
+  CHECK_THROWS_WITH_AS(plan_with(dangling_escape),
+                       ("invalid dependency file '" + dangling_escape.generic_string() +
+                        "' at line 1: dangling escape")
+                           .c_str(),
+                       std::runtime_error);
   CHECK_THROWS_WITH_AS(plan_with(wrong_source),
-                       ("dependency file '" + wrong_source.string() +
+                       ("dependency file '" + wrong_source.generic_string() +
                         "' does not describe translation unit '" +
                         (root / "source/widget.cpp").generic_string() + "'")
                            .c_str(),
@@ -165,7 +165,7 @@ TEST_CASE("malformed depfiles are rejected instead of returning partial plans") 
 TEST_CASE("duplicate translation-unit registrations are rejected") {
   temporary_directory temporary;
   const auto root = temporary.path();
-  const auto source = (root / "source/widget.cpp").string();
+  const auto source = (root / "source/widget.cpp").generic_string();
 
   CHECK_THROWS_WITH_AS(neko::depfile_planner({
                            {"source/widget.cpp", "deps/first.d", root},
