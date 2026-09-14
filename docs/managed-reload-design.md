@@ -361,30 +361,59 @@ uniquely named offers:
     <generation_id>/
       manifest
       objects/
-        <object_key>.o
+        <object_key>
 ```
 
-The versioned manifest schema contains:
+The canonical managed manifest payload is:
 
-- protocol version;
-- group ID, producer sequence, and stream-unique generation ID;
-- compatibility and ABI identities;
-- exactly one record for every descriptor member;
-- each member's key, relative object path, SHA-256 digest, logical source
-  identity, and diagnostic build information;
-- an optional list of changed logical inputs.
+```text
+nekomata-generation-v2
+group_id "<opaque-logical-id>"
+sequence <uint64>
+generation_id "<portable-component>"
+compatibility_id "<opaque-digest>"
+abi_id "<opaque-digest>"
+member "<portable/logical/key>" "<objects/relative/path>" "<sha256>" "<logical-source-identity>" "<diagnostic-build-information>"
+...
+[changed_input "<logical-input>"]
+...
+```
 
-Unknown protocol versions or required fields are rejected. Manifest paths are
-relative to the immutable generation directory, normalized, and forbidden
-from escaping it.
+All five scalar directives are required exactly once. At least one `member`
+record is required. Member keys and object paths are unique, and member order
+MUST match the descriptor's declared order. Canonical serialization emits the
+order shown, followed by changed inputs in their reported order. The parser
+ignores blank lines and lines whose first non-whitespace character is `#`;
+canonical serialization emits neither.
 
-Membership is exact: every descriptor member occurs once, no unknown member
-occurs, and all digests match. Digests establish content integrity, not build
-compatibility.
+`generation_id` is one portable ASCII component. Member keys may contain
+portable `/`-separated components. Object paths use the same lexical rules,
+are relative to the immutable generation directory, and MUST be strictly
+below `objects/`. Empty, `.` and `..` path components, backslashes, and
+non-portable path characters are rejected by the payload codec.
 
-The serialization is an internal, versioned protocol. Its byte grammar must be
-documented with the parser implementation before third-party producers are
-supported; the semantic schema above is the public design constraint.
+The SHA-256 field is exactly 64 lowercase hexadecimal digits. It is checked
+against the object bytes by the generation source; it establishes content
+integrity, not build compatibility. Group, compatibility, ABI, and logical
+source identities are nonempty opaque strings without ASCII control
+characters. Diagnostic build information may be empty but cannot contain
+ASCII control characters. Changed inputs are optional, ordered, nonempty,
+control-free, and unique; they are diagnostics and do not define completeness.
+
+A ready marker is an empty regular file named
+`<sequence>-<generation_id>.ready`. The sequence uses canonical unsigned
+decimal notation without leading zeroes, and both fields MUST match the
+manifest. Marker contents carry no information. Consumers read markers,
+manifests, and objects without renaming, deleting, or modifying them.
+
+Unknown protocol versions, unknown directives, duplicate or missing required
+fields, malformed values, and trailing fields are rejected. The codec does not
+open or canonicalize paths. The local-filesystem generation source later joins
+the validated lexical object path to its immutable generation directory and
+verifies that the resolved object remains beneath that directory.
+
+Membership is exact: every descriptor member occurs once in the same order,
+no unknown member occurs, identities match, and all object digests match.
 
 ### 8.1 Producer
 
@@ -858,7 +887,13 @@ be considered later; this design does not claim hard real-time bounds.
 
 The current tree contains parts of this model: `reload_session`, ELF backend
 construction, direct source/object watching, generation manifests, depfile
-planning, and group preparation.
+planning, group preparation, and the managed group-descriptor and generation-
+offer codecs.
+
+The codec layer defines `nekomata-generation-v2` values and validates them
+against descriptors. It does not yet scan immutable offer directories, read
+or hash their object files, maintain per-session cursors, or expose them to a
+managed session. Consequently the v2 protocol is not consumable end to end yet.
 
 It does not implement this complete managed contract. In particular,
 `generation_watch`, the v1 ready marker, public planner setup, and the current

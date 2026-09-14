@@ -47,6 +47,16 @@ nekomata_apply_warnings(neko_group_descriptor)
 nekomata_apply_sanitizers(neko_group_descriptor)
 add_test(NAME neko.group_descriptor COMMAND neko_group_descriptor)
 
+add_executable(neko_generation_offer generation_offer.cpp)
+target_include_directories(neko_generation_offer
+  PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+target_link_libraries(neko_generation_offer PRIVATE nekomata::neko)
+nekomata_apply_warnings(neko_generation_offer)
+nekomata_apply_sanitizers(neko_generation_offer)
+add_test(NAME neko.generation_offer COMMAND neko_generation_offer)
+
 add_subdirectory(headers)
 add_subdirectory(harness)
 add_subdirectory(tooling)

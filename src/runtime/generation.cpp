@@ -66,7 +66,7 @@ void require_end(std::istringstream& row, const std::filesystem::path& path, std
   }
 }
 
-generation_offer parse_manifest(std::string_view text, const std::filesystem::path& path) {
+legacy_generation_offer parse_manifest(std::string_view text, const std::filesystem::path& path) {
   std::istringstream input{std::string(text)};
   std::string line;
   std::size_t line_number = 0;
@@ -81,7 +81,7 @@ generation_offer parse_manifest(std::string_view text, const std::filesystem::pa
     reject_manifest(path, line_number, "expected nekomata-generation-v1");
   }
 
-  generation_offer offer;
+  legacy_generation_offer offer;
   bool has_id = false;
   std::unordered_set<std::string> changed_files;
   std::unordered_set<std::string> object_paths;
@@ -137,7 +137,7 @@ generation_offer parse_manifest(std::string_view text, const std::filesystem::pa
         reject_manifest(path, line_number, "object fields must not be empty");
       }
 
-      generation_object_offer object;
+      legacy_generation_object_offer object;
       object.object_path = resolve_path(base, raw_object);
       object.source_path = resolve_path(base, raw_source);
       object.build_information = build_information;
@@ -168,7 +168,7 @@ generation_offer parse_manifest(std::string_view text, const std::filesystem::pa
 
 } // namespace
 
-std::optional<generation_offer>
+std::optional<legacy_generation_offer>
 try_claim_generation_manifest(const std::filesystem::path& manifest_path) {
   std::error_code ec;
   if (!std::filesystem::is_regular_file(manifest_path, ec)) {

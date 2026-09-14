@@ -4,6 +4,7 @@ add_library(neko STATIC
   core/version.cpp
   runtime/depfile_planner.cpp
   runtime/generation.cpp
+  runtime/generation_offer.cpp
   runtime/group_descriptor.cpp
   runtime/session.cpp)
 add_library(nekomata::neko ALIAS neko)

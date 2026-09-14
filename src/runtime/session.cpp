@@ -69,7 +69,7 @@ std::filesystem::path claimed_path_for(const std::filesystem::path& path) {
   return path.parent_path() / (path.filename().string() + ".claimed");
 }
 
-std::size_t validate_generation_membership(const detail::generation_offer& offer,
+std::size_t validate_generation_membership(const detail::legacy_generation_offer& offer,
                                            const patch_planner& planner) {
   change_set changes;
   changes.changed_files.reserve(offer.changed_files.size());
