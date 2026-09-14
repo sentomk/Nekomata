@@ -5,6 +5,7 @@ add_library(neko STATIC
   runtime/depfile_planner.cpp
   runtime/generation.cpp
   runtime/generation_offer.cpp
+  runtime/generation_stream.cpp
   runtime/group_descriptor.cpp
   runtime/session.cpp
   runtime/sha256.cpp)

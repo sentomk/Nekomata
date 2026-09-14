@@ -466,7 +466,8 @@ lost.
 For every watched group, the preparation worker:
 
 1. finds offers newer than its local cursor;
-2. selects the newest by sequence and deterministic ID tie-break;
+2. selects the newest by sequence, breaking equal sequences by the
+   lexicographically greatest generation ID;
 3. validates offer, manifest, membership, identities, paths, and digests;
 4. parses all objects and resolves the complete cross-TU symbol graph;
 5. allocates and relocates the complete candidate image;
@@ -891,9 +892,11 @@ planning, group preparation, and the managed group-descriptor and generation-
 offer codecs.
 
 The codec layer defines `nekomata-generation-v2` values and validates them
-against descriptors. It does not yet scan immutable offer directories, read
-or hash their object files, maintain per-session cursors, or expose them to a
-managed session. Consequently the v2 protocol is not consumable end to end yet.
+against descriptors, and `generation_stream` reads local publication streams:
+it scans immutable offers, selects the newest by sequence, verifies object
+digests, and keeps one cursor per consumer. Neither is exposed to a managed
+session yet: embedded descriptor discovery and the `watch()` wiring are still
+missing, so the v2 protocol is not consumable end to end.
 
 It does not implement this complete managed contract. In particular,
 `generation_watch`, the v1 ready marker, public planner setup, and the current

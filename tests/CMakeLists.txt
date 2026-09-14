@@ -57,6 +57,16 @@ nekomata_apply_warnings(neko_generation_offer)
 nekomata_apply_sanitizers(neko_generation_offer)
 add_test(NAME neko.generation_offer COMMAND neko_generation_offer)
 
+add_executable(neko_generation_stream generation_stream.cpp)
+target_include_directories(neko_generation_stream
+  PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+target_link_libraries(neko_generation_stream PRIVATE nekomata::neko)
+nekomata_apply_warnings(neko_generation_stream)
+nekomata_apply_sanitizers(neko_generation_stream)
+add_test(NAME neko.generation_stream COMMAND neko_generation_stream)
+
 add_executable(neko_sha256 sha256.cpp)
 target_include_directories(neko_sha256
   PRIVATE
