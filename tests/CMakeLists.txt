@@ -37,6 +37,16 @@ nekomata_apply_warnings(neko_depfile_planner)
 nekomata_apply_sanitizers(neko_depfile_planner)
 add_test(NAME neko.depfile_planner COMMAND neko_depfile_planner)
 
+add_executable(neko_group_descriptor group_descriptor.cpp)
+target_include_directories(neko_group_descriptor
+  PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+target_link_libraries(neko_group_descriptor PRIVATE nekomata::neko)
+nekomata_apply_warnings(neko_group_descriptor)
+nekomata_apply_sanitizers(neko_group_descriptor)
+add_test(NAME neko.group_descriptor COMMAND neko_group_descriptor)
+
 add_subdirectory(headers)
 add_subdirectory(harness)
 add_subdirectory(tooling)

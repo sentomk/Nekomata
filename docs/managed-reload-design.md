@@ -281,6 +281,34 @@ Each embedded descriptor contains at least:
 - `abi_id`: an opaque digest of target and patch ABI;
 - an optional default local generation-root hint.
 
+The initial canonical payload is:
+
+```text
+nekomata-group-v1
+group_id "<opaque-logical-id>"
+publication_key "<portable-component>"
+baseline_sequence <uint64>
+compatibility_id "<opaque-digest>"
+abi_id "<opaque-digest>"
+[generation_root_hint "<lexical-path>"]
+member "<portable/logical/key>"
+...
+```
+
+All scalar directives except `generation_root_hint` are required exactly once;
+the root hint may occur at most once, and at least one member is required.
+Canonical serialization emits the order shown. The parser rejects unknown or
+duplicate directives, malformed values, and trailing fields.
+
+`publication_key` is one portable ASCII component. Member keys may use `/` to
+separate portable components; empty, `.` and `..` components are forbidden.
+Members are unique and their declared order is significant. Opaque identity and
+location strings are nonempty and contain no ASCII control characters. They are
+not interpreted or path-normalized by the payload codec.
+
+This payload is platform-neutral. Executable-section framing, retention, and
+application discovery are separate contracts and are not defined by the codec.
+
 Logical identity MUST NOT depend on canonical absolute paths, symlink
 expansion, inode numbers, or hardlink identity.
 
