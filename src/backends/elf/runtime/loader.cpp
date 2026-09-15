@@ -11,9 +11,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "code_pages.hpp"
-#include "object_file.hpp"
-#include "process_symbols.hpp"
+#include "format/object_file.hpp"
+#include "runtime/code_pages.hpp"
+#include "runtime/process_symbols.hpp"
 #include <neko/log.hpp>
 #include <neko/runtime/code_substituter.hpp>
 #include <neko/runtime/state_manager.hpp>

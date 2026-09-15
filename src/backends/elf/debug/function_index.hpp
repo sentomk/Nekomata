@@ -1,7 +1,7 @@
 #pragma once
 
-#include "binary_file.hpp"
-#include <platforms/dwarf/inspect.hpp>
+#include "dwarf_inspect.hpp"
+#include "../format/binary_file.hpp"
 
 #include <cstddef>
 #include <cstdint>

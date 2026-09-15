@@ -1,6 +1,6 @@
 add_executable(neko_elf_file_tests binary_file.cpp)
 target_include_directories(neko_elf_file_tests PRIVATE
-  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/elf")
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/backends/elf/format" "${PROJECT_SOURCE_DIR}/src/backends/elf/runtime")
 target_link_libraries(neko_elf_file_tests PRIVATE neko_elf_file)
 nekomata_apply_warnings(neko_elf_file_tests)
 nekomata_apply_sanitizers(neko_elf_file_tests)
@@ -21,7 +21,7 @@ endforeach()
 
 add_executable(neko_elf_object_tests object_symbols.cpp)
 target_include_directories(neko_elf_object_tests PRIVATE
-  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/elf")
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/backends/elf/format" "${PROJECT_SOURCE_DIR}/src/backends/elf/runtime")
 target_link_libraries(neko_elf_object_tests PRIVATE neko_elf_file)
 nekomata_apply_warnings(neko_elf_object_tests)
 nekomata_apply_sanitizers(neko_elf_object_tests)
@@ -37,7 +37,7 @@ target_compile_options(neko_elf_debug_objects PRIVATE
 nekomata_apply_warnings(neko_elf_debug_objects)
 add_executable(neko_elf_relocation_tests debug_relocations.cpp)
 target_include_directories(neko_elf_relocation_tests PRIVATE
-  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/elf")
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/backends/elf/format" "${PROJECT_SOURCE_DIR}/src/backends/elf/runtime")
 target_link_libraries(neko_elf_relocation_tests PRIVATE neko_elf_file)
 nekomata_apply_warnings(neko_elf_relocation_tests)
 nekomata_apply_sanitizers(neko_elf_relocation_tests)
@@ -48,7 +48,7 @@ set_tests_properties(neko.elf.debug_relocations PROPERTIES TIMEOUT 30)
 
 add_executable(neko_elf_guard_tests code_pages_guard.cpp)
 target_include_directories(neko_elf_guard_tests PRIVATE
-  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/elf")
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/backends/elf/format" "${PROJECT_SOURCE_DIR}/src/backends/elf/runtime")
 target_link_libraries(neko_elf_guard_tests PRIVATE neko_backend_elf)
 nekomata_apply_warnings(neko_elf_guard_tests)
 nekomata_apply_sanitizers(neko_elf_guard_tests)
@@ -62,7 +62,7 @@ target_compile_options(neko_elf_trampoline_object PRIVATE
 nekomata_apply_warnings(neko_elf_trampoline_object)
 add_executable(neko_elf_trampoline_tests plt_trampoline.cpp)
 target_include_directories(neko_elf_trampoline_tests PRIVATE
-  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/elf")
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/backends/elf/format" "${PROJECT_SOURCE_DIR}/src/backends/elf/runtime")
 target_link_libraries(neko_elf_trampoline_tests PRIVATE neko_backend_elf)
 nekomata_apply_warnings(neko_elf_trampoline_tests)
 nekomata_apply_sanitizers(neko_elf_trampoline_tests)

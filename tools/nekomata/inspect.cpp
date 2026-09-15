@@ -1,4 +1,4 @@
-#include <platforms/elf/function_index.hpp>
+#include <backends/elf/debug/function_index.hpp>
 
 #include <cstdint>
 #include <exception>

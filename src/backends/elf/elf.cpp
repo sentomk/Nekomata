@@ -2,9 +2,9 @@
 
 #include <memory>
 
-#include "code_pages.hpp"
-#include "loader.hpp"
-#include "process_symbols.hpp"
+#include "runtime/code_pages.hpp"
+#include "runtime/loader.hpp"
+#include "runtime/process_symbols.hpp"
 
 namespace neko::elf {
 

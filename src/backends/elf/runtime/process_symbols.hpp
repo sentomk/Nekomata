@@ -24,7 +24,7 @@
 #include <neko/runtime/state_manager.hpp>
 #include <neko/runtime/symbol_provider.hpp>
 
-#include "symbol_manifest.hpp"
+#include "../debug/symbol_manifest.hpp"
 
 namespace neko::elf {
 

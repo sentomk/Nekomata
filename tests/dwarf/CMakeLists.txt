@@ -32,7 +32,7 @@ set_tests_properties(neko.elf.function_index PROPERTIES TIMEOUT 30)
 
 add_executable(neko_dwarf_source_tests source_locations.cpp)
 target_include_directories(neko_dwarf_source_tests PRIVATE
-  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/dwarf")
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/backends/elf/debug")
 target_include_directories(neko_dwarf_source_tests SYSTEM PRIVATE
   $<TARGET_PROPERTY:libdwarf::dwarf-shared,INTERFACE_INCLUDE_DIRECTORIES>)
 target_link_libraries(neko_dwarf_source_tests PRIVATE nekomata::backends::dwarf)
@@ -60,7 +60,7 @@ endforeach()
 
 add_executable(neko_dwarf_tests inspect.cpp)
 target_include_directories(neko_dwarf_tests PRIVATE
-  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/platforms/dwarf")
+  "${PROJECT_SOURCE_DIR}/tests/vendor" "${PROJECT_SOURCE_DIR}/src/backends/elf/debug")
 target_link_libraries(neko_dwarf_tests PRIVATE nekomata::backends::dwarf)
 nekomata_apply_warnings(neko_dwarf_tests)
 nekomata_apply_sanitizers(neko_dwarf_tests)

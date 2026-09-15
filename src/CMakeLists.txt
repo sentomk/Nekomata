@@ -45,4 +45,4 @@ nekomata_apply_warnings(neko_publisher_lib)
 nekomata_apply_sanitizers(neko_publisher_lib)
 nekomata_apply_clang_tidy(neko_publisher_lib)
 
-add_subdirectory(platforms)
+add_subdirectory(backends)

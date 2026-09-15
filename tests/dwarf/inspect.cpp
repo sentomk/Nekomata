@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
 
-#include "inspect.hpp"
+#include "dwarf_inspect.hpp"
 
 #include <elf.h>
 #include <unistd.h>
