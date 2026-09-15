@@ -68,22 +68,21 @@ int main(int argc, char** argv) {
   std::size_t applied = 0;
   for (int i = 0; i < max_ticks && g_stop == 0; ++i) {
     tick();
-    try {
-      const auto result = session.update();
-      if (result.any_applied()) {
-        ++applied;
-      }
-      for (const auto& event : result.events) {
-        if (event.status == neko::update_status::rejected) {
-          neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n",
-                    event.message.c_str());
-        }
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    const auto result = session.update();
+    if (result.any_applied()) {
+      ++applied;
     }
-
-    const std::size_t arenas_after = count_arenas_from_maps();
-    std::printf("summary applied=%zu arenas_before=%zu arenas_after=%zu\n", applied, arenas_before,
-                arenas_after);
-    return 0;
+    for (const auto& event : result.events) {
+      if (event.status == neko::update_status::rejected) {
+        neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n",
+                  event.message.c_str());
+      }
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
   }
+
+  const std::size_t arenas_after = count_arenas_from_maps();
+  std::printf("summary applied=%zu arenas_before=%zu arenas_after=%zu\n", applied, arenas_before,
+              arenas_after);
+  return 0;
+}
