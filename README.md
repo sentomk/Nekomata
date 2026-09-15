@@ -29,7 +29,9 @@ has tried yet.
 | Capability | Today |
 |---|---|
 | Hot reload | one or more translation units per atomically published generation, `-O0`, Linux/ELF |
-| Dependency discovery | GCC/Clang Make depfiles through `depfile_planner`; incomplete graphs are rejected |
+| Managed groups | embedded ELF descriptors, immutable multi-consumer generation streams, managed `watch()`/`unwatch()`, and structured update events |
+| Build integration | managed adapters are specified for CMake, GNU Make, GN, and Meson, but are not implemented yet |
+| Dependency discovery | legacy GCC/Clang Make depfiles through `depfile_planner`; incomplete graphs are rejected |
 | State preservation | globals and statics keep their values across reloads |
 | Multiple functions per reload | yes — applied all-or-nothing; a failed attempt rolls back |
 | PIE binaries | yes, when hot objects are built `-fpie` (GOT-style `-fpic` is not supported yet) |
@@ -196,7 +198,14 @@ Platform notes:
 See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions, the testing doctrine,
 and the suite map; [AGENTS.md](AGENTS.md) carries the same rules for AI coding
 agents. [docs/reload-model.md](docs/reload-model.md) records the intended runtime
-API, transaction and TUI responsibility boundaries. The planned work —
+API, transaction and TUI responsibility boundaries. The managed group,
+publication, and build-adapter contracts are described in
+[the managed reload design](docs/managed-reload-design.md),
+[CMake integration](docs/cmake-integration-design.md),
+[GNU Make integration](docs/make-integration-design.md),
+[GN integration](docs/gn-integration-design.md), and
+[Meson integration](docs/meson-integration-design.md). These adapter documents
+are designs, not claims that the integrations already ship. The planned work —
 including what is deliberately out of scope — is in
 [docs/roadmap.md](docs/roadmap.md).
 

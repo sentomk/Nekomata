@@ -1,7 +1,7 @@
 # GN project integration
 
-Status: proposed design. The targets and zero-argument runtime API described
-here are not implemented in the current tree.
+Status: proposed adapter design. The managed runtime API exists, but the GN
+templates and publication targets described here are not implemented yet.
 
 This document is the concrete GN adapter specification for
 [managed hot-reload integration](managed-reload-design.md). The managed design
@@ -11,7 +11,8 @@ surface. A change to either document that violates the other requires an
 explicit design decision, not an incidental implementation workaround.
 
 The sibling build-adapter contracts are
-[CMake project integration](cmake-integration-design.md) and
+[CMake project integration](cmake-integration-design.md),
+[GNU Make project integration](make-integration-design.md), and
 [Meson project integration](meson-integration-design.md).
 
 The key words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY**
@@ -553,7 +554,7 @@ visibility, or generated-source ordering.
 | one object fails cross-TU validation | reject the whole group |
 | commit write fails | restore all writes and reject |
 | unknown runtime group ID | throw a configuration exception |
-| `update()` has no enabled group | throw a programming exception |
+| `update()` has no enabled group | return an empty result |
 
 Build failures remain build failures. Published-artifact rejections are
 reported through `update_result`. Fatal session and programming errors use the
@@ -586,8 +587,9 @@ GN integration is not complete until automated tests demonstrate:
 ## 16. Current repository gap
 
 The repository does not currently contain `nekomata.gni`,
-`nekomata_reload_unit`, `nekomata_reload_group`, embedded descriptors, or the
-zero-argument managed `watch()` API.
+`nekomata_reload_unit`, `nekomata_reload_group`, or the GN publication targets.
+The runtime already discovers embedded ELF descriptors and provides managed
+`watch()`/`unwatch()` with structured update events.
 
 Current object watches, `generation_watch`, depfile planning, and handwritten
 demo rebuild scripts are implementation and compatibility mechanisms. They

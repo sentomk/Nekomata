@@ -1,14 +1,15 @@
 # CMake project integration
 
-Status: proposed design. The functions and zero-argument runtime API described
-here are not implemented in the current tree.
+Status: proposed adapter design. The managed runtime API exists, but the CMake
+functions and publication targets described here are not implemented yet.
 
 This document is the concrete CMake adapter specification for
 [managed hot-reload integration](managed-reload-design.md). The managed design
 is authoritative for runtime, transaction, identity, compatibility, and
 publication semantics. This document is authoritative for the proposed CMake
 surface. The sibling build-adapter contracts are
-[GN project integration](gn-integration-design.md) and
+[GNU Make project integration](make-integration-design.md),
+[GN project integration](gn-integration-design.md), and
 [Meson project integration](meson-integration-design.md).
 
 The key words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY**
@@ -338,9 +339,65 @@ The contract covers single-config and multi-config generators.
 - Debug and optimized configurations MUST have distinct compatibility
   identities and generation streams.
 
-Supported generators MUST include Ninja and Ninja Multi-Config. Any additional
-claimed generator requires tests for object-list expansion, response files,
-generated sources, and configuration separation.
+The CMake adapter covers these generator families:
+
+| Generator | Configuration model | Required coverage |
+| --- | --- | --- |
+| Ninja | single configuration | object expansion, incremental publication, response files |
+| Ninja Multi-Config | multiple configurations | configuration isolation plus the Ninja requirements |
+| Unix Makefiles | single configuration | dependency-driven republishing, parallel Make, shell quoting |
+| NMake Makefiles | single configuration | Windows paths, `.obj` inputs, NMake constraints, `cmake --build` |
+| Visual Studio | configuration and platform | generated MSBuild projects, configuration/platform isolation, response files, parallel builds |
+
+The implementation and release notes MUST name the exact generator identifiers,
+CMake versions, host platforms, and compiler toolsets covered by tests. A family
+row above does not promise every historical Visual Studio, NMake, Ninja, or Make
+version.
+
+These are one CMake adapter with one generator test matrix, not separate public
+adapters. The implementation MUST consume CMake target metadata and generator
+expressions. It MUST NOT parse generated `build.ninja`, Makefiles, `.vcxproj`,
+or `.sln` files.
+
+NMake and Visual Studio coverage establishes that the CMake build graph and
+publication rules are portable to those generators. Live reload on their usual
+Windows target remains unavailable until a PE/PDB backend exists. A native,
+hand-authored MSBuild project is outside this adapter and will require its own
+`.props`/`.targets` integration after that backend exists.
+
+Every claimed generator requires automated tests for exact object-list
+expansion, generated sources, incremental rebuilds, quoting, long command lines,
+and configuration separation where applicable.
+
+The application always invokes the generated reload target through CMake. These
+commands illustrate the generator-specific configuration boundary:
+
+```sh
+# Ninja
+cmake -S . -B build/ninja -G Ninja
+cmake --build build/ninja --target gameplay_hot_reload
+
+# Ninja Multi-Config
+cmake -S . -B build/ninja-multi -G "Ninja Multi-Config"
+cmake --build build/ninja-multi --config Debug --target gameplay_hot_reload
+
+# Unix Makefiles
+cmake -S . -B build/unix-make -G "Unix Makefiles"
+cmake --build build/unix-make --target gameplay_hot_reload
+
+# NMake Makefiles, from a matching Visual Studio developer environment
+cmake -S . -B build/nmake -G "NMake Makefiles"
+cmake --build build/nmake --target gameplay_hot_reload
+
+# One concrete Visual Studio generator example
+cmake -S . -B build/vs2022 -G "Visual Studio 17 2022" -A x64
+cmake --build build/vs2022 --config Debug --target gameplay_hot_reload
+```
+
+Directly invoking the generated `ninja`, `make`, `nmake`, or MSBuild files is not
+part of the public adapter contract. Keeping `cmake --build` as the entry point
+preserves CMake's configuration, platform, parallelism, and tool-selection
+semantics.
 
 ## 10. Dependencies and generated sources
 
@@ -463,7 +520,7 @@ ordering, language mode, PIC, visibility, or optimization.
 | one object fails cross-TU validation | reject the whole group |
 | commit write fails | restore all writes and reject |
 | unknown runtime group ID | throw a configuration exception |
-| `update()` has no enabled group | throw a programming exception |
+| `update()` has no enabled group | return an empty result |
 
 Build failures remain build failures. Published-artifact rejections are
 reported through `update_result`. Fatal session and programming errors use the
@@ -483,7 +540,10 @@ CMake integration is not complete until automated tests demonstrate:
 - explicit group-ID override and duplicate-ID rejection;
 - descriptor retention under dead stripping and supported LTO modes;
 - debug and every claimed optimized configuration;
-- Ninja and Ninja Multi-Config configuration separation;
+- Ninja and Ninja Multi-Config, including configuration separation;
+- Unix Makefiles, including parallel builds and shell quoting;
+- NMake Makefiles with Windows paths and `.obj` inputs;
+- Visual Studio generators with configuration and platform isolation;
 - source and build paths containing spaces;
 - response-file and long object-list handling;
 - a host publisher in a supported cross-compilation setup;
@@ -497,14 +557,17 @@ CMake integration is not complete until automated tests demonstrate:
 
 ## 17. Current repository gap
 
-The repository does not currently export `nekomata_add_reload_unit()`,
-`nekomata_add_reload_group()`, managed descriptors, or the zero-argument
-`watch()` API described here.
+The runtime currently discovers embedded ELF group descriptors, consumes
+immutable generation streams, exposes managed `watch()`/`unwatch()`, and
+reports structured update events. The repository does not yet export
+`nekomata_add_reload_unit()`, `nekomata_add_reload_group()`, or the CMake
+publication targets described here.
 
 Current object watches, `generation_watch`, depfile planning, and handwritten
 demo rebuild scripts are implementation and compatibility mechanisms. They
 must not be presented as satisfying this CMake contract.
 
-Implementation should begin with a generator-tested proof that one CMake
-object set can feed both the baseline image and the publisher without copying
-compile commands or guessing output paths.
+Implementation should begin with the `SOURCES` form and prove that one CMake
+object set can feed both the baseline image and the publisher across the full
+generator matrix without copying compile commands or guessing output paths.
+The `UNITS` form follows after that invariant is established.

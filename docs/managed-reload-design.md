@@ -7,6 +7,7 @@ gap and migration path.
 Concrete build-adapter contracts are specified in:
 
 - [CMake project integration](cmake-integration-design.md);
+- [GNU Make project integration](make-integration-design.md);
 - [GN project integration](gn-integration-design.md);
 - [Meson project integration](meson-integration-design.md).
 
@@ -29,7 +30,7 @@ The same model must cover:
 - projects with heterogeneous compile configurations and generated sources;
 - atomic cross-TU replacement;
 - an application-controlled safe point in multithreaded programs;
-- CMake, GN, and Meson without build-system-specific runtime code;
+- CMake, GNU Make, GN, and Meson without build-system-specific runtime code;
 - templates and supported optimized builds;
 - an optional TUI that requests, but does not perform, an update.
 
@@ -195,7 +196,8 @@ Calls to a session's public API require external serialization. Nekomata
 synchronizes its internal worker; it does not make concurrent public calls
 valid implicitly.
 
-Calling `update()` with no enabled group is a programming error. Session
+Calling `update()` with no enabled group returns an empty `update_result`. This
+keeps a host loop valid while all groups are deliberately disabled. Session
 destruction stops and joins the preparation worker.
 
 The initial implementation discovers descriptors linked into the main program
@@ -539,7 +541,7 @@ This is explicit thread-safe integration, not automatic thread suspension.
 
 ## 10. Build-adapter contract
 
-CMake, GN, and Meson expose the same declarations:
+CMake, GNU Make, GN, and Meson expose the same declarations:
 
 - `reload_unit`: owns a native object target and compile configuration;
 - `reload_group`: aggregates units, links baseline objects plus a descriptor
@@ -559,6 +561,7 @@ For a group named `demo_hot`, the adapter provides `demo_hot_reload`:
 
 ```sh
 cmake --build build --target demo_hot_reload
+make demo_hot_reload
 autoninja -C out demo_hot_reload
 meson compile -C build demo_hot_reload
 ```
@@ -570,7 +573,7 @@ The names below are the proposed build API. Exact argument validation and
 installation paths must ship with the implementation; the semantics are fixed
 here.
 
-## 11. CMake, GN, and Meson cases
+## 11. CMake, GNU Make, GN, and Meson cases
 
 Runtime code is identical in all cases: construct the session, call `watch()`,
 and call `update()` only at a host safe point.
@@ -814,6 +817,76 @@ Native Meson targets retain heterogeneous compile settings and generated
 dependencies. The module converts them to the same common descriptor and
 publication protocol; there is no Meson-specific runtime path.
 
+### 11.10 GNU Make: single TU
+
+The examples below summarize the installed GNU Make interface. Its complete
+macro, dependency, publication, and failure contract is in
+[GNU Make project integration](make-integration-design.md).
+
+```make
+include third_party/nekomata/nekomata.mk
+
+demo_hot_nekomata_sources := src/tick.cpp
+demo_hot_nekomata_cxxflags := $(CXXFLAGS) -std=c++20
+$(eval $(call nekomata_reload_group,demo_hot))
+
+demo: build/main.o $(demo_hot_nekomata_link_inputs)
+	$(CXX) $(LDFLAGS) -o $@ $^ $(nekomata_elf_ldlibs) $(LDLIBS)
+```
+
+The macro creates one native object, embeds its descriptor through the link
+inputs, and defines `demo_hot_reload`.
+
+### 11.11 GNU Make: simple multi-TU
+
+```make
+include third_party/nekomata/nekomata.mk
+
+demo_hot_nekomata_sources := src/gravity.cpp src/ball.cpp
+demo_hot_nekomata_cppflags := $(CPPFLAGS) -Iinclude
+demo_hot_nekomata_cxxflags := $(CXXFLAGS) -std=c++20
+$(eval $(call nekomata_reload_group,demo_hot))
+
+demo: build/main.o $(demo_hot_nekomata_link_inputs)
+	$(CXX) $(LDFLAGS) -o $@ $^ $(nekomata_elf_ldlibs) $(LDLIBS)
+```
+
+GNU Make and compiler depfiles own dependency discovery. The group macro owns
+the compile rules, and `demo_hot_reload` publishes both current objects even
+when only one rebuilds.
+
+### 11.12 GNU Make: complex multi-TU
+
+```make
+include third_party/nekomata/nekomata.mk
+
+physics_hot_nekomata_sources := \
+  src/physics/gravity.cpp \
+  src/physics/collision.cpp
+physics_hot_nekomata_cppflags := $(CPPFLAGS) -Iinclude
+physics_hot_nekomata_cxxflags := $(CXXFLAGS) -std=c++20 \
+  -DPHYSICS_PRECISE=1
+$(eval $(call nekomata_reload_unit,physics_hot))
+
+gameplay_hot_nekomata_sources := \
+  src/gameplay/ball.cpp \
+  build/generated/behaviour.cpp
+gameplay_hot_nekomata_cppflags := $(CPPFLAGS) -Iinclude
+gameplay_hot_nekomata_cxxflags := $(CXXFLAGS) -std=c++23
+$(eval $(call nekomata_reload_unit,gameplay_hot))
+
+gameplay_group_nekomata_units := physics_hot gameplay_hot
+$(eval $(call nekomata_reload_group,gameplay_group))
+
+game: build/main.o $(gameplay_group_nekomata_link_inputs)
+	$(CXX) $(LDFLAGS) -o $@ $^ $(nekomata_elf_ldlibs) $(LDLIBS)
+```
+
+The units retain different compiler settings. The group publishes their exact
+ordered object set as one transaction. Generated files and headers remain
+ordinary GNU Make prerequisites; Nekomata introduces no second dependency
+graph.
+
 ## 12. Ready-marker ownership
 
 Application code never creates `build/neko/generation.ready`.
@@ -873,7 +946,7 @@ loop therefore share one transaction and threading model.
 | patch target overlaps another group | rejected event |
 | commit failure after writes begin | restore all writes; rejected event |
 | one group rejects and another is ready | reject one; apply the other |
-| `update()` with no enabled group | programming exception |
+| `update()` with no enabled group | empty result |
 | two processes observe one offer | both may consume it |
 
 Stable error codes and rejection messages become API contracts when released.
@@ -894,44 +967,51 @@ be considered later; this design does not claim hard real-time bounds.
 
 ## 17. Current implementation and migration
 
-The current tree contains parts of this model: `reload_session`, ELF backend
-construction, direct source/object watching, generation manifests, depfile
-planning, group preparation, and the managed group-descriptor and generation-
-offer codecs.
+The current tree implements the platform-neutral descriptor and
+`nekomata-generation-v2` codecs, descriptor-to-generation validation, SHA-256
+object verification, and immutable local generation streams. Each
+`generation_stream` has an independent consumer cursor, selects offers by
+sequence, and never claims or mutates shared publication state.
 
-The codec layer defines `nekomata-generation-v2` values and validates them
-against descriptors, `generation_stream` reads local publication streams
-(immutable offers, newest by sequence, object digests, one cursor per
-consumer), and `reload_session` discovers embedded descriptors through the
-`neko_groups` linker section at construction and consumes their streams
+On ELF, `reload_session` discovers descriptors through the linked
+`neko_groups` section at construction. It consumes the resulting streams
 through `watch()`, `watch(group_id)`, `unwatch()`, and `unwatch(group_id)`.
-`update()` reports through structured `update_result` events with stable
-error codes — managed groups commit as independent per-group transactions and
-legacy watch rejections are events rather than exceptions — and
-`session_snapshot()` exposes per-group observation state. The remaining
-managed gaps are the background preparation worker (which introduces the
-`preparing` and `ready` group states), `session_options`, and the build
-adapters.
+Managed groups are committed as independent transactions. `update()` returns
+structured `update_result` events with stable error codes, and `snapshot()`
+returns immutable per-group observation state. Automated tests cover codec
+validation, stream ordering and recovery, group selection, two independent
+consumers, state continuity, and unwatch/resume cursor behavior.
 
-It does not implement this complete managed contract. In particular,
-`generation_watch`, the v1 ready marker, public planner setup, and the current
-boolean/exception result model are compatibility mechanisms, not the desired
-application API.
+This is not yet the complete contract. Descriptor discovery is ELF-only.
+Preparation still occurs on the `update()` call rather than an internal worker,
+so the `preparing` and `ready` snapshot states do not exist. `session_options`,
+resource limits, complete cross-TU symbol resolution, the shared host publisher,
+and all build adapters are still absent.
+
+Legacy path-shaped object watches, `generation_watch`, the v1 ready marker,
+public planner setup, and handwritten demo rebuild scripts remain compatibility
+mechanisms. Managed stream errors are also classified through transitional
+message matching internally; stable typed errors should originate below the
+session boundary before the compatibility path is retired.
 
 Migration order:
 
-1. add descriptor, group-state, event, snapshot, and stable error-code types;
-2. add the immutable multi-consumer protocol and parser tests;
-3. add descriptor registration and generation-root resolution;
-4. separate background preparation from safe-point commit;
-5. add the CMake group integration;
+1. separate background preparation from safe-point commit and add the
+   `preparing` and `ready` states;
+2. add `session_options`, generation-root overrides, and resource limits;
+3. complete cross-TU candidate resolution and rollback coverage;
+4. implement the shared, locked host publication primitive;
+5. add the CMake `SOURCES` integration across Ninja, Ninja Multi-Config, Unix
+   Makefiles, NMake Makefiles, and Visual Studio generators;
 6. add heterogeneous CMake units and remove handwritten reload scripts from
    managed examples;
-7. add equivalent GN templates;
-8. resolve the Meson extension-module distribution prerequisite and implement
+7. add equivalent GNU Make source and unit macros;
+8. add equivalent GN templates;
+9. resolve the Meson extension-module distribution prerequisite and implement
    the same unit/group semantics;
-9. deprecate ambiguous watch overloads only after replacements ship;
-10. add caches only if profiling demonstrates a need.
+10. deprecate ambiguous path-shaped watch overloads only after their low-level
+    replacements ship;
+11. add caches only if profiling demonstrates a need.
 
 Each change should carry focused tests without changing unrelated behavior.
 
@@ -939,7 +1019,7 @@ Each change should carry focused tests without changing unrelated behavior.
 
 The design is complete only when automated tests demonstrate:
 
-- identical application runtime code for all nine build cases;
+- identical application runtime code for all twelve build cases;
 - no paths, depfiles, object lists, or markers in ordinary application code;
 - single-TU and multi-TU complete publication;
 - exact-membership rejection and cross-TU all-or-nothing rollback;
@@ -950,7 +1030,7 @@ The design is complete only when automated tests demonstrate:
 - generation-root override after moving a build tree;
 - identity stability through symlinked source and build paths;
 - copy fallback when reflink and hardlink are unavailable;
-- native header and generated dependencies in CMake, GN, and Meson;
+- native header and generated dependencies in CMake, GNU Make, GN, and Meson;
 - template and supported optimized-build cases;
 - worker preparation never committing outside `update()`;
 - a host-controlled multithread safe point;

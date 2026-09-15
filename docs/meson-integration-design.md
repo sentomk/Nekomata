@@ -1,15 +1,15 @@
 # Meson project integration
 
-Status: proposed design with an unresolved delivery prerequisite. Neither the
-module nor the zero-argument runtime API described here is implemented in the
-current tree.
+Status: proposed adapter design with an unresolved delivery prerequisite. The
+managed runtime API exists, but the Meson module described here does not.
 
 This document is the concrete Meson adapter specification for
 [managed hot-reload integration](managed-reload-design.md). The managed design
 is authoritative for runtime, transaction, identity, compatibility, and
 publication semantics. This document is authoritative for the proposed Meson
 surface. The sibling build-adapter contracts are
-[CMake project integration](cmake-integration-design.md) and
+[CMake project integration](cmake-integration-design.md),
+[GNU Make project integration](make-integration-design.md), and
 [GN project integration](gn-integration-design.md).
 
 The key words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY**
@@ -542,7 +542,7 @@ mode, PIC, visibility, optimization, or machine selection.
 | one object fails cross-TU validation | reject the whole group |
 | commit write fails | restore all writes and reject |
 | unknown runtime group ID | throw a configuration exception |
-| `update()` has no enabled group | throw a programming exception |
+| `update()` has no enabled group | return an empty result |
 
 Build failures remain build failures. Published-artifact rejections are
 reported through `update_result`. Fatal session and programming errors use the
@@ -578,8 +578,9 @@ Meson integration is not complete until automated tests demonstrate:
 ## 18. Current repository gap
 
 The repository does not currently provide a Meson extension module,
-`reload_unit()`, `reload_group()`, managed descriptors, or the zero-argument
-`watch()` API described here.
+`reload_unit()`, `reload_group()`, or the Meson publication targets. The
+runtime already discovers embedded ELF descriptors and provides managed
+`watch()`/`unwatch()` with structured update events.
 
 The first implementation task is not publisher plumbing. It is a proof that a
 supported Meson extension mechanism can be distributed and can obtain the exact

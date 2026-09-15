@@ -151,6 +151,9 @@ Two rules follow from this:
 |---|---|
 | `tests/smoke.cpp` | platform-neutral kernel interfaces |
 | `tests/session_transaction.cpp`, `tests/depfile_planner.cpp` | generation transaction and compiler depfile planning |
+| `tests/group_descriptor.cpp`, `tests/generation_offer.cpp`, `tests/generation_stream.cpp`, `tests/sha256.cpp` | managed descriptor and immutable-generation protocol codecs, validation, integrity and consumer cursors |
+| `tests/descriptor_section.cpp`, `tests/descriptor_discovery.cpp`, `tests/managed_session.cpp` | embedded descriptor framing/discovery and managed session API behavior |
+| `tests/managed_reload/` | managed ELF end-to-end reload, state continuity, rejection recovery and unwatch/resume |
 | `examples/hello_reload/` | end-to-end reload: logic swap and state continuity |
 | `tests/multi_tu/`, `tests/atomicity/` | complete multi-object generations, all-or-nothing commit and recovery |
 | `tests/duplicate_names/` | translation-unit identity for same-named local symbols |
