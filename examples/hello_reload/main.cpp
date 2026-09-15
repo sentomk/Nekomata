@@ -30,11 +30,13 @@ int main(int argc, char** argv) {
       std::printf("[harness] stopped\n");
       return 0;
     }
-    tick(); //    hot code
-    try {
-      session.update(); // 3. per-iteration tick
-    } catch (const std::exception& e) {
-      neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n", e.what());
+    tick();                               //    hot code
+    const auto result = session.update(); // 3. per-iteration tick
+    for (const auto& event : result.events) {
+      if (event.status == neko::update_status::rejected) {
+        neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n",
+                  event.message.c_str());
+      }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }

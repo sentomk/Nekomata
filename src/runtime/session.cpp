@@ -15,6 +15,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -69,6 +70,33 @@ private:
 
 std::filesystem::path claimed_path_for(const std::filesystem::path& path) {
   return path.parent_path() / (path.filename().string() + ".claimed");
+}
+
+// Transitional classification: stream rejections carry stable wording, and
+// transaction rejections are prefixed by their phase. Stable per-reason codes
+// replace the matching once the low-level layers carry typed errors outward.
+reload_error_code classify_stream_rejection(const std::string& message) {
+  const std::string_view text = message;
+  if (text.find("does not match descriptor") != std::string_view::npos) {
+    return reload_error_code::incompatible;
+  }
+  if (text.find("digest mismatch") != std::string_view::npos ||
+      text.find("is missing or not a regular file") != std::string_view::npos ||
+      text.find("resolves outside the generation directory") != std::string_view::npos) {
+    return reload_error_code::integrity;
+  }
+  return reload_error_code::invalid_artifact;
+}
+
+reload_error_code classify_transaction_rejection(const std::string& message) {
+  const std::string_view text = message;
+  if (text.rfind("reload rejected and rolled back", 0) == 0) {
+    return reload_error_code::commit_failed;
+  }
+  if (text.find("object file is not ready") != std::string_view::npos) {
+    return reload_error_code::integrity;
+  }
+  return reload_error_code::object_rejected;
 }
 
 std::size_t validate_generation_membership(const detail::legacy_generation_offer& offer,
@@ -150,6 +178,8 @@ struct reload_session::managed_group {
   detail::group_descriptor descriptor;
   std::unique_ptr<detail::generation_stream> stream;
   bool enabled = false;
+  bool failed = false;
+  std::string last_applied_generation;
 };
 
 reload_session::reload_session(backend_bundle backends) : backends_(std::move(backends)) {
@@ -176,8 +206,8 @@ reload_session::reload_session(backend_bundle backends) : backends_(std::move(ba
 
 reload_session::~reload_session() = default;
 
-reload_session::stats reload_session::session_stats() const {
-  stats out;
+session_snapshot reload_session::snapshot() const {
+  session_snapshot out;
   out.applied = applied_;
   out.rejected = rejected_;
   out.last_result = last_result_;
@@ -188,9 +218,14 @@ reload_session::stats reload_session::session_stats() const {
     out.watched_paths.push_back(watched.manifest_path.string());
   }
   for (const auto& group : managed_groups_) {
-    if (group->enabled) {
-      out.watched_paths.push_back(group->descriptor.group_id);
-    }
+    group_snapshot entry;
+    entry.group_id = group->descriptor.group_id;
+    entry.enabled = group->enabled;
+    entry.state = group->failed ? group_state::failed : group_state::idle;
+    entry.observed_sequence =
+        group->stream ? group->stream->cursor() : group->descriptor.baseline_sequence;
+    entry.last_applied_generation = group->last_applied_generation;
+    out.managed_groups.push_back(std::move(entry));
   }
   return out;
 }
@@ -270,24 +305,44 @@ reload_session::managed_group& reload_session::find_managed_group(std::string_vi
   return **found;
 }
 
-bool reload_session::update() {
-  try {
-    // Managed groups come first, in group-ID order. One call commits at most
-    // one generation overall, matching the single-transaction result model;
-    // a ready group rejected here throws, and a not-yet-processed group's
-    // offer is picked up by the next call.
-    for (auto& group : managed_groups_) {
-      if (!group->enabled) {
-        continue;
-      }
-      const auto observation = group->stream->poll();
-      if (observation.status == detail::stream_status::idle) {
-        continue;
-      }
-      if (observation.status == detail::stream_status::rejected) {
-        throw std::runtime_error(observation.message);
-      }
+update_result reload_session::update() {
+  update_result result;
+  const auto redirected = [](const prepared_generation& generation) {
+    std::size_t count = 0;
+    for (const auto& reload : generation.reloads) {
+      count += reload->image.replacements.size();
+    }
+    return count;
+  };
 
+  // Managed groups first, each its own all-or-nothing transaction: one
+  // group's rejection never prevents the others from applying.
+  for (auto& group : managed_groups_) {
+    if (!group->enabled) {
+      continue;
+    }
+    const auto observation = group->stream->poll();
+    if (observation.status == detail::stream_status::idle) {
+      continue;
+    }
+    if (observation.status == detail::stream_status::rejected) {
+      update_event event;
+      event.status = update_status::rejected;
+      event.group_id = group->descriptor.group_id;
+      event.generation_id = observation.generation_id;
+      event.code = classify_stream_rejection(observation.message);
+      event.message = observation.message;
+      ++rejected_;
+      last_result_ = observation.message;
+      group->failed = true;
+      result.events.push_back(std::move(event));
+      continue;
+    }
+
+    update_event event;
+    event.group_id = group->descriptor.group_id;
+    event.generation_id = observation.generation_id;
+    try {
       neko::log(neko::log_level::info, "generation '%s' covers %zu translation unit(s)\n",
                 observation.generation_id.c_str(), observation.offer.members.size());
       prepared_generation generation;
@@ -301,16 +356,37 @@ bool reload_session::update() {
             std::filesystem::path(member.source_identity), member.build_information));
       }
       validate_generation(generation);
+      const std::size_t count = redirected(generation);
       commit(generation);
-      return true;
+      group->failed = false;
+      group->last_applied_generation = observation.generation_id;
+      event.redirected_function_count = count;
+      result.events.push_back(std::move(event));
+    } catch (const std::exception& e) {
+      event.status = update_status::rejected;
+      event.code = classify_transaction_rejection(e.what());
+      event.message = e.what();
+      ++rejected_;
+      last_result_ = e.what();
+      group->failed = true;
+      result.events.push_back(std::move(event));
     }
+  }
 
+  // The legacy watch surface keeps its one-transaction-per-call shape; its
+  // rejections are values now, reported after the managed events.
+  try {
     prepared_generation generation;
     for (const auto& watched : generation_watches_) {
       if (auto offered_generation = try_prepare(watched)) {
         validate_generation(*offered_generation);
+        const std::size_t count = redirected(*offered_generation);
         commit(*offered_generation);
-        return true;
+        update_event event;
+        event.generation_id = offered_generation->id;
+        event.redirected_function_count = count;
+        result.events.push_back(std::move(event));
+        return result;
       }
     }
 
@@ -319,18 +395,24 @@ bool reload_session::update() {
         generation.reloads.push_back(std::move(prepared));
       }
     }
-    if (generation.reloads.empty()) {
-      return false;
+    if (!generation.reloads.empty()) {
+      validate_generation(generation);
+      const std::size_t count = redirected(generation);
+      commit(generation);
+      update_event event;
+      event.redirected_function_count = count;
+      result.events.push_back(std::move(event));
     }
-
-    validate_generation(generation);
-    commit(generation);
-    return true;
   } catch (const std::exception& e) {
     ++rejected_;
     last_result_ = e.what();
-    throw; // the caller decides how to surface the failure
+    update_event event;
+    event.status = update_status::rejected;
+    event.code = classify_transaction_rejection(e.what());
+    event.message = e.what();
+    result.events.push_back(std::move(event));
   }
+  return result;
 }
 
 std::unique_ptr<reload_session::prepared_reload>

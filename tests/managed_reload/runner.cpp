@@ -57,12 +57,14 @@ int main(int argc, char** argv) {
   const auto run_ticks = [&session](int count) {
     for (int i = 0; i < count; ++i) {
       std::printf("tick=%d\n", managed_tick());
-      try {
-        if (session.update()) {
-          std::printf("applied\n");
+      const auto result = session.update();
+      if (result.any_applied()) {
+        std::printf("applied\n");
+      }
+      for (const auto& event : result.events) {
+        if (event.status == neko::update_status::rejected) {
+          std::printf("reload failed: %s\n", event.message.c_str());
         }
-      } catch (const std::exception& exception) {
-        std::printf("reload failed: %s\n", exception.what());
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }

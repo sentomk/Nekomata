@@ -35,10 +35,11 @@ int main(int argc, char** argv) {
   for (int i = 0; i < 3000; ++i) {
     std::printf("[pair %d %d]\n", a_value(), b_value());
 
-    try {
-      static_cast<void>(session.update());
-    } catch (const std::exception& exception) {
-      neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n", exception.what());
+    for (const auto& event : session.update().events) {
+      if (event.status == neko::update_status::rejected) {
+        neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n",
+                  event.message.c_str());
+      }
     }
     std::error_code ec;
     if (std::filesystem::exists(stop, ec)) {

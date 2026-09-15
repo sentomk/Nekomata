@@ -905,10 +905,13 @@ against descriptors, `generation_stream` reads local publication streams
 consumer), and `reload_session` discovers embedded descriptors through the
 `neko_groups` linker section at construction and consumes their streams
 through `watch()`, `watch(group_id)`, `unwatch()`, and `unwatch(group_id)`.
-`update()` still applies at most one generation per call and reports through
-the boolean result model; the remaining managed gaps are the structured
-`update_result` and `session_snapshot`, the background preparation worker,
-`session_options`, and the build adapters.
+`update()` reports through structured `update_result` events with stable
+error codes — managed groups commit as independent per-group transactions and
+legacy watch rejections are events rather than exceptions — and
+`session_snapshot()` exposes per-group observation state. The remaining
+managed gaps are the background preparation worker (which introduces the
+`preparing` and `ready` group states), `session_options`, and the build
+adapters.
 
 It does not implement this complete managed contract. In particular,
 `generation_watch`, the v1 ready marker, public planner setup, and the current

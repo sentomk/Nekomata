@@ -27,10 +27,12 @@ int main(int argc, char** argv) {
 
   for (int i = 0; i < 3000; ++i) {
     std::printf("[a=%d b=%d]\n", a_value(), b_value());
-    try {
-      session.update();
-    } catch (const std::exception& e) {
-      neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n", e.what());
+    const auto result = session.update();
+    for (const auto& event : result.events) {
+      if (event.status == neko::update_status::rejected) {
+        neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n",
+                  event.message.c_str());
+      }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(120));
   }

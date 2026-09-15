@@ -96,6 +96,6 @@ TEST_CASE("unwatch() without managed groups is a no-op") {
   auto session = make_session();
   session.unwatch();
   session.unwatch();
-  CHECK(session.update() == false);
-  CHECK(session.session_stats().watched_paths.empty());
+  CHECK(session.update().events.empty());
+  CHECK(session.snapshot().watched_paths.empty());
 }

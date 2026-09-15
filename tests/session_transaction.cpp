@@ -209,13 +209,11 @@ TEST_CASE("one update rolls back entries patched for earlier watched objects") {
   session.watch(a_offer);
   session.watch(b_offer);
 
-  std::string error;
-  try {
-    static_cast<void>(session.update());
-    FAIL("the injected second patch failure must reject the transaction");
-  } catch (const std::runtime_error& exception) {
-    error = exception.what();
-  }
+  const auto result = session.update();
+  REQUIRE(result.events.size() == 1);
+  REQUIRE(result.events.front().status == neko::update_status::rejected);
+  REQUIRE(result.events.front().code == neko::reload_error_code::commit_failed);
+  const std::string error = result.events.front().message;
 
   CHECK(error == "reload rejected and rolled back 1 entry: cannot patch entry of b_tick");
   CHECK_FALSE(substituter->patching_started_before_preparation_finished);
@@ -229,7 +227,7 @@ TEST_CASE("one update rolls back entries patched for earlier watched objects") {
   REQUIRE(substituter->restored.size() == 1);
   CHECK(substituter->restored[0] == a_entry);
 
-  const auto stats = session.session_stats();
+  const auto stats = session.snapshot();
   CHECK(stats.applied == 0);
   CHECK(stats.rejected == 1);
   CHECK(stats.last_result == error);
@@ -264,16 +262,18 @@ TEST_CASE("one update rejects objects that replace the same live entry") {
   session.watch(first_offer);
   session.watch(second_offer);
 
-  CHECK_THROWS_WITH_AS(
-      static_cast<void>(session.update()),
-      "reload rejected before any write: multiple objects replace entry of second_tick",
-      std::runtime_error);
+  const auto conflicting = session.update();
+  REQUIRE(conflicting.events.size() == 1);
+  CHECK(conflicting.events.front().status == neko::update_status::rejected);
+  CHECK(conflicting.events.front().code == neko::reload_error_code::object_rejected);
+  CHECK(conflicting.events.front().message ==
+        "reload rejected before any write: multiple objects replace entry of second_tick");
   CHECK(substituter->prechecked.size() == 2);
   CHECK(substituter->snapshotted.empty());
   CHECK(substituter->patched.empty());
   CHECK(substituter->restored.empty());
 
-  const auto stats = session.session_stats();
+  const auto stats = session.snapshot();
   CHECK(stats.applied == 0);
   CHECK(stats.rejected == 1);
   CHECK(stats.last_result ==
@@ -317,7 +317,7 @@ TEST_CASE("a generation marker exposes only a complete immutable object set") {
 
   // An object becoming visible is not an offer until the producer publishes
   // the generation marker.
-  CHECK_FALSE(session.update());
+  CHECK(session.update().events.empty());
   CHECK(loader->load_count() == 0);
   CHECK(std::filesystem::exists(a_object));
 
@@ -326,13 +326,11 @@ TEST_CASE("a generation marker exposes only a complete immutable object set") {
   const auto missing_object_error =
       "reload generation 'g2' rejected before any write: object file is not ready: " +
       b_object.string();
-  std::string rejection;
-  try {
-    static_cast<void>(session.update());
-    FAIL("the incomplete generation must be rejected");
-  } catch (const std::runtime_error& exception) {
-    rejection = exception.what();
-  }
+  const auto incomplete = session.update();
+  REQUIRE(incomplete.events.size() == 1);
+  REQUIRE(incomplete.events.front().status == neko::update_status::rejected);
+  REQUIRE(incomplete.events.front().code == neko::reload_error_code::integrity);
+  const std::string rejection = incomplete.events.front().message;
   CHECK(rejection == missing_object_error);
   CHECK(loader->load_count() == 0);
   CHECK(substituter->prechecked.empty());
@@ -344,7 +342,7 @@ TEST_CASE("a generation marker exposes only a complete immutable object set") {
   // exist, both become live together and remain available for diagnostics.
   offer(b_object);
   publish_generation(manifest, "g2", members);
-  CHECK(session.update());
+  CHECK(session.update().any_applied());
   CHECK(loader->load_count() == 2);
   CHECK(substituter->prechecked.size() == 2);
   CHECK(substituter->patched.size() == 2);
@@ -352,10 +350,12 @@ TEST_CASE("a generation marker exposes only a complete immutable object set") {
   CHECK(std::filesystem::exists(b_object));
 
   publish_generation(manifest, "g2", members);
-  CHECK_THROWS_WITH_AS(static_cast<void>(session.update()),
-                       "reload generation 'g2' was already applied", std::runtime_error);
+  const auto replay = session.update();
+  REQUIRE(replay.events.size() == 1);
+  CHECK(replay.events.front().status == neko::update_status::rejected);
+  CHECK(replay.events.front().message == "reload generation 'g2' was already applied");
 
-  const auto stats = session.session_stats();
+  const auto stats = session.snapshot();
   CHECK(stats.applied == 1);
   CHECK(stats.rejected == 2);
   CHECK(stats.last_result == "reload generation 'g2' was already applied");

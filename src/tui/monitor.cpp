@@ -241,7 +241,7 @@ private:
   }
 
   void render_frame(int frame_count) {
-    const auto stats = session_.session_stats();
+    const auto stats = session_.snapshot();
 
     // Session events and application lines both go through the queue;
     // the view only receives them while the reader is at the bottom.
@@ -655,7 +655,7 @@ void monitor::render() {
   }
 
   // mode::inline_status — styled line in the current terminal.
-  const auto stats = session_.session_stats();
+  const auto stats = session_.snapshot();
 
   StatusLineView line;
   line.add_segment(config_.title, title_style());

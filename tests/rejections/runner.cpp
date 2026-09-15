@@ -49,10 +49,12 @@ int main(int argc, char** argv) {
     }
     tick();
     use_collide_helper();
-    try {
-      session->update();
-    } catch (const std::exception& e) {
-      neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n", e.what());
+    const auto result = session->update();
+    for (const auto& event : result.events) {
+      if (event.status == neko::update_status::rejected) {
+        neko::log(neko::log_level::error, "reload failed, keeping old code: %s\n",
+                  event.message.c_str());
+      }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }

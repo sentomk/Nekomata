@@ -53,6 +53,79 @@ struct generation_watch {
   std::filesystem::path manifest_path;
 };
 
+/// Outcome of one committed or rejected transaction inside an `update()` call.
+enum class update_status : std::uint8_t {
+  applied,  ///< the transaction redirected live entries
+  rejected, ///< the old code stayed active; `message` and `code` say why
+};
+
+/// Stable rejection classification. The set grows conservatively: codes are
+/// contracts, the human-readable message next to them is diagnostic.
+enum class reload_error_code : std::uint8_t {
+  none = 0,         ///< no error; the companion status is `applied`
+  invalid_artifact, ///< malformed or incomplete published data
+  incompatible,     ///< group, compatibility, or ABI identity mismatch
+  integrity,        ///< missing object, digest mismatch, or unsafe path
+  object_rejected,  ///< parse, symbol, relocation, or entry-check failure
+  commit_failed,    ///< an entry write failed and was rolled back
+};
+
+/// One transaction outcome. Managed reload groups carry their `group_id` and
+/// `generation_id`; legacy watch transactions leave both empty.
+struct update_event {
+  update_status status = update_status::applied;
+  reload_error_code code = reload_error_code::none;
+  std::string group_id;
+  std::string generation_id;
+  std::string message;
+  std::size_t redirected_function_count = 0;
+};
+
+/// The result of one `update()` call. An empty event list means nothing was
+/// ready. Managed-group events come first in ascending `group_id` order; a
+/// legacy watch transaction, when one applies, comes last.
+struct update_result {
+  std::vector<update_event> events;
+
+  /// True when at least one transaction was applied.
+  [[nodiscard]] bool any_applied() const {
+    for (const auto& event : events) {
+      if (event.status == update_status::applied) {
+        return true;
+      }
+    }
+    return false;
+  }
+};
+
+/// Observation state of one managed group. `preparing` and `ready` join the
+/// enumeration when preparation moves to a background worker; until then a
+/// group is `idle` between updates or `failed` after its last observed
+/// generation was rejected.
+enum class group_state : std::uint8_t {
+  idle,
+  failed,
+};
+
+/// Immutable per-group view for observers such as the TUI, logs, and tests.
+struct group_snapshot {
+  std::string group_id;
+  bool enabled = false;
+  group_state state = group_state::idle;
+  std::uint64_t observed_sequence = 0; ///< the group's consumer cursor
+  std::string last_applied_generation;
+};
+
+/// Immutable whole-session view. Never exposes references into mutable
+/// session state.
+struct session_snapshot {
+  std::size_t applied = 0;
+  std::size_t rejected = 0;
+  std::string last_result;
+  std::vector<group_snapshot> managed_groups; ///< ascending by group ID
+  std::vector<std::string> watched_paths;
+};
+
 class reload_session {
 public:
   explicit reload_session(backend_bundle backends);
@@ -105,27 +178,22 @@ public:
   /// Literal overload for `unwatch(std::string_view)`.
   void unwatch(const char* group_id);
 
-  /// Pick up the first ready generation, or batch ready individual object
-  /// watches in registration order. Every object in the selected offer is
-  /// prepared and validated before any live function entry is changed, then
-  /// the offer is committed as one transaction. Returns true when that
-  /// transaction was applied. Throws
-  /// std::runtime_error if an object is rejected or commit fails; no entry
-  /// changed by this call remains modified after a failed transaction.
+  /// Pick up every ready managed group and, when no managed transaction was
+  /// rejected, the first ready legacy generation or batched object watches.
+  /// Each managed group is its own all-or-nothing transaction; one group's
+  /// rejection does not prevent the others from applying. Artifact problems
+  /// are rejected events, not exceptions: no entry changed for a rejected
+  /// transaction remains modified. Exceptions are reserved for programming
+  /// errors.
   ///
   /// Before calling, the caller must ensure that no thread can enter or execute
   /// reloadable code, and must preserve that quiescent state until this method
   /// returns.
-  bool update();
+  [[nodiscard]] update_result update();
 
-  /// Read-only session statistics for observers (TUI, logging, tests).
-  struct stats {
-    std::size_t applied = 0;  ///< reloads that took effect
-    std::size_t rejected = 0; ///< offers refused (ambiguity, bad object, ...)
-    std::string last_result;  ///< human-readable outcome of the last offer
-    std::vector<std::string> watched_paths;
-  };
-  stats session_stats() const;
+  /// Immutable observation snapshot; the input for logs, tests, and the
+  /// optional TUI.
+  [[nodiscard]] session_snapshot snapshot() const;
 
 private:
   struct watched_object {

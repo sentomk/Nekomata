@@ -30,10 +30,12 @@ int main(int argc, char** argv) {
   for (int i = 0; i < 100000; ++i) {
     step_world();
     render_world();
-    try {
-      session.update(); // 3. Check for a fresh object file once per frame.
-    } catch (const std::exception& e) {
-      neko::log(neko::log_level::error, "reload rejected, old code keeps running: %s\n", e.what());
+    const auto result = session.update(); // 3. per-iteration tick
+    for (const auto& event : result.events) {
+      if (event.status == neko::update_status::rejected) {
+        neko::log(neko::log_level::error, "reload rejected, old code keeps running: %s\n",
+                  event.message.c_str());
+      }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
   }
