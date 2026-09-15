@@ -1,7 +1,7 @@
 #include "publisher.hpp"
 
 #include "generation_offer.hpp"
-#include "sha256.hpp"
+#include <base/sha256.hpp>
 
 #include <algorithm>
 #include <chrono>

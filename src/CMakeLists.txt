@@ -7,12 +7,12 @@
 # The convenience aggregate behind the `nekomata::neko` alias is defined in
 # the top-level CMakeLists once this directory has returned.
 
-# sha256.cpp rides here only until it moves behind the private C base layer.
+add_subdirectory(base)
+
 add_library(neko_protocol STATIC
   runtime/group_descriptor.cpp
   runtime/generation_offer.cpp
-  runtime/descriptor_section.cpp
-  runtime/sha256.cpp)
+  runtime/descriptor_section.cpp)
 nekomata_apply_warnings(neko_protocol)
 nekomata_apply_sanitizers(neko_protocol)
 nekomata_apply_clang_tidy(neko_protocol)
@@ -25,7 +25,7 @@ add_library(neko_runtime STATIC
   runtime/generation.cpp
   runtime/generation_stream.cpp
   runtime/session.cpp)
-target_link_libraries(neko_runtime PRIVATE neko_protocol)
+target_link_libraries(neko_runtime PRIVATE neko_protocol neko_base_c)
 target_include_directories(neko_runtime
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -36,7 +36,7 @@ nekomata_apply_sanitizers(neko_runtime)
 nekomata_apply_clang_tidy(neko_runtime)
 
 add_library(neko_publisher_lib STATIC runtime/publisher.cpp)
-target_link_libraries(neko_publisher_lib PRIVATE neko_protocol)
+target_link_libraries(neko_publisher_lib PRIVATE neko_protocol neko_base_c)
 nekomata_apply_warnings(neko_publisher_lib)
 nekomata_apply_sanitizers(neko_publisher_lib)
 nekomata_apply_clang_tidy(neko_publisher_lib)

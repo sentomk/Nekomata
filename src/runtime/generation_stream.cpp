@@ -8,7 +8,7 @@
 #include <tuple>
 #include <utility>
 
-#include "sha256.hpp"
+#include <base/sha256.hpp>
 
 namespace neko::detail {
 namespace {

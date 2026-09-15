@@ -1,8 +1,11 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "runtime/sha256.hpp"
+#include <base/c/neko_sha256.h>
+#include <base/sha256.hpp>
 
+#include <array>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -37,4 +40,32 @@ TEST_CASE("the digest and hexadecimal forms agree") {
   }
   CHECK(neko::detail::sha256_hex(text) == expected);
   CHECK(neko::detail::sha256_hex(text).size() == 64);
+}
+
+namespace {
+
+std::string hex_bytes(const std::array<std::uint8_t, 32>& digest) {
+  static constexpr char k_digits[] = "0123456789abcdef";
+  std::string hex;
+  for (const auto byte : digest) {
+    hex.push_back(k_digits[byte >> 4]);
+    hex.push_back(k_digits[byte & 0x0f]);
+  }
+  return hex;
+}
+
+} // namespace
+
+TEST_CASE("the streaming C context matches the one-shot digest") {
+  const std::string text = std::string(130, 'x') + "tail";
+
+  neko_sha256_context context;
+  neko_sha256_init(&context);
+  neko_sha256_update(&context, text.data(), 65);
+  neko_sha256_update(&context, text.data() + 65, 63);
+  neko_sha256_update(&context, text.data() + 128, text.size() - 128);
+  std::array<std::uint8_t, 32> digest{};
+  neko_sha256_final(&context, digest.data());
+
+  CHECK(hex_bytes(digest) == neko::detail::sha256_hex(text));
 }

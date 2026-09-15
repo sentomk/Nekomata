@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 project(nekomata
   VERSION 0.2.0
   DESCRIPTION "Native hot-reload for C/C++ — no restarts, no refactor."
-  LANGUAGES CXX)
+  LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
 # Options

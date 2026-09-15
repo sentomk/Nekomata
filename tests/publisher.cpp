@@ -8,7 +8,7 @@
 
 #include "runtime/generation_stream.hpp"
 #include "runtime/publisher.hpp"
-#include "runtime/sha256.hpp"
+#include <base/sha256.hpp>
 
 #include <algorithm>
 #include <chrono>

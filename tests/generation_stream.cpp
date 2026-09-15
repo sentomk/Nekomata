@@ -4,7 +4,7 @@
 #include <doctest/doctest.h>
 
 #include "runtime/generation_stream.hpp"
-#include "runtime/sha256.hpp"
+#include <base/sha256.hpp>
 
 #include <chrono>
 #include <cstdint>
