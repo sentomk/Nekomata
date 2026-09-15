@@ -1,7 +1,6 @@
 #include "publisher.hpp"
 
 #include "generation_offer.hpp"
-#include <base/lock.hpp>
 #include <base/sha256.hpp>
 
 #include <algorithm>
@@ -13,8 +12,77 @@
 #include <system_error>
 #include <utility>
 
+#if defined(_WIN32)
+#define NOMINMAX // windows.h macros must not eat std::min/std::max
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
+
 namespace neko::detail {
 namespace {
+
+// Exclusive, blocking advisory lock held for one publication. One stream has
+// one logical producer; the lock serializes sequence allocation and the
+// offer release when processes race anyway.
+class stream_lock {
+public:
+  explicit stream_lock(const std::filesystem::path& path) {
+#if defined(_WIN32)
+    handle_ =
+        CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle_ == INVALID_HANDLE_VALUE) {
+      throw std::runtime_error("cannot open stream lock '" + path.generic_string() + "'");
+    }
+    OVERLAPPED overlapped{};
+    if (!LockFileEx(handle_, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &overlapped)) {
+      CloseHandle(handle_);
+      handle_ = INVALID_HANDLE_VALUE;
+      throw std::runtime_error("cannot lock stream '" + path.generic_string() + "'");
+    }
+#else
+    fd_ = ::open(path.c_str(), O_CREAT | O_RDWR, 0666);
+    if (fd_ < 0) {
+      throw std::runtime_error("cannot open stream lock '" + path.generic_string() + "'");
+    }
+    // Inside the condition the call cannot parse as a declaration of a
+    // `struct flock` variable. BSD flock() locks the open file description,
+    // so threads of one process exclude each other too.
+    if (::flock(fd_, LOCK_EX) != 0) {
+      ::close(fd_);
+      fd_ = -1;
+      throw std::runtime_error("cannot lock stream '" + path.generic_string() + "'");
+    }
+#endif
+  }
+
+  ~stream_lock() {
+#if defined(_WIN32)
+    if (handle_ != INVALID_HANDLE_VALUE) {
+      OVERLAPPED overlapped{};
+      UnlockFileEx(handle_, 0, MAXDWORD, MAXDWORD, &overlapped);
+      CloseHandle(handle_);
+    }
+#else
+    if (fd_ >= 0) {
+      ::close(fd_);
+    }
+#endif
+  }
+
+  stream_lock(const stream_lock&) = delete;
+  stream_lock& operator=(const stream_lock&) = delete;
+
+private:
+#if defined(_WIN32)
+  void* handle_ = nullptr;
+#else
+  int fd_ = -1;
+#endif
+};
 
 std::optional<std::string> read_file(const std::filesystem::path& path) {
   std::error_code ec;
@@ -74,9 +142,7 @@ publish_result publish_generation(const publish_request& request) {
   const auto stream = request.generation_root / request.publication_key;
   std::filesystem::create_directories(stream / "offers");
   std::filesystem::create_directories(stream / "generations");
-  // One stream has one logical producer; the lock serializes sequence
-  // allocation and the offer release when processes race anyway.
-  const file_lock lock(stream / ".publish.lock");
+  const stream_lock lock(stream / ".publish.lock");
 
   const auto sequence = next_sequence(stream / "offers");
 

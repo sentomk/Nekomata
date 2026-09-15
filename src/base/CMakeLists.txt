@@ -5,11 +5,6 @@
 # next to the c/ directory ride this target's interface include so internal
 # modules can `#include <base/sha256.hpp>` against the src/ root.
 add_library(neko_base_c STATIC c/neko_sha256.c)
-if(WIN32)
-  target_sources(neko_base_c PRIVATE c/neko_lock_win32.c)
-else()
-  target_sources(neko_base_c PRIVATE c/neko_lock_posix.c)
-endif()
 set_target_properties(neko_base_c PROPERTIES
   C_STANDARD 11
   C_STANDARD_REQUIRED ON)
