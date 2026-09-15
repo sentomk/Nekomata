@@ -423,7 +423,7 @@ private:
       break;
     case U'r':
       try {
-        session_.update();
+        static_cast<void>(session_.update());
       } catch (...) {
       }
       break;
@@ -499,7 +499,7 @@ private:
   /// The cycle is animation → idle → animation. A reload interrupts it with
   /// a short alert flash, because that is the one state worth noticing.
   [[nodiscard]] int logo_frame_at(std::chrono::steady_clock::time_point now,
-                                  const reload_session::stats& stats) {
+                                  const session_snapshot& stats) {
     const auto since_start =
         std::chrono::duration_cast<std::chrono::milliseconds>(now - started_).count();
 
@@ -524,7 +524,7 @@ private:
     return std::min(static_cast<int>(phase / kLogoFrameMs), cats::logo_frame_count - 1);
   }
 
-  void render_monitor_pane(Frame& frame, const Rect& area, const reload_session::stats& stats,
+  void render_monitor_pane(Frame& frame, const Rect& area, const session_snapshot& stats,
                            int frame_count) {
     draw_border(frame, area, " Nekomata Monitor ", title_style());
     const int x = area.left() + 3;
