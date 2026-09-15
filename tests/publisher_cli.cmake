@@ -13,8 +13,9 @@ function(publish expect_sequence)
       --root "${root}" --key "cli-e2e" --group "//cli:hot"
       --compat "sha256:compile-identity" --abi "elf-x86_64-patch-v1"
       --changed "//cli:a.cpp"
-      --member "cli/a" "${root}/in/a.o" "//cli:a.cpp" "-O0 diagnostic"
-      --member "cli/b" "${root}/in/b.o" "//cli:b.cpp" "-O0 diagnostic"
+      --member "cli/a" "//cli:a.cpp" "-O0 diagnostic"
+      --member "cli/b" "//cli:b.cpp" "-O0 diagnostic"
+      --objects "${root}/in/a.o" "${root}/in/b.o"
     RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
   if(NOT "${status}" STREQUAL "0")
     message(FATAL_ERROR "publisher failed (${status}):\n${output}${error}")
