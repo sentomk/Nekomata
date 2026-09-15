@@ -185,6 +185,30 @@ if(NEKOMATA_TARGET_LINUX)
   add_test(NAME neko.managed_reload
     COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/managed-reload-run.sh")
   set_tests_properties(neko.managed_reload PROPERTIES TIMEOUT 180)
+
+  # Cross-TU candidate resolution: fresh objects call symbols defined by
+  # sibling objects of the same generation, including brand-new ones.
+  add_executable(cross_tu_runner
+    cross_tu/runner.cpp
+    cross_tu/a.cpp
+    cross_tu/b.cpp)
+  target_include_directories(cross_tu_runner PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/cross_tu"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+  target_link_libraries(cross_tu_runner PRIVATE nekomata::backends::elf)
+  set_target_properties(cross_tu_runner PROPERTIES POSITION_INDEPENDENT_CODE OFF)
+  target_compile_options(cross_tu_runner PRIVATE -O0 -fno-pie -fno-pic)
+  target_link_options(cross_tu_runner PRIVATE -no-pie)
+  set_source_files_properties(cross_tu/a.cpp cross_tu/b.cpp PROPERTIES
+    COMPILE_OPTIONS "-fno-exceptions;-fno-asynchronous-unwind-tables")
+  nekomata_apply_warnings(cross_tu_runner)
+
+  configure_file(cross_tu/cross_tu.sh.in
+    "${CMAKE_CURRENT_BINARY_DIR}/cross-tu-run.sh" @ONLY)
+  add_test(NAME neko.cross_tu
+    COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/cross-tu-run.sh")
+  set_tests_properties(neko.cross_tu PROPERTIES TIMEOUT 180)
   if(NEKOMATA_BUILD_FUZZ AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_subdirectory(fuzz)
   endif()

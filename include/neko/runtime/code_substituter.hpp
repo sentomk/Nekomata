@@ -19,6 +19,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 
 #include <neko/runtime/fwd.hpp>
 
@@ -50,6 +51,17 @@ public:
 
   /// Write 5 saved bytes back to `entry` and restore execute-only pages.
   virtual bool restore_entry(std::uintptr_t entry, const std::uint8_t original[5]) = 0;
+
+  /// Rewrite bytes inside a reservation after commit_code(), re-protecting
+  /// the affected pages. Used to finish cross-object call targets once the
+  /// whole candidate generation is loaded. Backends without page
+  /// protections keep the plain-copy default.
+  virtual bool rewrite_reservation(void* reservation, std::uint64_t offset, const void* bytes,
+                                   std::uint64_t size) {
+    std::memcpy(static_cast<std::uint8_t*>(reservation) + offset, bytes,
+                static_cast<std::size_t>(size));
+    return true;
+  }
 };
 
 } // namespace neko

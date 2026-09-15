@@ -218,6 +218,7 @@ private:
                                                   const std::filesystem::path& source_path,
                                                   std::string build_information);
   void validate_generation(const prepared_generation& generation) const;
+  void link_generation(prepared_generation& generation);
   void commit(const prepared_generation& generation);
 
   backend_bundle backends_;

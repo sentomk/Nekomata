@@ -112,6 +112,8 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
   // Only the slot offsets are known here; resolve_external failures are
   // rejections, so resolve before any memory is reserved.
   std::unordered_map<std::uint32_t, std::uint64_t> trampoline_offset_for_symbol;
+  std::unordered_map<std::uint32_t, bool> symbol_pending_in_generation;
+  std::vector<pending_call_fixup> pending_fixups;
   for (const auto& rel : obj.relocations) {
     if (!is_call_to_undefined(rel.type) || rel.symbol_index == 0 ||
         rel.symbol_index >= obj.symbols.size()) {
@@ -123,9 +125,11 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     }
     void* target = symbols_.resolve_external(sym.name, STT_FUNC, sym.bind);
     if (target == nullptr) {
-      throw std::runtime_error("cannot resolve external symbol '" + sym.name +
-                               "' — the process has no link-visible definition and the dynamic "
-                               "linker cannot see one either");
+      // No live definition — but a sibling object of the same generation may
+      // define this symbol freshly. Reserve the slot, leave a placeholder
+      // trampoline, and let link_generation() resolve or reject it once the
+      // whole candidate set is loaded.
+      symbol_pending_in_generation[rel.symbol_index] = true;
     }
     image_size = align_up(image_size, kSectionAlign);
     trampoline_offset_for_symbol[rel.symbol_index] = image_size;
@@ -171,6 +175,11 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
   }
   for (const auto& [sym_index, offset] : trampoline_offset_for_symbol) {
     const auto& sym = obj.symbols[sym_index];
+    if (symbol_pending_in_generation.count(sym_index) != 0) {
+      write_trampoline(image.data() + offset, 0); // patched by link_generation()
+      pending_fixups.push_back({sym.name, static_cast<std::uint32_t>(offset)});
+      continue;
+    }
     void* target = symbols_.resolve_external(sym.name, STT_FUNC, sym.bind);
     write_trampoline(image.data() + offset, reinterpret_cast<std::uintptr_t>(target));
   }
@@ -325,6 +334,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
   loaded_image out;
   out.code = arena;
   out.code_size = image_size;
+  out.pending_call_fixups = std::move(pending_fixups);
 
   // Functions that end up with no redirect are not necessarily wrong (a new
   // static helper has nothing to replace), but a skipped name that LIVE code
@@ -339,6 +349,11 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     }
     if (obj.sections[sym.section_index].cls != section_class::text) {
       continue;
+    }
+    if (sym.bind == STB_GLOBAL || sym.bind == STB_WEAK || sym.bind == STB_GNU_UNIQUE) {
+      // Sibling objects of the same generation may call this fresh body.
+      out.exported_functions.push_back(
+          {sym.name, static_cast<std::uint32_t>(section_offset[sym.section_index] + sym.value)});
     }
     std::optional<function_info> old = symbols_.function_by_name(sym.name);
     const auto duplicates = symbols_.count_functions(sym.name);
@@ -423,6 +438,35 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     }
   }
   return out;
+}
+
+void loader::link_generation(std::span<loaded_image* const> images) {
+  // Prefer the candidate set: a sibling's fresh body is the new definition.
+  std::unordered_map<std::string_view, std::uintptr_t> exported;
+  for (const auto* image : images) {
+    const auto base = reinterpret_cast<std::uintptr_t>(image->code);
+    for (const auto& function : image->exported_functions) {
+      exported.emplace(function.name, base + function.offset_in_image);
+    }
+  }
+  for (auto* image : images) {
+    for (const auto& fixup : image->pending_call_fixups) {
+      const auto found = exported.find(fixup.name);
+      if (found == exported.end()) {
+        throw std::runtime_error("cannot resolve external symbol '" + fixup.name +
+                                 "' — the process has no link-visible definition and the dynamic "
+                                 "linker cannot see one either");
+      }
+      std::uint8_t trampoline[13];
+      write_trampoline(trampoline, found->second);
+      if (!substituter_.rewrite_reservation(image->code, fixup.trampoline_offset_in_image,
+                                            trampoline, sizeof(trampoline))) {
+        throw std::runtime_error("cannot patch cross-object call to '" + fixup.name +
+                                 "' inside its code image");
+      }
+      image->pending_call_fixups.clear();
+    }
+  }
 }
 
 } // namespace neko::elf

@@ -13,7 +13,7 @@
 
 #include <cstddef>
 #include <cstdint>
-
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,6 +30,20 @@ struct function_replacement {
   std::uint32_t offset_in_image = 0;
 };
 
+/// A link-visible function this object defines in its fresh image. Cross-TU
+/// calls that cannot resolve against the process are patched to these.
+struct exported_function {
+  std::string name;
+  std::uint32_t offset_in_image = 0;
+};
+
+/// A call this object could not resolve at load time; the trampoline bytes
+/// carry a placeholder until `link_generation()` patches them or rejects.
+struct pending_call_fixup {
+  std::string name;
+  std::uint32_t trampoline_offset_in_image = 0;
+};
+
 /// A fresh object file placed into executable memory, fully relocated.
 struct loaded_image {
   /// Executable mapping owned by the code_substituter.
@@ -37,6 +51,10 @@ struct loaded_image {
   std::uint64_t code_size = 0;
   /// Function entries that still need redirecting.
   std::vector<function_replacement> replacements;
+  /// Link-visible functions provided to sibling objects of the generation.
+  std::vector<exported_function> exported_functions;
+  /// Calls deferred to `link_generation()` — new cross-TU symbols.
+  std::vector<pending_call_fixup> pending_call_fixups;
 };
 
 class object_loader {
@@ -56,6 +74,12 @@ public:
     (void)source_path;
     return load(object_data, size);
   }
+
+  /// Resolve calls between the objects of one candidate generation. Called
+  /// once every object of the generation is loaded and before validation or
+  /// commit; throws for a call no sibling defines and the process cannot
+  /// resolve either. The default accepts images without pending cross links.
+  virtual void link_generation(std::span<loaded_image* const> images) { (void)images; }
 };
 
 } // namespace neko

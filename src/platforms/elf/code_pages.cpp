@@ -179,6 +179,34 @@ bool code_pages::patch_entry(std::uintptr_t entry, void* target) {
   return true;
 }
 
+bool code_pages::rewrite_reservation(void* reservation, std::uint64_t offset, const void* bytes,
+                                     std::uint64_t size) {
+  const auto base = reinterpret_cast<std::uintptr_t>(reservation);
+  const auto at = base + offset;
+  const auto end = at + size;
+  for (const auto& arena : arenas_) {
+    if (base < arena.begin || base >= arena.end || end > arena.end) {
+      continue;
+    }
+    const std::uint64_t page = page_size();
+    const std::uintptr_t page_start = at & ~(page - 1);
+    const std::uint64_t page_len = ((end - 1) & ~(page - 1)) - page_start + page;
+    if (mprotect(reinterpret_cast<void*>(page_start), page_len,
+                 PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+      return false;
+    }
+    std::memcpy(reinterpret_cast<void*>(at), bytes, static_cast<std::size_t>(size));
+    if (mprotect(reinterpret_cast<void*>(page_start), page_len, PROT_READ | PROT_EXEC) != 0) {
+      neko::log(neko::log_level::error,
+                "restoring r-x on a rewritten image page failed (%s): page stays writable\n",
+                std::strerror(errno));
+    }
+    __builtin___clear_cache(reinterpret_cast<char*>(at), reinterpret_cast<char*>(end));
+    return true;
+  }
+  return false;
+}
+
 bool code_pages::restore_entry(std::uintptr_t entry, const std::uint8_t original[5]) {
   const std::uint64_t page = page_size();
   const std::uintptr_t page_start = entry & ~(page - 1);

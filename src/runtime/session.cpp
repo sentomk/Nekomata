@@ -297,6 +297,7 @@ void reload_session::prepare_managed_group(managed_group& group) {
           read_file(observation.objects[index]), group.descriptor.group_id + "/" + member.member,
           std::filesystem::path(member.source_identity), member.build_information));
     }
+    link_generation(*generation);
     validate_generation(*generation);
     group.prepared = std::move(generation);
     group.failed = false;
@@ -506,6 +507,7 @@ update_result reload_session::update() {
       }
     }
     if (!generation.reloads.empty()) {
+      link_generation(generation);
       validate_generation(generation);
       const std::size_t count = redirected(generation);
       commit(generation);
@@ -593,6 +595,7 @@ reload_session::try_prepare(const generation_watch& watched) {
     generation->reloads.push_back(prepare_object(bytes, object.source_path.generic_string(),
                                                  object.source_path, object.build_information));
   }
+  link_generation(*generation);
   return generation;
 }
 
@@ -618,6 +621,15 @@ reload_session::prepare_object(const std::vector<std::uint8_t>& bytes, std::stri
   }
 
   return prepared;
+}
+
+void reload_session::link_generation(prepared_generation& generation) {
+  std::vector<loaded_image*> images;
+  images.reserve(generation.reloads.size());
+  for (const auto& reload : generation.reloads) {
+    images.push_back(&reload->image);
+  }
+  backends_.loader->link_generation(images);
 }
 
 void reload_session::validate_generation(const prepared_generation& generation) const {

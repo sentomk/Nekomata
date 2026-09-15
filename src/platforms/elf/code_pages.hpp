@@ -45,6 +45,8 @@ public:
   bool precheck_entry(std::uintptr_t entry, void* target) override;
   bool snapshot_entry(std::uintptr_t entry, std::uint8_t out[5]) override;
   bool patch_entry(std::uintptr_t entry, void* target) override;
+  bool rewrite_reservation(void* reservation, std::uint64_t offset, const void* bytes,
+                           std::uint64_t size) override;
   bool restore_entry(std::uintptr_t entry, const std::uint8_t original[5]) override;
 
 private:

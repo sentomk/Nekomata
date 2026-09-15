@@ -987,8 +987,11 @@ Preparation runs on an internal worker that discovers offers and builds
 transactions without touching live entries, so `update()` only commits, and
 the `preparing` and `ready` snapshot states are live; a fatal worker error is
 retained and rethrown by the next serialized public call. `session_options`,
-resource limits, complete cross-TU symbol resolution, the shared host publisher,
-and all build adapters are still absent.
+resource limits, and the shared host publisher are still absent. Cross-TU
+candidate resolution is implemented — calls that no live definition satisfies
+resolve against sibling objects of the same generation once every object is
+loaded, including brand-new symbols, and an unresolved or unpatchable member
+rejects the whole generation.
 
 Legacy path-shaped object watches, `generation_watch`, the v1 ready marker,
 public planner setup, and handwritten demo rebuild scripts remain compatibility

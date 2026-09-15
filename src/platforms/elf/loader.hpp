@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string_view>
 
 #include <neko/runtime/fwd.hpp>
@@ -36,6 +37,7 @@ public:
   loaded_image load(const std::uint8_t* object_data, std::size_t size) override;
   loaded_image load(const std::uint8_t* object_data, std::size_t size,
                     std::string_view source_path) override;
+  void link_generation(std::span<loaded_image* const> images) override;
 
 private:
   process_symbols& symbols_;
