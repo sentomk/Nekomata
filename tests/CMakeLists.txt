@@ -77,15 +77,23 @@ nekomata_apply_warnings(neko_sha256)
 nekomata_apply_sanitizers(neko_sha256)
 add_test(NAME neko.sha256 COMMAND neko_sha256)
 
-add_executable(neko_publisher publisher.cpp)
-target_include_directories(neko_publisher
+add_executable(neko_publisher_tests publisher.cpp)
+target_include_directories(neko_publisher_tests
   PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
-target_link_libraries(neko_publisher PRIVATE nekomata::neko)
-nekomata_apply_warnings(neko_publisher)
-nekomata_apply_sanitizers(neko_publisher)
-add_test(NAME neko.publisher COMMAND neko_publisher)
+target_link_libraries(neko_publisher_tests PRIVATE nekomata::neko)
+nekomata_apply_warnings(neko_publisher_tests)
+nekomata_apply_sanitizers(neko_publisher_tests)
+add_test(NAME neko.publisher COMMAND neko_publisher_tests)
+
+if(TARGET neko_publisher)
+  add_test(NAME neko.publisher_cli
+    COMMAND "${CMAKE_COMMAND}"
+      "-DPUBLISHER=$<TARGET_FILE:neko_publisher>"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/publisher_cli.cmake")
+  set_tests_properties(neko.publisher_cli PROPERTIES TIMEOUT 60)
+endif()
 
 add_executable(neko_descriptor_section descriptor_section.cpp)
 target_include_directories(neko_descriptor_section

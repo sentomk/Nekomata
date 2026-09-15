@@ -1,1 +1,2 @@
 add_subdirectory(nekomata)
+add_subdirectory(neko_publisher)
