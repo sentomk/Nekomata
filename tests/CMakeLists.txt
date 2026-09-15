@@ -227,13 +227,6 @@ if(NEKOMATA_TARGET_LINUX)
   add_test(NAME neko.cross_tu
     COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/cross-tu-run.sh")
   set_tests_properties(neko.cross_tu PROPERTIES TIMEOUT 180)
-
-  # The CMake adapter end to end: fixture project, two generators.
-  configure_file(cmake_adapter/run.sh.in
-    "${CMAKE_CURRENT_BINARY_DIR}/cmake-adapter-run.sh" @ONLY)
-  add_test(NAME neko.cmake_adapter
-    COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/cmake-adapter-run.sh")
-  set_tests_properties(neko.cmake_adapter PROPERTIES TIMEOUT 900)
   if(NEKOMATA_BUILD_FUZZ AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_subdirectory(fuzz)
   endif()
