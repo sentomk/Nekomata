@@ -115,6 +115,15 @@ endif()
 
 add_subdirectory(src)
 
+# The convenience aggregate: everything a default consumer needs. The ELF
+# backend (added inside src/) and the TUI (added below) join as they exist.
+add_library(neko_runtime_aggregate INTERFACE)
+target_link_libraries(neko_runtime_aggregate INTERFACE neko_runtime)
+if(TARGET neko_backend_elf)
+  target_link_libraries(neko_runtime_aggregate INTERFACE neko_backend_elf)
+endif()
+add_library(nekomata::neko ALIAS neko_runtime_aggregate)
+
 if(NEKOMATA_BUILD_TOOLS)
   add_subdirectory(tools)
 endif()
@@ -125,6 +134,9 @@ endif()
 
 if(NEKOMATA_TUI)
   add_subdirectory(src/tui)
+  if(TARGET neko_tui)
+    target_link_libraries(neko_runtime_aggregate INTERFACE neko_tui)
+  endif()
 endif()
 
 if(NEKOMATA_BUILD_TESTS)

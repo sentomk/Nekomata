@@ -53,7 +53,7 @@ else()
 endif()
 
 target_link_libraries(neko_tui
-  PUBLIC nekomata::neko
+  PUBLIC neko_runtime
   PRIVATE glyph::glyph)
 
 target_include_directories(neko_tui

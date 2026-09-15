@@ -1,25 +1,44 @@
 # Public headers live in include/neko; implementation headers stay private here.
-add_library(neko STATIC
+#
+# The target split states the boundaries in the link graph:
+#   neko_protocol        the generation codecs shared by runtime and publisher
+#   neko_runtime         the consumer kernel (session, streams, legacy watches)
+#   neko_publisher_lib   the publication primitive behind the host publisher
+# The convenience aggregate behind the `nekomata::neko` alias is defined in
+# the top-level CMakeLists once this directory has returned.
+
+# sha256.cpp rides here only until it moves behind the private C base layer.
+add_library(neko_protocol STATIC
+  runtime/group_descriptor.cpp
+  runtime/generation_offer.cpp
+  runtime/descriptor_section.cpp
+  runtime/sha256.cpp)
+nekomata_apply_warnings(neko_protocol)
+nekomata_apply_sanitizers(neko_protocol)
+nekomata_apply_clang_tidy(neko_protocol)
+
+add_library(neko_runtime STATIC
   core/log.cpp
   core/version.cpp
   runtime/depfile_planner.cpp
   runtime/descriptor_discovery.cpp
-  runtime/descriptor_section.cpp
   runtime/generation.cpp
-  runtime/generation_offer.cpp
   runtime/generation_stream.cpp
-  runtime/group_descriptor.cpp
-  runtime/publisher.cpp
-  runtime/session.cpp
-  runtime/sha256.cpp)
-add_library(nekomata::neko ALIAS neko)
-target_include_directories(neko
+  runtime/session.cpp)
+target_link_libraries(neko_runtime PRIVATE neko_protocol)
+target_include_directories(neko_runtime
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/generated>)
-target_compile_features(neko PUBLIC cxx_std_20)
-nekomata_apply_warnings(neko)
-nekomata_apply_sanitizers(neko)
-nekomata_apply_clang_tidy(neko)
+target_compile_features(neko_runtime PUBLIC cxx_std_20)
+nekomata_apply_warnings(neko_runtime)
+nekomata_apply_sanitizers(neko_runtime)
+nekomata_apply_clang_tidy(neko_runtime)
+
+add_library(neko_publisher_lib STATIC runtime/publisher.cpp)
+target_link_libraries(neko_publisher_lib PRIVATE neko_protocol)
+nekomata_apply_warnings(neko_publisher_lib)
+nekomata_apply_sanitizers(neko_publisher_lib)
+nekomata_apply_clang_tidy(neko_publisher_lib)
 
 add_subdirectory(platforms)

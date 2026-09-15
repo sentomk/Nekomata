@@ -15,7 +15,7 @@ add_library(neko_backend_elf STATIC
 add_library(nekomata::backends::elf ALIAS neko_backend_elf)
 
 target_link_libraries(neko_backend_elf
-  PUBLIC nekomata::neko
+  PUBLIC neko_runtime
   PRIVATE ${CMAKE_DL_LIBS})
 
 # Public entry point is <neko/platforms/elf.hpp> (via nekomata::neko);

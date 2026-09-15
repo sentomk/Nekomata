@@ -82,7 +82,7 @@ target_include_directories(neko_publisher_tests
   PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
-target_link_libraries(neko_publisher_tests PRIVATE nekomata::neko)
+target_link_libraries(neko_publisher_tests PRIVATE nekomata::neko neko_publisher_lib)
 nekomata_apply_warnings(neko_publisher_tests)
 nekomata_apply_sanitizers(neko_publisher_tests)
 add_test(NAME neko.publisher COMMAND neko_publisher_tests)
