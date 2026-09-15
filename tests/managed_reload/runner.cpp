@@ -54,7 +54,21 @@ int main(int argc, char** argv) {
   neko::reload_session session{neko::elf::create_backend()};
   session.watch();
 
-  const auto run_ticks = [&session](int count) {
+  const auto state_name = [](neko::group_state state) {
+    switch (state) {
+    case neko::group_state::idle:
+      return "idle";
+    case neko::group_state::preparing:
+      return "preparing";
+    case neko::group_state::ready:
+      return "ready";
+    case neko::group_state::failed:
+      return "failed";
+    }
+    return "unknown";
+  };
+
+  const auto run_ticks = [&session, &state_name](int count) {
     for (int i = 0; i < count; ++i) {
       std::printf("tick=%d\n", managed_tick());
       const auto result = session.update();
@@ -65,6 +79,9 @@ int main(int argc, char** argv) {
         if (event.status == neko::update_status::rejected) {
           std::printf("reload failed: %s\n", event.message.c_str());
         }
+      }
+      for (const auto& group : session.snapshot().managed_groups) {
+        std::printf("state=%s\n", state_name(group.state));
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }

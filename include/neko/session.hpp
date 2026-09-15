@@ -20,12 +20,16 @@
 
 #pragma once
 
+#include <condition_variable>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -98,12 +102,14 @@ struct update_result {
   }
 };
 
-/// Observation state of one managed group. `preparing` and `ready` join the
-/// enumeration when preparation moves to a background worker; until then a
-/// group is `idle` between updates or `failed` after its last observed
-/// generation was rejected.
+/// Observation state of one managed group. An enabled group is `preparing`
+/// while the background worker owns its observation, `ready` once a complete
+/// transaction waits for the next update(), `failed` after its last observed
+/// generation was rejected, and `idle` when disabled or nothing is enabled.
 enum class group_state : std::uint8_t {
   idle,
+  preparing,
+  ready,
   failed,
 };
 
@@ -221,6 +227,22 @@ private:
 
   void enable_managed_group(managed_group& group);
   [[nodiscard]] managed_group& find_managed_group(std::string_view group_id);
+
+  // Background preparation. The worker discovers offers, parses objects, and
+  // builds transactions without touching live entries; only update() commits.
+  // It starts with the first enabled group and joins at destruction. Public
+  // calls stay externally serialized; the mutex only separates the worker
+  // from those calls.
+  void start_worker();
+  void worker_loop();
+  void prepare_managed_group(managed_group& group);
+  void raise_fatal_worker_error(std::exception_ptr error);
+  void check_fatal_worker_error() const;
+  mutable std::mutex worker_mutex_;
+  std::condition_variable worker_wake_;
+  std::thread worker_;
+  bool worker_running_ = false;
+  std::exception_ptr fatal_worker_error_;
   std::unordered_map<std::string, std::unordered_set<std::string>>
       applied_generation_ids_by_manifest_;
   /// Functions redirected by the last fully-applied load of each watched

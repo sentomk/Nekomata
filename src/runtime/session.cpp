@@ -10,6 +10,7 @@
 #include <neko/runtime/patch_planner.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -180,6 +181,13 @@ struct reload_session::managed_group {
   bool enabled = false;
   bool failed = false;
   std::string last_applied_generation;
+  // Worker outcome awaiting the next update(): a prepared transaction, or a
+  // rejection to report exactly once. A newer prepared generation supersedes
+  // older uncommitted work.
+  std::unique_ptr<prepared_generation> prepared;
+  std::string pending_rejection;
+  std::uint64_t pending_rejection_sequence = 0;
+  std::string pending_rejection_id;
 };
 
 reload_session::reload_session(backend_bundle backends) : backends_(std::move(backends)) {
@@ -204,9 +212,108 @@ reload_session::reload_session(backend_bundle backends) : backends_(std::move(ba
             });
 }
 
-reload_session::~reload_session() = default;
+reload_session::~reload_session() {
+  {
+    std::lock_guard<std::mutex> lock(worker_mutex_);
+    worker_running_ = false;
+  }
+  worker_wake_.notify_all();
+  if (worker_.joinable()) {
+    worker_.join();
+  }
+}
+
+void reload_session::start_worker() {
+  std::lock_guard<std::mutex> lock(worker_mutex_);
+  if (worker_running_ || worker_.joinable()) {
+    return;
+  }
+  worker_running_ = true;
+  worker_ = std::thread([this] { worker_loop(); });
+}
+
+void reload_session::raise_fatal_worker_error(std::exception_ptr error) {
+  std::lock_guard<std::mutex> lock(worker_mutex_);
+  if (!fatal_worker_error_) {
+    fatal_worker_error_ = std::move(error);
+  }
+  worker_running_ = false;
+}
+
+void reload_session::check_fatal_worker_error() const {
+  std::lock_guard<std::mutex> lock(worker_mutex_);
+  if (fatal_worker_error_) {
+    std::rethrow_exception(fatal_worker_error_);
+  }
+}
+
+void reload_session::worker_loop() {
+  try {
+    for (;;) {
+      std::unique_lock<std::mutex> lock(worker_mutex_);
+      worker_wake_.wait_for(lock, std::chrono::milliseconds(100),
+                            [this] { return !worker_running_; });
+      if (!worker_running_) {
+        return;
+      }
+      // Preparation runs under the lock: it never writes live entries or
+      // calls application code, so blocking snapshot() briefly is the whole
+      // interaction it may have with the outside world.
+      for (auto& group : managed_groups_) {
+        if (group->enabled) {
+          prepare_managed_group(*group);
+        }
+      }
+    }
+  } catch (...) {
+    raise_fatal_worker_error(std::current_exception());
+  }
+}
+
+void reload_session::prepare_managed_group(managed_group& group) {
+  const auto observation = group.stream->poll();
+  if (observation.status == detail::stream_status::idle) {
+    return;
+  }
+  if (observation.status == detail::stream_status::rejected) {
+    group.pending_rejection = observation.message;
+    group.pending_rejection_sequence = observation.sequence;
+    group.pending_rejection_id = observation.generation_id;
+    group.failed = true;
+    group.prepared.reset();
+    return;
+  }
+
+  neko::log(neko::log_level::info, "generation '%s' covers %zu translation unit(s)\n",
+            observation.generation_id.c_str(), observation.offer.members.size());
+  try {
+    auto generation = std::make_unique<prepared_generation>();
+    generation->id = observation.generation_id;
+    generation->manifest_key = "managed:" + group.descriptor.group_id;
+    generation->reloads.reserve(observation.objects.size());
+    for (std::size_t index = 0; index < observation.objects.size(); ++index) {
+      const auto& member = observation.offer.members[index];
+      generation->reloads.push_back(prepare_object(
+          read_file(observation.objects[index]), group.descriptor.group_id + "/" + member.member,
+          std::filesystem::path(member.source_identity), member.build_information));
+    }
+    validate_generation(*generation);
+    group.prepared = std::move(generation);
+    group.failed = false;
+    group.pending_rejection.clear();
+  } catch (const std::exception& e) {
+    // An artifact failure is a rejection value, not a worker fatality.
+    group.pending_rejection = e.what();
+    group.pending_rejection_sequence = observation.sequence;
+    group.pending_rejection_id = observation.generation_id;
+    group.failed = true;
+    group.prepared.reset();
+  }
+}
 
 session_snapshot reload_session::snapshot() const {
+  check_fatal_worker_error();
+  std::lock_guard<std::mutex> lock(worker_mutex_);
   session_snapshot out;
   out.applied = applied_;
   out.rejected = rejected_;
@@ -221,7 +328,15 @@ session_snapshot reload_session::snapshot() const {
     group_snapshot entry;
     entry.group_id = group->descriptor.group_id;
     entry.enabled = group->enabled;
-    entry.state = group->failed ? group_state::failed : group_state::idle;
+    if (group->prepared) {
+      entry.state = group_state::ready;
+    } else if (group->failed) {
+      entry.state = group_state::failed;
+    } else if (group->enabled) {
+      entry.state = group_state::preparing; // the worker owns observation
+    } else {
+      entry.state = group_state::idle;
+    }
     entry.observed_sequence =
         group->stream ? group->stream->cursor() : group->descriptor.baseline_sequence;
     entry.last_applied_generation = group->last_applied_generation;
@@ -291,6 +406,8 @@ void reload_session::enable_managed_group(managed_group& group) {
         group.descriptor, *group.descriptor.generation_root_hint);
   }
   group.enabled = true;
+  start_worker();
+  worker_wake_.notify_all();
 }
 
 reload_session::managed_group& reload_session::find_managed_group(std::string_view group_id) {
@@ -306,6 +423,7 @@ reload_session::managed_group& reload_session::find_managed_group(std::string_vi
 }
 
 update_result reload_session::update() {
+  check_fatal_worker_error();
   update_result result;
   const auto redirected = [](const prepared_generation& generation) {
     std::size_t count = 0;
@@ -316,61 +434,53 @@ update_result reload_session::update() {
   };
 
   // Managed groups first, each its own all-or-nothing transaction: one
-  // group's rejection never prevents the others from applying.
-  for (auto& group : managed_groups_) {
-    if (!group->enabled) {
-      continue;
-    }
-    const auto observation = group->stream->poll();
-    if (observation.status == detail::stream_status::idle) {
-      continue;
-    }
-    if (observation.status == detail::stream_status::rejected) {
-      update_event event;
-      event.status = update_status::rejected;
-      event.group_id = group->descriptor.group_id;
-      event.generation_id = observation.generation_id;
-      event.code = classify_stream_rejection(observation.message);
-      event.message = observation.message;
-      ++rejected_;
-      last_result_ = observation.message;
-      group->failed = true;
-      result.events.push_back(std::move(event));
-      continue;
-    }
-
-    update_event event;
-    event.group_id = group->descriptor.group_id;
-    event.generation_id = observation.generation_id;
-    try {
-      neko::log(neko::log_level::info, "generation '%s' covers %zu translation unit(s)\n",
-                observation.generation_id.c_str(), observation.offer.members.size());
-      prepared_generation generation;
-      generation.id = observation.generation_id;
-      generation.manifest_key = "managed:" + group->descriptor.group_id;
-      generation.reloads.reserve(observation.objects.size());
-      for (std::size_t index = 0; index < observation.objects.size(); ++index) {
-        const auto& member = observation.offer.members[index];
-        generation.reloads.push_back(prepare_object(
-            read_file(observation.objects[index]), group->descriptor.group_id + "/" + member.member,
-            std::filesystem::path(member.source_identity), member.build_information));
+  // group's rejection never prevents the others from applying. update()
+  // only commits what the preparation worker already finished; it never
+  // discovers, parses, or relocates here.
+  {
+    std::unique_lock<std::mutex> lock(worker_mutex_);
+    for (auto& group : managed_groups_) {
+      if (!group->enabled) {
+        continue;
       }
-      validate_generation(generation);
-      const std::size_t count = redirected(generation);
-      commit(generation);
-      group->failed = false;
-      group->last_applied_generation = observation.generation_id;
-      event.redirected_function_count = count;
-      result.events.push_back(std::move(event));
-    } catch (const std::exception& e) {
-      event.status = update_status::rejected;
-      event.code = classify_transaction_rejection(e.what());
-      event.message = e.what();
-      ++rejected_;
-      last_result_ = e.what();
-      group->failed = true;
-      result.events.push_back(std::move(event));
+      if (group->prepared) {
+        update_event event;
+        event.group_id = group->descriptor.group_id;
+        event.generation_id = group->prepared->id;
+        try {
+          const std::size_t count = redirected(*group->prepared);
+          commit(*group->prepared);
+          group->failed = false;
+          group->last_applied_generation = group->prepared->id;
+          group->prepared.reset();
+          event.redirected_function_count = count;
+          result.events.push_back(std::move(event));
+        } catch (const std::exception& e) {
+          group->prepared.reset();
+          event.status = update_status::rejected;
+          event.code = classify_transaction_rejection(e.what());
+          event.message = e.what();
+          ++rejected_;
+          last_result_ = e.what();
+          group->failed = true;
+          result.events.push_back(std::move(event));
+        }
+        continue;
+      }
+      if (!group->pending_rejection.empty()) {
+        update_event event;
+        event.status = update_status::rejected;
+        event.group_id = group->descriptor.group_id;
+        event.generation_id = group->pending_rejection_id;
+        event.code = classify_stream_rejection(group->pending_rejection);
+        event.message = group->pending_rejection;
+        ++rejected_;
+        last_result_ = event.message;
+        group->pending_rejection.clear();
+        result.events.push_back(std::move(event));
+      }
     }
+    lock.unlock();
   }
 
   // The legacy watch surface keeps its one-transaction-per-call shape; its

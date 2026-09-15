@@ -983,8 +983,10 @@ validation, stream ordering and recovery, group selection, two independent
 consumers, state continuity, and unwatch/resume cursor behavior.
 
 This is not yet the complete contract. Descriptor discovery is ELF-only.
-Preparation still occurs on the `update()` call rather than an internal worker,
-so the `preparing` and `ready` snapshot states do not exist. `session_options`,
+Preparation runs on an internal worker that discovers offers and builds
+transactions without touching live entries, so `update()` only commits, and
+the `preparing` and `ready` snapshot states are live; a fatal worker error is
+retained and rethrown by the next serialized public call. `session_options`,
 resource limits, complete cross-TU symbol resolution, the shared host publisher,
 and all build adapters are still absent.
 
