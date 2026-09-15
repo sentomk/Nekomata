@@ -339,15 +339,18 @@ The contract covers single-config and multi-config generators.
 - Debug and optimized configurations MUST have distinct compatibility
   identities and generation streams.
 
-The CMake adapter covers these generator families:
+The CMake adapter covers these generator families. Coverage phases with the
+runtime backends: the ELF backend makes the POSIX generators the first
+delivery, and the NMake Makefiles and Visual Studio families follow the
+PE/PDB backend rather than preceding it.
 
-| Generator | Configuration model | Required coverage |
-| --- | --- | --- |
-| Ninja | single configuration | object expansion, incremental publication, response files |
-| Ninja Multi-Config | multiple configurations | configuration isolation plus the Ninja requirements |
-| Unix Makefiles | single configuration | dependency-driven republishing, parallel Make, shell quoting |
-| NMake Makefiles | single configuration | Windows paths, `.obj` inputs, NMake constraints, `cmake --build` |
-| Visual Studio | configuration and platform | generated MSBuild projects, configuration/platform isolation, response files, parallel builds |
+| Generator | Configuration model | Required coverage | Phase |
+| --- | --- | --- | --- |
+| Ninja | single configuration | object expansion, incremental publication, response files | with ELF |
+| Ninja Multi-Config | multiple configurations | configuration isolation plus the Ninja requirements | with ELF |
+| Unix Makefiles | single configuration | dependency-driven republishing, parallel Make, shell quoting | with ELF |
+| NMake Makefiles | single configuration | Windows paths, `.obj` inputs, NMake constraints, `cmake --build` | after PE/PDB |
+| Visual Studio | configuration and platform | generated MSBuild projects, configuration/platform isolation, response files, parallel builds | after PE/PDB |
 
 The implementation and release notes MUST name the exact generator identifiers,
 CMake versions, host platforms, and compiler toolsets covered by tests. A family
@@ -360,10 +363,10 @@ expressions. It MUST NOT parse generated `build.ninja`, Makefiles, `.vcxproj`,
 or `.sln` files.
 
 NMake and Visual Studio coverage establishes that the CMake build graph and
-publication rules are portable to those generators. Live reload on their usual
-Windows target remains unavailable until a PE/PDB backend exists. A native,
-hand-authored MSBuild project is outside this adapter and will require its own
-`.props`/`.targets` integration after that backend exists.
+publication rules are portable to those generators, and is delivered after the
+PE/PDB backend exists instead of claiming build-side-only support earlier.
+A native, hand-authored MSBuild project is outside this adapter and will
+require its own `.props`/`.targets` integration after that backend exists.
 
 Every claimed generator requires automated tests for exact object-list
 expansion, generated sources, incremental rebuilds, quoting, long command lines,
@@ -542,8 +545,9 @@ CMake integration is not complete until automated tests demonstrate:
 - debug and every claimed optimized configuration;
 - Ninja and Ninja Multi-Config, including configuration separation;
 - Unix Makefiles, including parallel builds and shell quoting;
-- NMake Makefiles with Windows paths and `.obj` inputs;
-- Visual Studio generators with configuration and platform isolation;
+- NMake Makefiles with Windows paths and `.obj` inputs, after PE/PDB;
+- Visual Studio generators with configuration and platform isolation, after
+  PE/PDB;
 - source and build paths containing spaces;
 - response-file and long object-list handling;
 - a host publisher in a supported cross-compilation setup;

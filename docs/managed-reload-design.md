@@ -1010,8 +1010,9 @@ Migration order:
 2. add `session_options`, generation-root overrides, and resource limits;
 3. complete cross-TU candidate resolution and rollback coverage;
 4. implement the shared, locked host publication primitive;
-5. add the CMake `SOURCES` integration across Ninja, Ninja Multi-Config, Unix
-   Makefiles, NMake Makefiles, and Visual Studio generators;
+5. add the CMake `SOURCES` integration across Ninja, Ninja Multi-Config, and
+   Unix Makefiles generators; the NMake Makefiles and Visual Studio
+   generators follow the PE/PDB backend rather than preceding it;
 6. add heterogeneous CMake units and remove handwritten reload scripts from
    managed examples;
 7. add equivalent GNU Make source and unit macros;
