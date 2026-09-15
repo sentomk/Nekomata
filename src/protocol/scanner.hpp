@@ -33,7 +33,7 @@ namespace neko::detail {
 
 /// Structural findings for a portable key, in detection order. `value` must
 /// be non-empty (callers run their identity checks first).
-enum class portable_key_issue {
+enum class portable_key_issue : std::uint8_t {
   none,
   boundary_slash,
   non_portable_character,

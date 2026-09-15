@@ -85,7 +85,7 @@ void require_end(std::istringstream& row, std::string_view source, std::size_t l
 
 [[nodiscard]] std::string read_quoted(std::istringstream& row, std::string_view source,
                                       std::size_t line, std::string_view field) {
-  const auto scanned = read_quoted_field(row);
+  auto scanned = read_quoted_field(row);
   if (!scanned.was_quoted) {
     reject(generation_offer_error_code::malformed_value, source, line,
            std::string(field) + " must be quoted");
