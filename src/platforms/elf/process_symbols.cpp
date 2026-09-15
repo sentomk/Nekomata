@@ -4,15 +4,13 @@
 
 #include <elf.h>
 
-#include <cstdio>
-#include <fstream>
-#include <stdexcept>
-#include <string>
-#include <vector>
-
+#include <base/file.hpp>
 #include <neko/log.hpp>
 
 #include <cstdint>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace neko::elf {
 namespace {
@@ -32,20 +30,6 @@ std::uintptr_t main_load_base() {
       },
       &base);
   return base;
-}
-
-std::vector<std::uint8_t> read_whole_file(const char* path) {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file) {
-    throw std::runtime_error(std::string("cannot open ") + path);
-  }
-  const std::streamsize size = file.tellg();
-  file.seekg(0);
-  std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
-  if (size > 0) {
-    file.read(reinterpret_cast<char*>(bytes.data()), size);
-  }
-  return bytes;
 }
 
 const std::uint8_t* bounds(const std::vector<std::uint8_t>& bytes, std::uint64_t offset,
@@ -71,7 +55,7 @@ bool has_external_binding(std::uint8_t binding) {
 } // namespace
 
 process_symbols::process_symbols() {
-  const auto bytes = read_whole_file("/proc/self/exe");
+  const auto bytes = detail::read_required_bytes("/proc/self/exe", "cannot open ");
 
   const auto* ehdr =
       reinterpret_cast<const Elf64_Ehdr*>(bounds(bytes, 0, sizeof(Elf64_Ehdr), "ELF header"));

@@ -1,10 +1,10 @@
 #include <neko/runtime/depfile_planner.hpp>
 
+#include <base/file.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -31,18 +31,6 @@ std::filesystem::path normalized_path(std::filesystem::path path,
                              "': " + ec.message());
   }
   return absolute.lexically_normal();
-}
-
-std::string read_depfile(const std::filesystem::path& path) {
-  std::ifstream input(path, std::ios::binary);
-  if (!input) {
-    throw std::runtime_error("cannot open dependency file: " + path.generic_string());
-  }
-  const std::string text{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
-  if (input.bad()) {
-    throw std::runtime_error("cannot read dependency file: " + path.generic_string());
-  }
-  return text;
 }
 
 std::string collapse_continuations(std::string_view text) {
@@ -136,7 +124,8 @@ void add_prerequisites(std::string_view line, std::size_t start,
 }
 
 std::unordered_set<std::string> dependencies_for(const depfile_entry& entry) {
-  const auto text = collapse_continuations(read_depfile(entry.dependency_file));
+  const auto text = collapse_continuations(
+      detail::read_required_file(entry.dependency_file, "cannot open dependency file: "));
   std::istringstream input{text};
   std::unordered_set<std::string> dependencies;
   std::string line;

@@ -1,45 +1,17 @@
 #include "publisher.hpp"
 
 #include "generation_offer.hpp"
+#include <base/file.hpp>
 #include <base/lock.hpp>
 #include <base/sha256.hpp>
 
 #include <algorithm>
 #include <chrono>
-#include <fstream>
-#include <iterator>
-#include <optional>
-#include <stdexcept>
 #include <system_error>
 #include <utility>
 
 namespace neko::detail {
 namespace {
-
-std::optional<std::string> read_file(const std::filesystem::path& path) {
-  std::error_code ec;
-  if (ec || !std::filesystem::is_regular_file(path, ec)) {
-    return std::nullopt;
-  }
-  std::ifstream input(path, std::ios::binary);
-  if (!input) {
-    return std::nullopt;
-  }
-  std::string content{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-  if (input.bad()) {
-    return std::nullopt;
-  }
-  return content;
-}
-
-void write_file(const std::filesystem::path& path, std::string_view bytes) {
-  std::filesystem::create_directories(path.parent_path());
-  std::ofstream output(path, std::ios::binary);
-  output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-  if (!output) {
-    throw std::runtime_error("cannot write publication file '" + path.generic_string() + "'");
-  }
-}
 
 std::uint64_t next_sequence(const std::filesystem::path& offers) {
   std::uint64_t next = 1;
@@ -91,7 +63,7 @@ publish_result publish_generation(const publish_request& request) {
   offer.members.reserve(request.members.size());
   std::string identity_input;
   for (const auto& member : request.members) {
-    const auto bytes = read_file(member.object_file);
+    const auto bytes = read_file_if_present(member.object_file);
     if (!bytes) {
       throw std::runtime_error("cannot read member object '" + member.member + "' at '" +
                                member.object_file.generic_string() + "'");
@@ -119,14 +91,22 @@ publish_result publish_generation(const publish_request& request) {
   const auto nonce = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
   const auto staging = stream / (".staging-" + nonce);
   std::filesystem::create_directories(staging);
+  // Member keys may nest ("group/a"), so every staged write creates its own
+  // parent directories; directory layout is publication policy, not base
+  // file policy.
+  const auto stage = [&staging](const std::string& relative, std::string_view bytes) {
+    const auto destination = staging / relative;
+    std::filesystem::create_directories(destination.parent_path());
+    write_required_file(destination, bytes, "cannot write publication file");
+  };
   for (const auto& member : request.members) {
-    const auto bytes = read_file(member.object_file);
+    const auto bytes = read_file_if_present(member.object_file);
     if (!bytes) {
       throw std::runtime_error("member object '" + member.member + "' vanished while publishing");
     }
-    write_file(staging / ("objects/" + member.member + ".o"), *bytes);
+    stage("objects/" + member.member + ".o", *bytes);
   }
-  write_file(staging / "manifest", manifest);
+  stage("manifest", manifest);
 
   const auto generation_directory = stream / "generations" / offer.generation_id;
   // Identical content yields the same ID: republishing replaces the old
@@ -137,7 +117,7 @@ publish_result publish_generation(const publish_request& request) {
 
   const auto marker =
       stream / "offers" / serialize_generation_offer_marker({offer.sequence, offer.generation_id});
-  write_file(stream / "offers" / "offer.staging", "");
+  write_required_file(stream / "offers" / "offer.staging", "", "cannot write publication file");
   std::filesystem::rename(stream / "offers" / "offer.staging", marker);
 
   return {offer.sequence, offer.generation_id};

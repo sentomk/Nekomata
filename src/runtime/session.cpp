@@ -4,6 +4,7 @@
 #include "generation.hpp"
 #include "generation_stream.hpp"
 
+#include <base/file.hpp>
 #include <neko/log.hpp>
 #include <neko/runtime/code_substituter.hpp>
 #include <neko/runtime/object_loader.hpp>
@@ -13,7 +14,6 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -23,20 +23,6 @@
 
 namespace neko {
 namespace {
-
-std::vector<std::uint8_t> read_file(const std::filesystem::path& path) {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file) {
-    throw std::runtime_error("cannot open object file: " + path.string());
-  }
-  const std::streamsize size = file.tellg();
-  file.seekg(0);
-  std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
-  if (size > 0) {
-    file.read(reinterpret_cast<char*>(bytes.data()), size);
-  }
-  return bytes;
-}
 
 std::filesystem::path normalized_source_path(const std::filesystem::path& path) {
   if (path.empty()) {
@@ -294,7 +280,8 @@ void reload_session::prepare_managed_group(managed_group& group) {
     for (std::size_t index = 0; index < observation.objects.size(); ++index) {
       const auto& member = observation.offer.members[index];
       generation->reloads.push_back(prepare_object(
-          read_file(observation.objects[index]), group.descriptor.group_id + "/" + member.member,
+          detail::read_required_bytes(observation.objects[index], "cannot open object file: "),
+          group.descriptor.group_id + "/" + member.member,
           std::filesystem::path(member.source_identity), member.build_information));
     }
     link_generation(*generation);
@@ -546,7 +533,7 @@ reload_session::try_prepare(const watched_object& watched) {
   claimed_files cleanup;
   cleanup.add(claimed_path);
 
-  const auto bytes = read_file(claimed_path);
+  const auto bytes = detail::read_required_bytes(claimed_path, "cannot open object file: ");
 
   const auto source_path = watched.source_path.generic_string();
 
@@ -591,7 +578,7 @@ reload_session::try_prepare(const generation_watch& watched) {
   generation->manifest_key = manifest_key;
   generation->reloads.reserve(offer.objects.size());
   for (const auto& object : offer.objects) {
-    const auto bytes = read_file(object.object_path);
+    const auto bytes = detail::read_required_bytes(object.object_path, "cannot open object file: ");
     generation->reloads.push_back(prepare_object(bytes, object.source_path.generic_string(),
                                                  object.source_path, object.build_information));
   }

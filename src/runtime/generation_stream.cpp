@@ -1,33 +1,16 @@
 #include "generation_stream.hpp"
 
 #include <algorithm>
-#include <fstream>
-#include <iterator>
 #include <optional>
 #include <system_error>
 #include <tuple>
 #include <utility>
 
+#include <base/file.hpp>
 #include <base/sha256.hpp>
 
 namespace neko::detail {
 namespace {
-
-std::optional<std::string> read_file(const std::filesystem::path& path) {
-  std::error_code ec;
-  if (ec || !std::filesystem::is_regular_file(path, ec)) {
-    return std::nullopt;
-  }
-  std::ifstream input(path, std::ios::binary);
-  if (!input) {
-    return std::nullopt;
-  }
-  std::string content{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-  if (input.bad()) {
-    return std::nullopt;
-  }
-  return content;
-}
 
 bool is_beneath(const std::filesystem::path& child, const std::filesystem::path& ancestor) {
   const auto relative_text = child.lexically_relative(ancestor).generic_string();
@@ -100,7 +83,7 @@ generation_stream_observation generation_stream::poll() {
   const auto generation_directory = publication / "generations" / selected.generation_id;
   const auto manifest_path = generation_directory / "manifest";
 
-  const auto manifest_text = read_file(manifest_path);
+  const auto manifest_text = read_file_if_present(manifest_path);
   if (!manifest_text) {
     return reject(selected.sequence, selected.generation_id,
                   "generation stream '" + descriptor_.publication_key + "': generation '" +
@@ -127,7 +110,7 @@ generation_stream_observation generation_stream::poll() {
                           member.member + "' object '" + member.object_path +
                           "' resolves outside the generation directory");
       }
-      const auto bytes = read_file(resolved);
+      const auto bytes = read_file_if_present(resolved);
       if (!bytes) {
         return reject(selected.sequence, selected.generation_id,
                       "generation stream '" + descriptor_.publication_key + "': member '" +
