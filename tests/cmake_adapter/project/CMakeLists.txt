@@ -22,6 +22,20 @@ if(TARGET nekomata::backends::elf)
   target_compile_options(adapter_demo PRIVATE -O0 -fno-pie -fno-pic)
   target_link_options(adapter_demo PRIVATE -no-pie)
   target_link_libraries(adapter_demo PRIVATE demo_hot nekomata::backends::elf)
+
+  # Heterogeneous group: two units with different compile settings commit
+  # atomically as one generation.
+  nekomata_add_reload_unit(physics_unit SOURCES physics.cpp)
+  target_compile_definitions(physics_unit PRIVATE DEMO_PHYSICS_VARIANT=2)
+
+  nekomata_add_reload_unit(logic_unit SOURCES extra.cpp)
+
+  nekomata_add_reload_group(mixed_hot UNITS physics_unit logic_unit)
+
+  add_executable(adapter_mixed main_mixed.cpp)
+  target_compile_options(adapter_mixed PRIVATE -O0 -fno-pie -fno-pic)
+  target_link_options(adapter_mixed PRIVATE -no-pie)
+  target_link_libraries(adapter_mixed PRIVATE mixed_hot nekomata::backends::elf)
 else()
   # Without a runtime backend only the build-side publication is testable.
   message(STATUS "neko_cmake_adapter: no runtime backend; build-side only")
