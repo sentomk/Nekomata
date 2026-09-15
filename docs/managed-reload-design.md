@@ -986,16 +986,12 @@ This is not yet the complete contract. Descriptor discovery is ELF-only.
 Preparation runs on an internal worker that discovers offers and builds
 transactions without touching live entries, so `update()` only commits, and
 the `preparing` and `ready` snapshot states are live; a fatal worker error is
-retained and rethrown by the next serialized public call. `session_options` and
-resource limits are still absent. Cross-TU candidate resolution is
-implemented — calls that no live definition satisfies resolve against sibling
-objects of the same generation once every object is loaded, including
-brand-new symbols, and an unresolved or unpatchable member rejects the whole
-generation. The shared host publication primitive exists as the internal
-`publish_generation()` library: a portable exclusive stream lock, strictly
-increasing sequence allocation, staged materialization with copied objects,
-and same-directory atomic release; identical content reuses its generation
-identity at the next sequence.
+retained and rethrown by the next serialized public call. `session_options`,
+resource limits, and the shared host publisher are still absent. Cross-TU
+candidate resolution is implemented — calls that no live definition satisfies
+resolve against sibling objects of the same generation once every object is
+loaded, including brand-new symbols, and an unresolved or unpatchable member
+rejects the whole generation.
 
 Legacy path-shaped object watches, `generation_watch`, the v1 ready marker,
 public planner setup, and handwritten demo rebuild scripts remain compatibility
