@@ -1,28 +1,16 @@
-#include <neko/session.hpp>
+#include "session_impl.hpp"
 
 #include "descriptor_discovery.hpp"
-#include "generation.hpp"
-#include "generation_stream.hpp"
-
-#include <base/file.hpp>
-#include <neko/log.hpp>
-#include <neko/runtime/code_substituter.hpp>
-#include <neko/runtime/object_loader.hpp>
-#include <neko/runtime/patch_planner.hpp>
 
 #include <algorithm>
-#include <chrono>
-#include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <stdexcept>
 #include <string>
-#include <string_view>
-#include <unordered_set>
+#include <system_error>
 #include <utility>
-#include <vector>
 
-namespace neko {
-namespace {
+namespace neko::detail {
 
 std::filesystem::path normalized_source_path(const std::filesystem::path& path) {
   if (path.empty()) {
@@ -33,35 +21,6 @@ std::filesystem::path normalized_source_path(const std::filesystem::path& path) 
   return (ec ? path : absolute).lexically_normal();
 }
 
-class claimed_files {
-public:
-  claimed_files() = default;
-
-  ~claimed_files() {
-    for (const auto& path : paths_) {
-      std::error_code ec;
-      std::filesystem::remove(path, ec);
-    }
-  }
-
-  claimed_files(const claimed_files&) = delete;
-  claimed_files& operator=(const claimed_files&) = delete;
-
-  void add(std::filesystem::path path) { paths_.push_back(std::move(path)); }
-
-  const std::filesystem::path& operator[](std::size_t index) const { return paths_[index]; }
-
-private:
-  std::vector<std::filesystem::path> paths_;
-};
-
-std::filesystem::path claimed_path_for(const std::filesystem::path& path) {
-  return path.parent_path() / (path.filename().string() + ".claimed");
-}
-
-// Transitional classification: stream rejections carry stable wording, and
-// transaction rejections are prefixed by their phase. Stable per-reason codes
-// replace the matching once the low-level layers carry typed errors outward.
 reload_error_code classify_stream_rejection(const std::string& message) {
   const std::string_view text = message;
   if (text.find("does not match descriptor") != std::string_view::npos) {
@@ -86,97 +45,22 @@ reload_error_code classify_transaction_rejection(const std::string& message) {
   return reload_error_code::object_rejected;
 }
 
-std::size_t validate_generation_membership(const detail::legacy_generation_offer& offer,
-                                           const patch_planner& planner) {
-  change_set changes;
-  changes.changed_files.reserve(offer.changed_files.size());
-  for (const auto& changed : offer.changed_files) {
-    changes.changed_files.push_back(changed.generic_string());
-  }
+} // namespace neko::detail
 
-  const auto plans = planner.plan(changes);
-  std::vector<std::string> expected_order;
-  std::unordered_set<std::string> expected;
-  for (const auto& plan : plans) {
-    for (const auto& translation_unit : plan.translation_units) {
-      const auto key = normalized_source_path(translation_unit).generic_string();
-      if (expected.insert(key).second) {
-        expected_order.push_back(key);
-      }
-    }
-  }
-  if (expected.empty()) {
-    throw std::runtime_error("reload generation '" + offer.id +
-                             "' rejected before any write: planner returned no translation units");
-  }
+namespace neko {
 
-  std::unordered_set<std::string> actual;
-  for (const auto& object : offer.objects) {
-    actual.insert(object.source_path.generic_string());
+std::vector<patch_plan> trivial_planner::plan(const change_set& changes) const {
+  std::vector<patch_plan> plans;
+  plans.reserve(changes.changed_files.size());
+  for (const auto& file : changes.changed_files) {
+    patch_plan plan;
+    plan.translation_units.push_back(file);
+    plans.push_back(std::move(plan));
   }
-  for (const auto& expected_source : expected_order) {
-    if (!actual.contains(expected_source)) {
-      throw std::runtime_error("reload generation '" + offer.id +
-                               "' rejected before any write: missing planned source '" +
-                               expected_source + "'");
-    }
-  }
-  for (const auto& object : offer.objects) {
-    const auto source = object.source_path.generic_string();
-    if (!expected.contains(source)) {
-      throw std::runtime_error("reload generation '" + offer.id +
-                               "' rejected before any write: unplanned source '" + source + "'");
-    }
-  }
-  return expected.size();
+  return plans;
 }
 
-} // namespace
-
-// Trivial planner: every changed file is one translation unit to rebuild.
-// Real dependency graphs (compiler .d files) are planned.
-class trivial_planner final : public patch_planner {
-public:
-  std::vector<patch_plan> plan(const change_set& changes) const override {
-    std::vector<patch_plan> plans;
-    plans.reserve(changes.changed_files.size());
-    for (const auto& file : changes.changed_files) {
-      patch_plan plan;
-      plan.translation_units.push_back(file);
-      plans.push_back(std::move(plan));
-    }
-    return plans;
-  }
-};
-
-struct reload_session::prepared_reload {
-  std::string watch_key;
-  std::string build_information;
-  loaded_image image;
-};
-
-struct reload_session::prepared_generation {
-  std::string id;
-  std::string manifest_key;
-  std::vector<std::unique_ptr<prepared_reload>> reloads;
-};
-
-struct reload_session::managed_group {
-  detail::group_descriptor descriptor;
-  std::unique_ptr<detail::generation_stream> stream;
-  bool enabled = false;
-  bool failed = false;
-  std::string last_applied_generation;
-  // Worker outcome awaiting the next update(): a prepared transaction, or a
-  // rejection to report exactly once. A newer prepared generation supersedes
-  // older uncommitted work.
-  std::unique_ptr<prepared_generation> prepared;
-  std::string pending_rejection;
-  std::uint64_t pending_rejection_sequence = 0;
-  std::string pending_rejection_id;
-};
-
-reload_session::reload_session(backend_bundle backends) : backends_(std::move(backends)) {
+reload_session::impl::impl(backend_bundle backends) : backends_(std::move(backends)) {
   if (!backends_.loader || !backends_.symbols || !backends_.state || !backends_.substituter) {
     throw std::runtime_error("reload_session: incomplete backend bundle");
   }
@@ -198,7 +82,7 @@ reload_session::reload_session(backend_bundle backends) : backends_(std::move(ba
             });
 }
 
-reload_session::~reload_session() {
+reload_session::impl::~impl() {
   {
     std::lock_guard<std::mutex> lock(worker_mutex_);
     worker_running_ = false;
@@ -209,97 +93,45 @@ reload_session::~reload_session() {
   }
 }
 
-void reload_session::start_worker() {
-  std::lock_guard<std::mutex> lock(worker_mutex_);
-  if (worker_running_ || worker_.joinable()) {
-    return;
-  }
-  worker_running_ = true;
-  worker_ = std::thread([this] { worker_loop(); });
+void reload_session::impl::watch(std::filesystem::path object_path) {
+  watched_.push_back({std::move(object_path), {}});
 }
 
-void reload_session::raise_fatal_worker_error(std::exception_ptr error) {
-  std::lock_guard<std::mutex> lock(worker_mutex_);
-  if (!fatal_worker_error_) {
-    fatal_worker_error_ = std::move(error);
-  }
-  worker_running_ = false;
+void reload_session::impl::watch(std::filesystem::path object_path,
+                                 const std::filesystem::path& source_path) {
+  watched_.push_back({std::move(object_path), detail::normalized_source_path(source_path)});
 }
 
-void reload_session::check_fatal_worker_error() const {
-  std::lock_guard<std::mutex> lock(worker_mutex_);
-  if (fatal_worker_error_) {
-    std::rethrow_exception(fatal_worker_error_);
-  }
+void reload_session::impl::watch(generation_watch generation) {
+  generation.manifest_path = detail::normalized_source_path(generation.manifest_path);
+  generation_watches_.push_back(std::move(generation));
 }
 
-void reload_session::worker_loop() {
-  try {
-    for (;;) {
-      std::unique_lock<std::mutex> lock(worker_mutex_);
-      worker_wake_.wait_for(lock, std::chrono::milliseconds(100),
-                            [this] { return !worker_running_; });
-      if (!worker_running_) {
-        return;
-      }
-      // Preparation runs under the lock: it never writes live entries or
-      // calls application code, so blocking snapshot() briefly is the whole
-      // interaction it may have with the outside world.
-      for (auto& group : managed_groups_) {
-        if (group->enabled) {
-          prepare_managed_group(*group);
-        }
-      }
-    }
-  } catch (...) {
-    raise_fatal_worker_error(std::current_exception());
+void reload_session::impl::watch() {
+  if (managed_groups_.empty()) {
+    throw std::runtime_error(
+        "reload_session: no embedded reload group descriptors; nothing to watch");
+  }
+  for (auto& group : managed_groups_) {
+    enable_managed_group(*group);
   }
 }
 
-void reload_session::prepare_managed_group(managed_group& group) {
-  const auto observation = group.stream->poll();
-  if (observation.status == detail::stream_status::idle) {
-    return;
-  }
-  if (observation.status == detail::stream_status::rejected) {
-    group.pending_rejection = observation.message;
-    group.pending_rejection_sequence = observation.sequence;
-    group.pending_rejection_id = observation.generation_id;
-    group.failed = true;
-    group.prepared.reset();
-    return;
-  }
+void reload_session::impl::watch(std::string_view group_id) {
+  enable_managed_group(find_managed_group(group_id));
+}
 
-  neko::log(neko::log_level::info, "generation '%s' covers %zu translation unit(s)\n",
-            observation.generation_id.c_str(), observation.offer.members.size());
-  try {
-    auto generation = std::make_unique<prepared_generation>();
-    generation->id = observation.generation_id;
-    generation->manifest_key = "managed:" + group.descriptor.group_id;
-    generation->reloads.reserve(observation.objects.size());
-    for (std::size_t index = 0; index < observation.objects.size(); ++index) {
-      const auto& member = observation.offer.members[index];
-      generation->reloads.push_back(prepare_object(
-          detail::read_required_bytes(observation.objects[index], "cannot open object file: "),
-          group.descriptor.group_id + "/" + member.member,
-          std::filesystem::path(member.source_identity), member.build_information));
-    }
-    link_generation(*generation);
-    validate_generation(*generation);
-    group.prepared = std::move(generation);
-    group.failed = false;
-    group.pending_rejection.clear();
-  } catch (const std::exception& e) {
-    // An artifact failure is a rejection value, not a worker fatality.
-    group.pending_rejection = e.what();
-    group.pending_rejection_sequence = observation.sequence;
-    group.pending_rejection_id = observation.generation_id;
-    group.failed = true;
-    group.prepared.reset();
+void reload_session::impl::unwatch() {
+  for (auto& group : managed_groups_) {
+    group->enabled = false;
   }
 }
 
-session_snapshot reload_session::snapshot() const {
+void reload_session::impl::unwatch(std::string_view group_id) {
+  find_managed_group(group_id).enabled = false;
+}
+
+session_snapshot reload_session::impl::snapshot() const {
   check_fatal_worker_error();
   std::lock_guard<std::mutex> lock(worker_mutex_);
   session_snapshot out;
@@ -333,84 +165,7 @@ session_snapshot reload_session::snapshot() const {
   return out;
 }
 
-void reload_session::watch(std::filesystem::path object_path) {
-  watched_.push_back({std::move(object_path), {}});
-}
-
-void reload_session::watch(std::filesystem::path object_path,
-                           const std::filesystem::path& source_path) {
-  watched_.push_back({std::move(object_path), normalized_source_path(source_path)});
-}
-
-void reload_session::watch(generation_watch generation) {
-  generation.manifest_path = normalized_source_path(generation.manifest_path);
-  generation_watches_.push_back(std::move(generation));
-}
-
-void reload_session::watch() {
-  if (managed_groups_.empty()) {
-    throw std::runtime_error(
-        "reload_session: no embedded reload group descriptors; nothing to watch");
-  }
-  for (auto& group : managed_groups_) {
-    enable_managed_group(*group);
-  }
-}
-
-void reload_session::watch(std::string_view group_id) {
-  enable_managed_group(find_managed_group(group_id));
-}
-
-void reload_session::watch(const char* group_id) {
-  watch(std::string_view{group_id});
-}
-
-void reload_session::unwatch() {
-  for (auto& group : managed_groups_) {
-    group->enabled = false;
-  }
-}
-
-void reload_session::unwatch(std::string_view group_id) {
-  find_managed_group(group_id).enabled = false;
-}
-
-void reload_session::unwatch(const char* group_id) {
-  unwatch(std::string_view{group_id});
-}
-
-void reload_session::enable_managed_group(managed_group& group) {
-  if (group.enabled) {
-    return;
-  }
-  if (!group.descriptor.generation_root_hint || group.descriptor.generation_root_hint->empty()) {
-    throw std::runtime_error("reload_session: reload group '" + group.descriptor.group_id +
-                             "' has no generation root hint");
-  }
-  // The stream outlives disable/enable cycles: its cursor is the group's
-  // consumption state and must not replay already-observed generations.
-  if (!group.stream) {
-    group.stream = std::make_unique<detail::generation_stream>(
-        group.descriptor, *group.descriptor.generation_root_hint);
-  }
-  group.enabled = true;
-  start_worker();
-  worker_wake_.notify_all();
-}
-
-reload_session::managed_group& reload_session::find_managed_group(std::string_view group_id) {
-  const auto found = std::find_if(managed_groups_.begin(), managed_groups_.end(),
-                                  [group_id](const std::unique_ptr<managed_group>& group) {
-                                    return group->descriptor.group_id == group_id;
-                                  });
-  if (found == managed_groups_.end()) {
-    throw std::runtime_error("reload_session: unknown reload group '" + std::string{group_id} +
-                             "'");
-  }
-  return **found;
-}
-
-update_result reload_session::update() {
+update_result reload_session::impl::update() {
   check_fatal_worker_error();
   update_result result;
   const auto redirected = [](const prepared_generation& generation) {
@@ -446,7 +201,7 @@ update_result reload_session::update() {
         } catch (const std::exception& e) {
           group->prepared.reset();
           event.status = update_status::rejected;
-          event.code = classify_transaction_rejection(e.what());
+          event.code = detail::classify_transaction_rejection(e.what());
           event.message = e.what();
           ++rejected_;
           last_result_ = e.what();
@@ -460,7 +215,7 @@ update_result reload_session::update() {
         event.status = update_status::rejected;
         event.group_id = group->descriptor.group_id;
         event.generation_id = group->pending_rejection_id;
-        event.code = classify_stream_rejection(group->pending_rejection);
+        event.code = detail::classify_stream_rejection(group->pending_rejection);
         event.message = group->pending_rejection;
         ++rejected_;
         last_result_ = event.message;
@@ -507,213 +262,64 @@ update_result reload_session::update() {
     last_result_ = e.what();
     update_event event;
     event.status = update_status::rejected;
-    event.code = classify_transaction_rejection(e.what());
+    event.code = detail::classify_transaction_rejection(e.what());
     event.message = e.what();
     result.events.push_back(std::move(event));
   }
   return result;
 }
 
-std::unique_ptr<reload_session::prepared_reload>
-reload_session::try_prepare(const watched_object& watched) {
-  const auto& path = watched.object_path;
-  std::error_code ec;
-  if (!std::filesystem::is_regular_file(path, ec)) {
-    return nullptr;
-  }
+reload_session::reload_session(backend_bundle backends)
+    : impl_(std::make_unique<impl>(std::move(backends))) {}
 
-  // Claim the file atomically before touching it, so a writer mid-flight
-  // cannot hand us a partial object. The rename is the "explicit confirm"
-  // of the reload trigger model.
-  const auto claimed_path = claimed_path_for(path);
-  std::filesystem::rename(path, claimed_path, ec);
-  if (ec) {
-    return nullptr; // someone else claimed it first, or it vanished
-  }
-  claimed_files cleanup;
-  cleanup.add(claimed_path);
+reload_session::~reload_session() = default;
 
-  const auto bytes = detail::read_required_bytes(claimed_path, "cannot open object file: ");
+reload_session::reload_session(reload_session&&) noexcept = default;
+reload_session& reload_session::operator=(reload_session&&) noexcept = default;
 
-  const auto source_path = watched.source_path.generic_string();
-
-  // Plan first (the planner owns "what does this object cover"): it is the
-  // seam the future dependency graph grows into.
-  change_set changes;
-  changes.changed_files.push_back(source_path.empty() ? path.string() : source_path);
-  const auto plans = backends_.planner->plan(changes);
-  neko::log(neko::log_level::info, "plan covers %zu translation unit(s)\n", plans.size());
-  return prepare_object(bytes, path.lexically_normal().generic_string(), watched.source_path, {});
+void reload_session::watch(std::filesystem::path object_path) {
+  impl_->watch(std::move(object_path));
 }
 
-std::unique_ptr<reload_session::prepared_generation>
-reload_session::try_prepare(const generation_watch& watched) {
-  auto offered = detail::try_claim_generation_manifest(watched.manifest_path);
-  if (!offered) {
-    return nullptr;
-  }
-  auto offer = std::move(*offered);
-
-  const auto manifest_key = watched.manifest_path.generic_string();
-  const auto applied = applied_generation_ids_by_manifest_.find(manifest_key);
-  if (applied != applied_generation_ids_by_manifest_.end() && applied->second.contains(offer.id)) {
-    throw std::runtime_error("reload generation '" + offer.id + "' was already applied");
-  }
-
-  const auto planned_count = validate_generation_membership(offer, *backends_.planner);
-  neko::log(neko::log_level::info, "generation '%s' covers %zu translation unit(s)\n",
-            offer.id.c_str(), planned_count);
-
-  for (const auto& object : offer.objects) {
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(object.object_path, ec)) {
-      throw std::runtime_error(
-          "reload generation '" + offer.id +
-          "' rejected before any write: object file is not ready: " + object.object_path.string());
-    }
-  }
-
-  auto generation = std::make_unique<prepared_generation>();
-  generation->id = offer.id;
-  generation->manifest_key = manifest_key;
-  generation->reloads.reserve(offer.objects.size());
-  for (const auto& object : offer.objects) {
-    const auto bytes = detail::read_required_bytes(object.object_path, "cannot open object file: ");
-    generation->reloads.push_back(prepare_object(bytes, object.source_path.generic_string(),
-                                                 object.source_path, object.build_information));
-  }
-  link_generation(*generation);
-  return generation;
+void reload_session::watch(std::filesystem::path object_path,
+                           const std::filesystem::path& source_path) {
+  impl_->watch(std::move(object_path), source_path);
 }
 
-std::unique_ptr<reload_session::prepared_reload>
-reload_session::prepare_object(const std::vector<std::uint8_t>& bytes, std::string watch_key,
-                               const std::filesystem::path& source_path,
-                               std::string build_information) {
-  auto prepared = std::make_unique<prepared_reload>();
-  prepared->watch_key = std::move(watch_key);
-  prepared->build_information = std::move(build_information);
-  prepared->image =
-      backends_.loader->load(bytes.data(), bytes.size(), source_path.generic_string());
-
-  // Complete every zero-write check during preparation. A rejected object
-  // therefore cannot reach the commit path or alter a live function entry.
-  const auto& image = prepared->image;
-  for (const auto& replacement : image.replacements) {
-    auto* target = static_cast<std::uint8_t*>(image.code) + replacement.offset_in_image;
-    if (!backends_.substituter->precheck_entry(replacement.old_entry, target)) {
-      throw std::runtime_error("reload rejected before any write: cannot patch entry of " +
-                               replacement.name);
-    }
-  }
-
-  return prepared;
+void reload_session::watch(generation_watch generation) {
+  impl_->watch(std::move(generation));
 }
 
-void reload_session::link_generation(prepared_generation& generation) {
-  std::vector<loaded_image*> images;
-  images.reserve(generation.reloads.size());
-  for (const auto& reload : generation.reloads) {
-    images.push_back(&reload->image);
-  }
-  backends_.loader->link_generation(images);
+void reload_session::watch() {
+  impl_->watch();
 }
 
-void reload_session::validate_generation(const prepared_generation& generation) const {
-  std::unordered_map<std::uintptr_t, std::string> entries;
-  for (const auto& prepared : generation.reloads) {
-    for (const auto& replacement : prepared->image.replacements) {
-      if (!entries.emplace(replacement.old_entry, replacement.name).second) {
-        throw std::runtime_error("reload rejected before any write: multiple objects replace entry "
-                                 "of " +
-                                 replacement.name);
-      }
-    }
-  }
+void reload_session::watch(std::string_view group_id) {
+  impl_->watch(group_id);
 }
 
-void reload_session::commit(const prepared_generation& generation) {
-  // Snapshot and patch only after the complete ready-object batch passed
-  // preparation. The saved list spans every object, so rollback does too.
-  struct saved_entry {
-    std::uintptr_t entry;
-    void* target;
-    const std::string* name;
-    std::uint8_t original[5];
-  };
+void reload_session::watch(const char* group_id) {
+  impl_->watch(std::string_view{group_id});
+}
 
-  std::size_t replacement_count = 0;
-  for (const auto& prepared : generation.reloads) {
-    replacement_count += prepared->image.replacements.size();
-  }
+void reload_session::unwatch() {
+  impl_->unwatch();
+}
 
-  std::vector<saved_entry> saved;
-  saved.reserve(replacement_count);
+void reload_session::unwatch(std::string_view group_id) {
+  impl_->unwatch(group_id);
+}
 
-  // Capture every rollback image before the first live write.
-  for (const auto& prepared : generation.reloads) {
-    const auto& image = prepared->image;
-    for (const auto& replacement : image.replacements) {
-      saved_entry entry{};
-      entry.entry = replacement.old_entry;
-      entry.target = static_cast<std::uint8_t*>(image.code) + replacement.offset_in_image;
-      entry.name = &replacement.name;
-      if (!backends_.substituter->snapshot_entry(entry.entry, entry.original)) {
-        throw std::runtime_error(
-            "reload rejected and rolled back 0 entries: cannot patch entry of " + *entry.name);
-      }
-      saved.push_back(entry);
-    }
-  }
+void reload_session::unwatch(const char* group_id) {
+  impl_->unwatch(std::string_view{group_id});
+}
 
-  std::size_t patched = 0;
-  for (const auto& entry : saved) {
-    if (!backends_.substituter->patch_entry(entry.entry, entry.target)) {
-      for (std::size_t index = patched; index > 0; --index) {
-        const auto& written = saved[index - 1];
-        backends_.substituter->restore_entry(written.entry, written.original);
-      }
-      throw std::runtime_error("reload rejected and rolled back " + std::to_string(patched) +
-                               " entr" + (patched == 1 ? "y" : "ies") + ": cannot patch entry of " +
-                               *entry.name);
-    }
-    ++patched;
-  }
+update_result reload_session::update() {
+  return impl_->update();
+}
 
-  // Warn about functions an updated object dropped. An object not present in
-  // this transaction keeps its prior redirects and must not look stale.
-  for (const auto& prepared : generation.reloads) {
-    auto& last_redirected = last_redirected_by_object_[prepared->watch_key];
-    for (const auto& previous : last_redirected) {
-      const auto& name = previous.first;
-      const bool still_present = std::any_of(
-          prepared->image.replacements.begin(), prepared->image.replacements.end(),
-          [&](const function_replacement& replacement) { return replacement.name == name; });
-      if (!still_present) {
-        neko::log(neko::log_level::warn,
-                  "stale redirect: '%s' was removed but its entry still jumps to old code\n",
-                  name.c_str());
-      }
-    }
-    last_redirected.clear();
-    for (const auto& replacement : prepared->image.replacements) {
-      last_redirected[replacement.name] = replacement.old_entry;
-    }
-  }
-
-  ++applied_;
-  if (generation.id.empty()) {
-    neko::log(neko::log_level::ok, "reload applied: %zu function(s) redirected\n",
-              replacement_count);
-    last_result_ = "applied " + std::to_string(replacement_count) + " function(s)";
-    return;
-  }
-
-  applied_generation_ids_by_manifest_[generation.manifest_key].insert(generation.id);
-  neko::log(neko::log_level::ok, "reload generation '%s' applied: %zu function(s) redirected\n",
-            generation.id.c_str(), replacement_count);
-  last_result_ = "applied generation '" + generation.id +
-                 "': " + std::to_string(replacement_count) + " function(s)";
+session_snapshot reload_session::snapshot() const {
+  return impl_->snapshot();
 }
 
 } // namespace neko

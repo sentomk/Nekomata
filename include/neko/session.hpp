@@ -20,18 +20,11 @@
 
 #pragma once
 
-#include <condition_variable>
 #include <cstdint>
-#include <exception>
 #include <filesystem>
 #include <memory>
-#include <mutex>
-#include <stdexcept>
 #include <string>
 #include <string_view>
-#include <thread>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include <neko/runtime/fwd.hpp>
@@ -132,10 +125,19 @@ struct session_snapshot {
   std::vector<std::string> watched_paths;
 };
 
+/// The in-process reload agent. One session owns the watch registry, the
+/// background preparation worker, and the commit path; its interface carries
+/// none of that machinery — the implementation hides behind `impl`.
 class reload_session {
 public:
   explicit reload_session(backend_bundle backends);
   ~reload_session();
+
+  reload_session(reload_session&&) noexcept;
+  reload_session& operator=(reload_session&&) noexcept;
+
+  reload_session(const reload_session&) = delete;
+  reload_session& operator=(const reload_session&) = delete;
 
   /// Offer an object file path to watch. When a regular file appears there,
   /// it is claimed and loaded on the next update(). This name-only form can
@@ -202,58 +204,8 @@ public:
   [[nodiscard]] session_snapshot snapshot() const;
 
 private:
-  struct watched_object {
-    std::filesystem::path object_path;
-    std::filesystem::path source_path;
-  };
-
-  struct managed_group;
-
-  struct prepared_reload;
-  struct prepared_generation;
-  std::unique_ptr<prepared_reload> try_prepare(const watched_object& watched);
-  std::unique_ptr<prepared_generation> try_prepare(const generation_watch& watched);
-  std::unique_ptr<prepared_reload> prepare_object(const std::vector<std::uint8_t>& bytes,
-                                                  std::string watch_key,
-                                                  const std::filesystem::path& source_path,
-                                                  std::string build_information);
-  void validate_generation(const prepared_generation& generation) const;
-  void link_generation(prepared_generation& generation);
-  void commit(const prepared_generation& generation);
-
-  backend_bundle backends_;
-  std::vector<watched_object> watched_;
-  std::vector<generation_watch> generation_watches_;
-  std::vector<std::unique_ptr<managed_group>> managed_groups_;
-
-  void enable_managed_group(managed_group& group);
-  [[nodiscard]] managed_group& find_managed_group(std::string_view group_id);
-
-  // Background preparation. The worker discovers offers, parses objects, and
-  // builds transactions without touching live entries; only update() commits.
-  // It starts with the first enabled group and joins at destruction. Public
-  // calls stay externally serialized; the mutex only separates the worker
-  // from those calls.
-  void start_worker();
-  void worker_loop();
-  void prepare_managed_group(managed_group& group);
-  void raise_fatal_worker_error(std::exception_ptr error);
-  void check_fatal_worker_error() const;
-  mutable std::mutex worker_mutex_;
-  std::condition_variable worker_wake_;
-  std::thread worker_;
-  bool worker_running_ = false;
-  std::exception_ptr fatal_worker_error_;
-  std::unordered_map<std::string, std::unordered_set<std::string>>
-      applied_generation_ids_by_manifest_;
-  /// Functions redirected by the last fully-applied load of each watched
-  /// object. Used to warn when a later load of that same object drops a
-  /// function whose entry still jumps to stale arena code.
-  std::unordered_map<std::string, std::unordered_map<std::string, std::uintptr_t>>
-      last_redirected_by_object_;
-  std::size_t applied_ = 0;
-  std::size_t rejected_ = 0;
-  std::string last_result_ = "no offers yet";
+  class impl;
+  std::unique_ptr<impl> impl_;
 };
 
 } // namespace neko
