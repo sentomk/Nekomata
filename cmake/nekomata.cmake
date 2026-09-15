@@ -56,9 +56,15 @@ function(nekomata_add_reload_group name)
   if(NOT ARG_SOURCES AND NOT ARG_UNITS)
     message(FATAL_ERROR "nekomata_add_reload_group(${name}): SOURCES or UNITS is required")
   endif()
-  if(NOT TARGET neko_publisher)
-    message(FATAL_ERROR "nekomata_add_reload_group(${name}): the private neko_publisher "
-      "executable is not available; the adapter needs the Nekomata build tree")
+  if(NOT TARGET neko_publisher AND NOT TARGET nekomata::host_publisher)
+    message(FATAL_ERROR "nekomata_add_reload_group(${name}): the private host publisher "
+      "executable is not available; the adapter needs the Nekomata build tree or an "
+      "installed nekomata package")
+  endif()
+  if(TARGET neko_publisher)
+    set(neko_publisher_executable "$<TARGET_FILE:neko_publisher>")
+  else()
+    set(neko_publisher_executable "$<TARGET_FILE:nekomata::host_publisher>")
   endif()
 
   # ---- identity ------------------------------------------------------------
@@ -160,9 +166,9 @@ function(nekomata_add_reload_group name)
   endforeach()
   add_custom_command(
     OUTPUT "${descriptor_tu}"
-    COMMAND $<TARGET_FILE:neko_publisher> descriptor --output "${descriptor_tu}"
+    COMMAND ${neko_publisher_executable} descriptor --output "${descriptor_tu}"
       ${descriptor_args}
-    DEPENDS neko_publisher
+    DEPENDS ${neko_publisher_executable}
     VERBATIM)
   add_library(${name}_neko_descriptor OBJECT "${descriptor_tu}")
   set_target_properties(${name}_neko_descriptor PROPERTIES POSITION_INDEPENDENT_CODE OFF)
@@ -177,7 +183,7 @@ function(nekomata_add_reload_group name)
   set(stamp "${generation_root}/$<CONFIG>/${name}.reload.stamp")
   add_custom_command(
     OUTPUT "${stamp}"
-    COMMAND $<TARGET_FILE:neko_publisher>
+    COMMAND ${neko_publisher_executable}
       --root "${generation_root}"
       --key "${publication_key}"
       --group "${group_id}"
@@ -187,7 +193,7 @@ function(nekomata_add_reload_group name)
       --objects ${publication_objects}
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${generation_root}/$<CONFIG>"
     COMMAND "${CMAKE_COMMAND}" -E touch "${stamp}"
-    DEPENDS neko_publisher ${publication_objects}
+    DEPENDS ${neko_publisher_executable} ${publication_objects}
     COMMAND_EXPAND_LISTS VERBATIM)
   add_custom_target(${name}_reload DEPENDS "${stamp}")
   # File-level dependencies decide staleness; the target-level edge is what

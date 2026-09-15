@@ -1,0 +1,6 @@
+# nekomata package configuration. The exported targets file carries its own
+# relocation; only the thread dependency needs resolving up front.
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/nekomata-targets.cmake")

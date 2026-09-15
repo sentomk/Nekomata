@@ -152,6 +152,77 @@ if(NEKOMATA_BUILD_TESTS)
 endif()
 
 # ---------------------------------------------------------------------------
+# Install & export
+#
+# The installed package exposes `nekomata::neko` (runtime + the platform
+# backend), `nekomata::runtime`, `nekomata::elf`, and the adapter-facing
+# `nekomata::host_publisher` executable. `neko_protocol` and `neko_base_c`
+# ride the export for the static link closure; they are internal. The TUI
+# is not exported yet: its Glyph dependency needs an install story first.
+# ---------------------------------------------------------------------------
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+find_package(Threads REQUIRED)
+target_link_libraries(neko_runtime PUBLIC Threads::Threads)
+
+install(DIRECTORY include/neko
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  FILES_MATCHING PATTERN "*.hpp")
+install(FILES
+  "${PROJECT_BINARY_DIR}/generated/neko/version.hpp"
+  "${PROJECT_BINARY_DIR}/generated/neko/config.hpp"
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/neko)
+
+set(neko_export_targets neko_runtime neko_protocol neko_base_c)
+if(TARGET neko_backend_elf)
+  list(APPEND neko_export_targets neko_backend_elf)
+endif()
+if(TARGET neko_publisher)
+  list(APPEND neko_export_targets neko_publisher)
+endif()
+if(NOT NEKOMATA_TUI OR NOT TARGET neko_tui)
+  # The aggregate is exportable only while every target it names is.
+  list(APPEND neko_export_targets neko_runtime_aggregate)
+  set_target_properties(neko_runtime_aggregate PROPERTIES EXPORT_NAME neko)
+endif()
+
+set_target_properties(neko_runtime PROPERTIES EXPORT_NAME runtime)
+set_target_properties(neko_protocol PROPERTIES EXPORT_NAME protocol)
+set_target_properties(neko_base_c PROPERTIES EXPORT_NAME base_c)
+if(TARGET neko_backend_elf)
+  set_target_properties(neko_backend_elf PROPERTIES EXPORT_NAME elf)
+endif()
+if(TARGET neko_publisher)
+  set_target_properties(neko_publisher PROPERTIES EXPORT_NAME host_publisher)
+endif()
+
+install(TARGETS ${neko_export_targets}
+  EXPORT nekomata-targets
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+install(EXPORT nekomata-targets
+  NAMESPACE nekomata::
+  FILE nekomata-targets.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/nekomata)
+
+write_basic_package_version_file(
+  "${PROJECT_BINARY_DIR}/nekomata-config-version.cmake"
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion)
+configure_file(cmake/nekomata-config.cmake.in
+  "${PROJECT_BINARY_DIR}/nekomata-config.cmake" @ONLY)
+install(FILES
+  "${PROJECT_BINARY_DIR}/nekomata-config.cmake"
+  "${PROJECT_BINARY_DIR}/nekomata-config-version.cmake"
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/nekomata)
+# The build-adapter module; consumers include() it after find_package.
+install(FILES cmake/nekomata.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/nekomata)
+
+# ---------------------------------------------------------------------------
 # Configuration summary
 # ---------------------------------------------------------------------------
 message(STATUS "nekomata ${PROJECT_VERSION}")

@@ -33,7 +33,8 @@ target_link_libraries(neko_runtime PRIVATE neko_protocol neko_base_c)
 target_include_directories(neko_runtime
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/generated>)
+    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/generated>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_compile_features(neko_runtime PUBLIC cxx_std_20)
 nekomata_apply_warnings(neko_runtime)
 nekomata_apply_sanitizers(neko_runtime)
