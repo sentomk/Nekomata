@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
   if (source != nullptr) {
     session.watch(watched, source);
   } else {
-    session.watch(watched);
+    session.watch(std::filesystem::path{watched});
   }
 
   for (int i = 0; i < 3000; ++i) {
