@@ -23,8 +23,11 @@ int neko_file_read(const char* path, neko_file_contents* out) {
   if (!utf8_to_wide(path, wide, MAX_PATH)) {
     return neko_file_missing;
   }
-  HANDLE handle = CreateFileW(wide, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
-                              FILE_ATTRIBUTE_NORMAL, NULL);
+  /* fstream opened files deny nothing; keep that leniency so concurrent
+   * readers/writers of one stream keep working. */
+  HANDLE handle =
+      CreateFileW(wide, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
   if (handle == INVALID_HANDLE_VALUE) {
     return neko_file_missing;
   }
@@ -95,8 +98,8 @@ int neko_file_write(const char* path, const void* data, size_t size) {
   if (!utf8_to_wide(path, wide, MAX_PATH)) {
     return neko_file_io_failed;
   }
-  HANDLE handle =
-      CreateFileW(wide, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  HANDLE handle = CreateFileW(wide, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                              CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
   if (handle == INVALID_HANDLE_VALUE) {
     return neko_file_io_failed;
   }
