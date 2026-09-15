@@ -1,6 +1,8 @@
 #include <neko/session.hpp>
 
+#include "descriptor_discovery.hpp"
 #include "generation.hpp"
+#include "generation_stream.hpp"
 
 #include <neko/log.hpp>
 #include <neko/runtime/code_substituter.hpp>
@@ -144,6 +146,12 @@ struct reload_session::prepared_generation {
   std::vector<std::unique_ptr<prepared_reload>> reloads;
 };
 
+struct reload_session::managed_group {
+  detail::group_descriptor descriptor;
+  std::unique_ptr<detail::generation_stream> stream;
+  bool enabled = false;
+};
+
 reload_session::reload_session(backend_bundle backends) : backends_(std::move(backends)) {
   if (!backends_.loader || !backends_.symbols || !backends_.state || !backends_.substituter) {
     throw std::runtime_error("reload_session: incomplete backend bundle");
@@ -151,7 +159,22 @@ reload_session::reload_session(backend_bundle backends) : backends_(std::move(ba
   if (!backends_.planner) {
     backends_.planner = std::make_unique<trivial_planner>();
   }
+
+  // Descriptor discovery is a construction-time configuration step: corrupt
+  // or conflicting embedded descriptors are configuration exceptions. The
+  // groups stay disabled until watch() names them.
+  for (auto& descriptor : detail::discover_embedded_descriptors()) {
+    auto group = std::make_unique<managed_group>();
+    group->descriptor = std::move(descriptor);
+    managed_groups_.push_back(std::move(group));
+  }
+  std::sort(managed_groups_.begin(), managed_groups_.end(),
+            [](const std::unique_ptr<managed_group>& a, const std::unique_ptr<managed_group>& b) {
+              return a->descriptor.group_id < b->descriptor.group_id;
+            });
 }
+
+reload_session::~reload_session() = default;
 
 reload_session::stats reload_session::session_stats() const {
   stats out;
@@ -163,6 +186,11 @@ reload_session::stats reload_session::session_stats() const {
   }
   for (const auto& watched : generation_watches_) {
     out.watched_paths.push_back(watched.manifest_path.string());
+  }
+  for (const auto& group : managed_groups_) {
+    if (group->enabled) {
+      out.watched_paths.push_back(group->descriptor.group_id);
+    }
   }
   return out;
 }
@@ -181,8 +209,102 @@ void reload_session::watch(generation_watch generation) {
   generation_watches_.push_back(std::move(generation));
 }
 
+void reload_session::watch() {
+  if (managed_groups_.empty()) {
+    throw std::runtime_error(
+        "reload_session: no embedded reload group descriptors; nothing to watch");
+  }
+  for (auto& group : managed_groups_) {
+    enable_managed_group(*group);
+  }
+}
+
+void reload_session::watch(std::string_view group_id) {
+  enable_managed_group(find_managed_group(group_id));
+}
+
+void reload_session::watch(const char* group_id) {
+  watch(std::string_view{group_id});
+}
+
+void reload_session::unwatch() {
+  for (auto& group : managed_groups_) {
+    group->enabled = false;
+  }
+}
+
+void reload_session::unwatch(std::string_view group_id) {
+  find_managed_group(group_id).enabled = false;
+}
+
+void reload_session::unwatch(const char* group_id) {
+  unwatch(std::string_view{group_id});
+}
+
+void reload_session::enable_managed_group(managed_group& group) {
+  if (group.enabled) {
+    return;
+  }
+  if (!group.descriptor.generation_root_hint || group.descriptor.generation_root_hint->empty()) {
+    throw std::runtime_error("reload_session: reload group '" + group.descriptor.group_id +
+                             "' has no generation root hint");
+  }
+  // The stream outlives disable/enable cycles: its cursor is the group's
+  // consumption state and must not replay already-observed generations.
+  if (!group.stream) {
+    group.stream = std::make_unique<detail::generation_stream>(
+        group.descriptor, *group.descriptor.generation_root_hint);
+  }
+  group.enabled = true;
+}
+
+reload_session::managed_group& reload_session::find_managed_group(std::string_view group_id) {
+  const auto found = std::find_if(managed_groups_.begin(), managed_groups_.end(),
+                                  [group_id](const std::unique_ptr<managed_group>& group) {
+                                    return group->descriptor.group_id == group_id;
+                                  });
+  if (found == managed_groups_.end()) {
+    throw std::runtime_error("reload_session: unknown reload group '" + std::string{group_id} +
+                             "'");
+  }
+  return **found;
+}
+
 bool reload_session::update() {
   try {
+    // Managed groups come first, in group-ID order. One call commits at most
+    // one generation overall, matching the single-transaction result model;
+    // a ready group rejected here throws, and a not-yet-processed group's
+    // offer is picked up by the next call.
+    for (auto& group : managed_groups_) {
+      if (!group->enabled) {
+        continue;
+      }
+      const auto observation = group->stream->poll();
+      if (observation.status == detail::stream_status::idle) {
+        continue;
+      }
+      if (observation.status == detail::stream_status::rejected) {
+        throw std::runtime_error(observation.message);
+      }
+
+      neko::log(neko::log_level::info, "generation '%s' covers %zu translation unit(s)\n",
+                observation.generation_id.c_str(), observation.offer.members.size());
+      prepared_generation generation;
+      generation.id = observation.generation_id;
+      generation.manifest_key = "managed:" + group->descriptor.group_id;
+      generation.reloads.reserve(observation.objects.size());
+      for (std::size_t index = 0; index < observation.objects.size(); ++index) {
+        const auto& member = observation.offer.members[index];
+        generation.reloads.push_back(prepare_object(
+            read_file(observation.objects[index]), group->descriptor.group_id + "/" + member.member,
+            std::filesystem::path(member.source_identity), member.build_information));
+      }
+      validate_generation(generation);
+      commit(generation);
+      return true;
+    }
+
     prepared_generation generation;
     for (const auto& watched : generation_watches_) {
       if (auto offered_generation = try_prepare(watched)) {

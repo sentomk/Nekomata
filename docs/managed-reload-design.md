@@ -900,12 +900,15 @@ planning, group preparation, and the managed group-descriptor and generation-
 offer codecs.
 
 The codec layer defines `nekomata-generation-v2` values and validates them
-against descriptors, and `generation_stream` reads local publication streams:
-it scans immutable offers, selects the newest by sequence, verifies object
-digests, and keeps one cursor per consumer. Neither is exposed to a managed
-session yet: embedded descriptors are discovered and validated through the
-`neko_groups` linker section, but the managed `watch()` wiring is still
-missing, so the v2 protocol is not consumable end to end.
+against descriptors, `generation_stream` reads local publication streams
+(immutable offers, newest by sequence, object digests, one cursor per
+consumer), and `reload_session` discovers embedded descriptors through the
+`neko_groups` linker section at construction and consumes their streams
+through `watch()`, `watch(group_id)`, `unwatch()`, and `unwatch(group_id)`.
+`update()` still applies at most one generation per call and reports through
+the boolean result model; the remaining managed gaps are the structured
+`update_result` and `session_snapshot`, the background preparation worker,
+`session_options`, and the build adapters.
 
 It does not implement this complete managed contract. In particular,
 `generation_watch`, the v1 ready marker, public planner setup, and the current

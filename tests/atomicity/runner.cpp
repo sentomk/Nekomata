@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
   const char* watched = argc > 1 ? argv[1] : "atomic.new.o";
   std::setvbuf(stdout, nullptr, _IOLBF, 0);
   neko::reload_session session{neko::elf::create_backend()};
-  session.watch(watched);
+  session.watch(std::filesystem::path{watched});
 
   for (int i = 0; i < 3000; ++i) {
     tick();

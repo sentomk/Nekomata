@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
     std::printf("startup rejected: %s\n", e.what());
     return 1;
   }
-  session->watch(watched);
+  session->watch(std::filesystem::path{watched});
 
   for (int i = 0; i < 600; ++i) { // ~60 s ceiling; the script requests an earlier stop
     if (stop_file && std::filesystem::exists(stop_file)) {

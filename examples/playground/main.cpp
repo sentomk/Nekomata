@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
   std::setvbuf(stdout, nullptr, _IOLBF, 0);
 
   neko::reload_session session{neko::elf::create_backend()}; // 1. agent
-  session.watch(watched);                                    // 2. watch
+  session.watch(std::filesystem::path{watched});             // 2. watch
 
   std::printf("\033[2J\033[H"); // Clear the screen once.
   neko::log(neko::log_level::info,

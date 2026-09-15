@@ -25,6 +25,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -55,6 +56,7 @@ struct generation_watch {
 class reload_session {
 public:
   explicit reload_session(backend_bundle backends);
+  ~reload_session();
 
   /// Offer an object file path to watch. When a regular file appears there,
   /// it is claimed and loaded on the next update(). This name-only form can
@@ -74,6 +76,34 @@ public:
   /// individual object watches, no object is claimed before the manifest is
   /// atomically published.
   void watch(generation_watch generation);
+
+  /// Enable every managed reload group embedded in this program, discovered
+  /// from the linked descriptors at session construction. Throws a
+  /// configuration exception when the executable embeds no group descriptor,
+  /// or a group carries no generation-root hint. Idempotent.
+  void watch();
+
+  /// Enable one managed reload group by its group ID. Throws a configuration
+  /// exception for an unknown ID. Idempotent.
+  void watch(std::string_view group_id);
+
+  /// Literal overload: without it, `watch("id")` would be ambiguous between
+  /// the path and string_view forms. It retires together with the path
+  /// watches it disambiguates.
+  void watch(const char* group_id);
+
+  /// Disable every managed group. Legacy object and manifest watches are not
+  /// affected. Idempotent.
+  void unwatch();
+
+  /// Disable one managed group. Idempotent; an unknown ID is a configuration
+  /// exception. Re-enabling a group resumes from its consumer cursor and
+  /// never replays generations already observed. Disabling never restores
+  /// applied machine code.
+  void unwatch(std::string_view group_id);
+
+  /// Literal overload for `unwatch(std::string_view)`.
+  void unwatch(const char* group_id);
 
   /// Pick up the first ready generation, or batch ready individual object
   /// watches in registration order. Every object in the selected offer is
@@ -103,6 +133,8 @@ private:
     std::filesystem::path source_path;
   };
 
+  struct managed_group;
+
   struct prepared_reload;
   struct prepared_generation;
   std::unique_ptr<prepared_reload> try_prepare(const watched_object& watched);
@@ -117,6 +149,10 @@ private:
   backend_bundle backends_;
   std::vector<watched_object> watched_;
   std::vector<generation_watch> generation_watches_;
+  std::vector<std::unique_ptr<managed_group>> managed_groups_;
+
+  void enable_managed_group(managed_group& group);
+  [[nodiscard]] managed_group& find_managed_group(std::string_view group_id);
   std::unordered_map<std::string, std::unordered_set<std::string>>
       applied_generation_ids_by_manifest_;
   /// Functions redirected by the last fully-applied load of each watched

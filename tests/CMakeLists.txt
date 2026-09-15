@@ -97,6 +97,15 @@ nekomata_apply_warnings(neko_descriptor_discovery)
 nekomata_apply_sanitizers(neko_descriptor_discovery)
 add_test(NAME neko.descriptor_discovery COMMAND neko_descriptor_discovery)
 
+add_executable(neko_managed_session managed_session.cpp)
+target_include_directories(neko_managed_session
+  PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+target_link_libraries(neko_managed_session PRIVATE nekomata::neko)
+nekomata_apply_warnings(neko_managed_session)
+nekomata_apply_sanitizers(neko_managed_session)
+add_test(NAME neko.managed_session COMMAND neko_managed_session)
+
 add_subdirectory(headers)
 add_subdirectory(harness)
 add_subdirectory(tooling)
@@ -154,6 +163,28 @@ if(NEKOMATA_TARGET_LINUX)
   nekomata_apply_warnings(neko_descriptor_embedded)
   nekomata_apply_sanitizers(neko_descriptor_embedded)
   add_test(NAME neko.descriptor_embedded COMMAND neko_descriptor_embedded)
+
+  # Managed watch end to end: embedded descriptor, published generations,
+  # unwatch/resume semantics against a real linker section.
+  add_executable(managed_reload_runner
+    managed_reload/runner.cpp
+    managed_reload/managed_hot.cpp)
+  target_include_directories(managed_reload_runner PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+  target_link_libraries(managed_reload_runner PRIVATE nekomata::backends::elf)
+  set_target_properties(managed_reload_runner PROPERTIES POSITION_INDEPENDENT_CODE OFF)
+  target_compile_options(managed_reload_runner PRIVATE -O0 -fno-pie -fno-pic)
+  target_link_options(managed_reload_runner PRIVATE -no-pie)
+  set_source_files_properties(managed_reload/managed_hot.cpp PROPERTIES
+    COMPILE_OPTIONS "-fno-exceptions;-fno-asynchronous-unwind-tables")
+  nekomata_apply_warnings(managed_reload_runner)
+
+  configure_file(managed_reload/managed_reload.sh.in
+    "${CMAKE_CURRENT_BINARY_DIR}/managed-reload-run.sh" @ONLY)
+  add_test(NAME neko.managed_reload
+    COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/managed-reload-run.sh")
+  set_tests_properties(neko.managed_reload PROPERTIES TIMEOUT 180)
   if(NEKOMATA_BUILD_FUZZ AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_subdirectory(fuzz)
   endif()

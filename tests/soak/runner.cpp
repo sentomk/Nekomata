@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
   const std::size_t arenas_before = count_arenas_from_maps();
 
   neko::reload_session session{neko::elf::create_backend()};
-  session.watch(watched);
+  session.watch(std::filesystem::path{watched});
 
   std::size_t applied = 0;
   for (int i = 0; i < max_ticks && g_stop == 0; ++i) {

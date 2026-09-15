@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
   std::setvbuf(stdout, nullptr, _IOLBF, 0);
 
   neko::reload_session session{neko::elf::create_backend()}; // 1. agent
-  session.watch(watched);                                    // 2. watch a path
+  session.watch(std::filesystem::path{watched});             // 2. watch a path
   neko::log(neko::log_level::info, "watching '%s' (pid %d) — drop a fresh hot.o to reload\n",
             watched, static_cast<int>(getpid()));
 
