@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "runtime/group_descriptor.hpp"
+#include "protocol/group_descriptor.hpp"
 
 #include <cstdint>
 #include <limits>

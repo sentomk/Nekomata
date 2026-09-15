@@ -5,8 +5,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include "protocol/group_descriptor.hpp"
 #include "runtime/descriptor_discovery.hpp"
-#include "runtime/group_descriptor.hpp"
 
 #include <cstdint>
 #include <cstring>

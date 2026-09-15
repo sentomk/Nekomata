@@ -1,9 +1,9 @@
 #include "publisher.hpp"
 
-#include "generation_offer.hpp"
 #include <base/file.hpp>
 #include <base/lock.hpp>
 #include <base/sha256.hpp>
+#include <protocol/generation_offer.hpp>
 
 #include <algorithm>
 #include <chrono>

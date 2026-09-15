@@ -2,7 +2,7 @@
 
 #include <span>
 
-#include "descriptor_section.hpp"
+#include <protocol/descriptor_section.hpp>
 
 // The linker synthesizes __start_<name>/__stop_<name> for input sections
 // whose names are valid C identifiers, so `neko_groups` yields exactly these

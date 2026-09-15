@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "runtime/descriptor_section.hpp"
+#include "protocol/descriptor_section.hpp"
 
 #include <cstdint>
 #include <span>

@@ -12,8 +12,8 @@
 #include <string>
 #include <vector>
 
-#include "runtime/descriptor_section.hpp"
-#include "runtime/group_descriptor.hpp"
+#include "protocol/descriptor_section.hpp"
+#include "protocol/group_descriptor.hpp"
 #include "runtime/publisher.hpp"
 
 #include <fstream>

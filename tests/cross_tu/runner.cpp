@@ -6,8 +6,8 @@
 #include <neko/platforms/elf.hpp>
 #include <neko/session.hpp>
 
-#include "runtime/descriptor_section.hpp"
-#include "runtime/group_descriptor.hpp"
+#include "protocol/descriptor_section.hpp"
+#include "protocol/group_descriptor.hpp"
 
 #include <chrono>
 #include <cstdint>

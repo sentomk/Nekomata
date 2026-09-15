@@ -1,10 +1,10 @@
 #include "group_descriptor.hpp"
 
-#include <charconv>
+#include <protocol/scanner.hpp>
+
 #include <iomanip>
 #include <sstream>
 #include <string>
-#include <system_error>
 #include <unordered_set>
 #include <utility>
 
@@ -25,15 +25,6 @@ namespace {
   throw descriptor_error{code, line, error_message(source, line, reason)};
 }
 
-[[nodiscard]] bool contains_control_character(std::string_view value) {
-  for (const unsigned char byte : value) {
-    if (byte < 0x20 || byte == 0x7f) {
-      return true;
-    }
-  }
-  return false;
-}
-
 void require_identity(std::string_view value, std::string_view field, std::string_view source,
                       std::size_t line) {
   if (value.empty()) {
@@ -46,63 +37,45 @@ void require_identity(std::string_view value, std::string_view field, std::strin
   }
 }
 
-[[nodiscard]] bool is_portable_key_character(unsigned char byte) {
-  return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
-         (byte >= '0' && byte <= '9') || byte == '_' || byte == '-' || byte == '.' || byte == '/';
-}
-
 void require_portable_key(std::string_view value, std::string_view field, bool allow_components,
                           std::string_view source, std::size_t line) {
   require_identity(value, field, source, line);
-  if (value.front() == '/' || value.back() == '/') {
+  switch (inspect_portable_key(value, allow_components)) {
+  case portable_key_issue::none:
+    break;
+  case portable_key_issue::boundary_slash:
     reject(descriptor_error_code::invalid_field, source, line,
            std::string(field) + " must be a relative logical key");
-  }
-
-  std::size_t component_begin = 0;
-  for (std::size_t index = 0; index <= value.size(); ++index) {
-    if (index != value.size() && value[index] != '/') {
-      if (!is_portable_key_character(static_cast<unsigned char>(value[index]))) {
-        reject(descriptor_error_code::invalid_field, source, line,
-               std::string(field) + " contains a non-portable character");
-      }
-      continue;
-    }
-
-    if (!allow_components && index != value.size()) {
-      reject(descriptor_error_code::invalid_field, source, line,
-             std::string(field) + " must be one path component");
-    }
-    const auto component = value.substr(component_begin, index - component_begin);
-    if (component.empty() || component == "." || component == "..") {
-      reject(descriptor_error_code::invalid_field, source, line,
-             std::string(field) + " contains an invalid path component");
-    }
-    component_begin = index + 1;
+  case portable_key_issue::non_portable_character:
+    reject(descriptor_error_code::invalid_field, source, line,
+           std::string(field) + " contains a non-portable character");
+  case portable_key_issue::forbidden_component:
+    reject(descriptor_error_code::invalid_field, source, line,
+           std::string(field) + " must be one path component");
+  case portable_key_issue::invalid_component:
+    reject(descriptor_error_code::invalid_field, source, line,
+           std::string(field) + " contains an invalid path component");
   }
 }
 
 void require_end(std::istringstream& row, std::string_view source, std::size_t line) {
-  row >> std::ws;
-  if (!row.eof()) {
+  if (has_trailing_fields(row)) {
     reject(descriptor_error_code::unexpected_value, source, line, "unexpected trailing fields");
   }
 }
 
 [[nodiscard]] std::string read_quoted(std::istringstream& row, std::string_view source,
                                       std::size_t line, std::string_view field) {
-  row >> std::ws;
-  if (row.peek() != '"') {
+  const auto scanned = read_quoted_field(row);
+  if (!scanned.was_quoted) {
     reject(descriptor_error_code::malformed_value, source, line,
            std::string(field) + " must be quoted");
   }
-  std::string value;
-  row >> std::quoted(value);
-  if (!row) {
+  if (!scanned.ok) {
     reject(descriptor_error_code::malformed_value, source, line,
            "cannot read " + std::string(field));
   }
-  return value;
+  return std::move(scanned.value);
 }
 
 [[nodiscard]] std::uint64_t read_sequence(std::istringstream& row, std::string_view source,
@@ -112,15 +85,12 @@ void require_end(std::istringstream& row, std::string_view source, std::size_t l
   if (value.empty()) {
     reject(descriptor_error_code::malformed_value, source, line, "cannot read baseline_sequence");
   }
-  std::uint64_t sequence = 0;
-  const auto* begin = value.data();
-  const auto* end = begin + value.size();
-  const auto [next, error] = std::from_chars(begin, end, sequence);
-  if (error != std::errc{} || next != end) {
+  const auto parsed = parse_unsigned_decimal(value);
+  if (!parsed.ok) {
     reject(descriptor_error_code::malformed_value, source, line,
            "baseline_sequence must be an unsigned decimal integer");
   }
-  return sequence;
+  return parsed.value;
 }
 
 } // namespace

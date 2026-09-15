@@ -6,8 +6,8 @@
 #include <string>
 #include <vector>
 
-#include "generation_offer.hpp"
-#include "group_descriptor.hpp"
+#include <protocol/generation_offer.hpp>
+#include <protocol/group_descriptor.hpp>
 
 namespace neko::detail {
 

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "group_descriptor.hpp"
+#include <protocol/group_descriptor.hpp>
 
 namespace neko::detail {
 
