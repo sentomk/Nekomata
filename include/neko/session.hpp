@@ -27,20 +27,9 @@
 #include <string_view>
 #include <vector>
 
-#include <neko/runtime/fwd.hpp>
+#include <neko/fwd.hpp>
 
 namespace neko {
-
-/// A pluggable backend, assembled from its pieces by a backend factory
-/// (e.g. neko::elf::create_backend()). Shared ownership: one implementation
-/// object may serve several interface roles.
-struct backend_bundle {
-  std::shared_ptr<object_loader> loader;
-  std::shared_ptr<symbol_provider> symbols;
-  std::shared_ptr<state_manager> state;
-  std::shared_ptr<code_substituter> substituter;
-  std::shared_ptr<patch_planner> planner;
-};
 
 /// Watches an atomically published build-generation manifest. The manifest is
 /// the ready marker: it names the generation, changed files, and the complete
@@ -130,7 +119,7 @@ struct session_snapshot {
 /// none of that machinery — the implementation hides behind `impl`.
 class reload_session {
 public:
-  explicit reload_session(backend_bundle backends);
+  explicit reload_session(backend::bundle backends);
   ~reload_session();
 
   reload_session(reload_session&&) noexcept;

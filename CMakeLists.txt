@@ -105,6 +105,14 @@ endfunction()
 # ---------------------------------------------------------------------------
 configure_file(include/neko/version.hpp.in generated/neko/version.hpp @ONLY)
 
+# The generated config header describes what this build carries; the umbrella
+# includes platform backends by platform and the TUI by this macro.
+set(ENABLE_NEKOMATA_TUI 0)
+if(NEKOMATA_TUI)
+  set(ENABLE_NEKOMATA_TUI 1)
+endif()
+configure_file(include/neko/config.hpp.in generated/neko/config.hpp)
+
 # ---------------------------------------------------------------------------
 # Tests, tools & examples
 # ---------------------------------------------------------------------------

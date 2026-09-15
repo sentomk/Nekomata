@@ -23,12 +23,20 @@
 #include <span>
 #include <string_view>
 
-#include <neko/runtime/fwd.hpp>
-#include <neko/runtime/object_loader.hpp>
+#include <neko/backend/object_loader.hpp>
+#include <neko/fwd.hpp>
 
 #include "process_symbols.hpp"
 
 namespace neko::elf {
+
+using neko::backend::code_substituter;
+using neko::backend::exported_function;
+using neko::backend::function_replacement;
+using neko::backend::loaded_image;
+using neko::backend::object_loader;
+using neko::backend::pending_call_fixup;
+using neko::backend::symbol_provider;
 
 class loader final : public object_loader {
 public:

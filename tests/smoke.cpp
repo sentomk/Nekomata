@@ -14,11 +14,11 @@
 
 namespace {
 
-class null_symbol_provider final : public neko::symbol_provider {
+class null_symbol_provider final : public neko::backend::symbol_provider {
 public:
-  std::vector<neko::function_info> all_functions() const override { return {}; }
+  std::vector<neko::backend::function_info> all_functions() const override { return {}; }
 
-  std::optional<neko::function_info> function_by_name(std::string_view) const override {
+  std::optional<neko::backend::function_info> function_by_name(std::string_view) const override {
     return std::nullopt;
   }
 
@@ -26,12 +26,12 @@ public:
 
   std::size_t count_globals(std::string_view) const override { return 0; }
 
-  std::optional<neko::global_variable> global_by_name(std::string_view) const override {
+  std::optional<neko::backend::global_variable> global_by_name(std::string_view) const override {
     return std::nullopt;
   }
 
-  neko::type_layout layout_of(neko::type_id id) const override {
-    neko::type_layout layout;
+  neko::backend::type_layout layout_of(neko::backend::type_id id) const override {
+    neko::backend::type_layout layout;
     layout.id = id;
     return layout;
   }
@@ -53,7 +53,7 @@ TEST_CASE("kernel interfaces are implementable and default-usable") {
 }
 
 TEST_CASE("reload_session rejects incomplete backend bundles") {
-  neko::backend_bundle incomplete;
+  neko::backend::bundle incomplete;
   incomplete.symbols = std::make_shared<null_symbol_provider>();
   CHECK_THROWS_AS(neko::reload_session{std::move(incomplete)}, std::runtime_error);
 }

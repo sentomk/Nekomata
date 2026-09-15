@@ -49,8 +49,8 @@ private:
 };
 
 std::size_t validate_generation_membership(const detail::legacy_generation_offer& offer,
-                                           const patch_planner& planner) {
-  change_set changes;
+                                           const backend::patch_planner& planner) {
+  backend::change_set changes;
   changes.changed_files.reserve(offer.changed_files.size());
   for (const auto& changed : offer.changed_files) {
     changes.changed_files.push_back(changed.generic_string());
@@ -120,7 +120,7 @@ reload_session::impl::try_prepare(const watched_object& watched) {
 
   // Plan first (the planner owns "what does this object cover"): it is the
   // seam the future dependency graph grows into.
-  change_set changes;
+  backend::change_set changes;
   changes.changed_files.push_back(source_path.empty() ? path.string() : source_path);
   const auto plans = backends_.planner->plan(changes);
   neko::log(neko::log_level::info, "plan covers %zu translation unit(s)\n", plans.size());

@@ -5,10 +5,11 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include <neko/runtime/code_substituter.hpp>
-#include <neko/runtime/object_loader.hpp>
-#include <neko/runtime/state_manager.hpp>
-#include <neko/runtime/symbol_provider.hpp>
+#include <neko/backend.hpp>
+#include <neko/backend/code_substituter.hpp>
+#include <neko/backend/object_loader.hpp>
+#include <neko/backend/state_manager.hpp>
+#include <neko/backend/symbol_provider.hpp>
 #include <neko/session.hpp>
 
 #include <cstdint>
@@ -18,24 +19,25 @@
 
 namespace {
 
-class fake_process final : public neko::symbol_provider, public neko::state_manager {
+class fake_process final : public neko::backend::symbol_provider,
+                           public neko::backend::state_manager {
 public:
-  std::vector<neko::function_info> all_functions() const override { return {}; }
+  std::vector<neko::backend::function_info> all_functions() const override { return {}; }
 
-  std::optional<neko::function_info> function_by_name(std::string_view) const override {
+  std::optional<neko::backend::function_info> function_by_name(std::string_view) const override {
     return std::nullopt;
   }
 
   std::size_t count_functions(std::string_view) const override { return 0; }
 
-  std::optional<neko::global_variable> global_by_name(std::string_view) const override {
+  std::optional<neko::backend::global_variable> global_by_name(std::string_view) const override {
     return std::nullopt;
   }
 
   std::size_t count_globals(std::string_view) const override { return 0; }
 
-  neko::type_layout layout_of(neko::type_id id) const override {
-    neko::type_layout layout;
+  neko::backend::type_layout layout_of(neko::backend::type_id id) const override {
+    neko::backend::type_layout layout;
     layout.id = id;
     return layout;
   }
@@ -43,14 +45,14 @@ public:
   void* map_global(std::string_view) override { return nullptr; }
 };
 
-class stub_loader final : public neko::object_loader {
+class stub_loader final : public neko::backend::object_loader {
 public:
-  neko::loaded_image load(const std::uint8_t*, std::size_t) override {
+  neko::backend::loaded_image load(const std::uint8_t*, std::size_t) override {
     throw std::runtime_error("unexpected object load");
   }
 };
 
-class stub_substituter final : public neko::code_substituter {
+class stub_substituter final : public neko::backend::code_substituter {
 public:
   void* reserve_code_near(std::uintptr_t, std::uint64_t) override { return nullptr; }
 
@@ -66,7 +68,7 @@ public:
 };
 
 neko::reload_session make_session() {
-  neko::backend_bundle backends;
+  neko::backend::bundle backends;
   backends.loader = std::make_shared<stub_loader>();
   auto process = std::make_shared<fake_process>();
   backends.symbols = process;

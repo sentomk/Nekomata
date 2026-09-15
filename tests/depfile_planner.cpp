@@ -3,7 +3,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include <neko/runtime/depfile_planner.hpp>
+#include <neko/legacy/depfile_planner.hpp>
 
 #include <chrono>
 #include <filesystem>
@@ -46,8 +46,8 @@ void write_file(const std::filesystem::path& path, std::string_view text) {
   }
 }
 
-neko::change_set changed(const std::filesystem::path& path) {
-  neko::change_set changes;
+neko::backend::change_set changed(const std::filesystem::path& path) {
+  neko::backend::change_set changes;
   changes.changed_files.push_back(path.generic_string());
   return changes;
 }
@@ -81,7 +81,7 @@ TEST_CASE("a shared header expands to every dependent translation unit") {
   CHECK(direct[0].translation_units[0] == (root / "source/a.cpp").generic_string());
 
   CHECK(planner.plan(changed(root / "include/unrelated.hpp")).empty());
-  CHECK(planner.plan(neko::change_set{}).empty());
+  CHECK(planner.plan(neko::backend::change_set{}).empty());
 }
 
 TEST_CASE("depfile paths support Make escapes and refresh between plans") {

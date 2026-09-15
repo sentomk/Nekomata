@@ -1,4 +1,5 @@
 // Exercise the common public entry points without the umbrella or private headers.
+#include <neko/backend.hpp>
 #include <neko/fwd.hpp>
 #include <neko/log.hpp>
 #include <neko/session.hpp>
@@ -25,7 +26,7 @@ int main() {
   // The public session header must support construction/destruction even
   // though it only forward-declares the backend interface classes.
   try {
-    neko::reload_session session{neko::backend_bundle{}};
+    neko::reload_session session{neko::backend::bundle{}};
     return 3;
   } catch (const std::runtime_error&) {
     // Missing backend components are intentionally rejected.

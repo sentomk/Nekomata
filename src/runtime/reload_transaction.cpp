@@ -41,7 +41,7 @@ reload_session::impl::prepare_object(const std::vector<std::uint8_t>& bytes, std
 }
 
 void reload_session::impl::link_generation(prepared_generation& generation) {
-  std::vector<loaded_image*> images;
+  std::vector<backend::loaded_image*> images;
   images.reserve(generation.reloads.size());
   for (const auto& reload : generation.reloads) {
     images.push_back(&reload->image);
@@ -116,9 +116,11 @@ void reload_session::impl::commit(const prepared_generation& generation) {
     auto& last_redirected = last_redirected_by_object_[prepared->watch_key];
     for (const auto& previous : last_redirected) {
       const auto& name = previous.first;
-      const bool still_present = std::any_of(
-          prepared->image.replacements.begin(), prepared->image.replacements.end(),
-          [&](const function_replacement& replacement) { return replacement.name == name; });
+      const bool still_present =
+          std::any_of(prepared->image.replacements.begin(), prepared->image.replacements.end(),
+                      [&](const backend::function_replacement& replacement) {
+                        return replacement.name == name;
+                      });
       if (!still_present) {
         neko::log(neko::log_level::warn,
                   "stale redirect: '%s' was removed but its entry still jumps to old code\n",

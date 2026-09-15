@@ -18,7 +18,7 @@ target_link_libraries(neko_backend_elf
   PUBLIC neko_runtime
   PRIVATE neko_base_c ${CMAKE_DL_LIBS})
 
-# Public entry point is <neko/platforms/elf.hpp> (via nekomata::neko);
+# Public entry point is <neko/elf.hpp> (via nekomata::neko);
 # internal headers include each other as "format/…", "runtime/…", "debug/…".
 
 nekomata_apply_warnings(neko_backend_elf)

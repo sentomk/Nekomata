@@ -4,8 +4,6 @@
 
 #pragma once
 
-#include <neko/core/fwd.hpp>
-
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -13,7 +11,10 @@
 #include <string_view>
 #include <vector>
 
-namespace neko {
+namespace neko::backend {
+
+/// Opaque handle for a user-defined type known to the symbol backend.
+using type_id = std::uint32_t;
 
 /// Address and extent of a function inside the live process.
 struct function_info {
@@ -51,4 +52,4 @@ struct patch_plan {
   std::vector<std::string> translation_units;
 };
 
-} // namespace neko
+} // namespace neko::backend

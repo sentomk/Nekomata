@@ -21,9 +21,7 @@
 #include <cstdint>
 #include <cstring>
 
-#include <neko/runtime/fwd.hpp>
-
-namespace neko {
+namespace neko::backend {
 
 class code_substituter {
 public:
@@ -64,4 +62,4 @@ public:
   }
 };
 
-} // namespace neko
+} // namespace neko::backend

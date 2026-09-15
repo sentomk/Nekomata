@@ -21,12 +21,13 @@
 
 #include "glyph/core/text.h"
 
-#include <neko/runtime/code_substituter.hpp>
-#include <neko/runtime/fwd.hpp>
-#include <neko/runtime/object_loader.hpp>
-#include <neko/runtime/state_manager.hpp>
-#include <neko/runtime/symbol_provider.hpp>
-#include <neko/tui/tui.hpp>
+#include <neko/backend.hpp>
+#include <neko/backend/code_substituter.hpp>
+#include <neko/backend/object_loader.hpp>
+#include <neko/backend/state_manager.hpp>
+#include <neko/backend/symbol_provider.hpp>
+#include <neko/fwd.hpp>
+#include <neko/tui.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -48,33 +49,34 @@ namespace {
 // ---------------------------------------------------------------------------
 // Null backend: these tests exercise the monitor, not a real reload.
 // ---------------------------------------------------------------------------
-class null_loader final : public neko::object_loader {
+class null_loader final : public neko::backend::object_loader {
 public:
-  neko::loaded_image load(const std::uint8_t*, std::size_t) override {
+  neko::backend::loaded_image load(const std::uint8_t*, std::size_t) override {
     throw std::runtime_error("null backend");
   }
 };
 
-class null_symbols final : public neko::symbol_provider, public neko::state_manager {
+class null_symbols final : public neko::backend::symbol_provider,
+                           public neko::backend::state_manager {
 public:
-  std::vector<neko::function_info> all_functions() const override { return {}; }
-  std::optional<neko::function_info> function_by_name(std::string_view) const override {
+  std::vector<neko::backend::function_info> all_functions() const override { return {}; }
+  std::optional<neko::backend::function_info> function_by_name(std::string_view) const override {
     return std::nullopt;
   }
   std::size_t count_functions(std::string_view) const override { return 0; }
-  std::optional<neko::global_variable> global_by_name(std::string_view) const override {
+  std::optional<neko::backend::global_variable> global_by_name(std::string_view) const override {
     return std::nullopt;
   }
   std::size_t count_globals(std::string_view) const override { return 0; }
-  neko::type_layout layout_of(neko::type_id id) const override {
-    neko::type_layout l;
+  neko::backend::type_layout layout_of(neko::backend::type_id id) const override {
+    neko::backend::type_layout l;
     l.id = id;
     return l;
   }
   void* map_global(std::string_view) override { return nullptr; }
 };
 
-class null_substituter final : public neko::code_substituter {
+class null_substituter final : public neko::backend::code_substituter {
 public:
   void* reserve_code_near(std::uintptr_t, std::uint64_t) override { return nullptr; }
   bool commit_code(void*, const void*, std::uint64_t) override { return false; }
@@ -434,7 +436,7 @@ private:
     ::close(master_);
 
     auto sym = std::make_shared<null_symbols>();
-    neko::backend_bundle bundle;
+    neko::backend::bundle bundle;
     bundle.loader = std::make_shared<null_loader>();
     bundle.symbols = sym;
     bundle.state = sym;
@@ -522,7 +524,7 @@ TEST_CASE("monitor: terminal mode sizes its own pty from the host terminal") {
     ::setenv("PATH", "/nonexistent", 1);
 
     auto sym = std::make_shared<null_symbols>();
-    neko::backend_bundle bundle;
+    neko::backend::bundle bundle;
     bundle.loader = std::make_shared<null_loader>();
     bundle.symbols = sym;
     bundle.state = sym;

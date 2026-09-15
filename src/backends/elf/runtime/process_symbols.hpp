@@ -21,12 +21,19 @@
 #include <unordered_map>
 #include <vector>
 
-#include <neko/runtime/state_manager.hpp>
-#include <neko/runtime/symbol_provider.hpp>
+#include <neko/backend/state_manager.hpp>
+#include <neko/backend/symbol_provider.hpp>
 
 #include "../debug/symbol_manifest.hpp"
 
 namespace neko::elf {
+
+using neko::backend::function_info;
+using neko::backend::global_variable;
+using neko::backend::state_manager;
+using neko::backend::symbol_provider;
+using neko::backend::type_id;
+using neko::backend::type_layout;
 
 class process_symbols final : public symbol_provider, public state_manager {
 public:

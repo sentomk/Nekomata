@@ -11,15 +11,14 @@
 
 #pragma once
 
-#include <neko/core/types.hpp>
-#include <neko/runtime/fwd.hpp>
+#include <neko/backend/types.hpp>
 
 #include <cstddef>
 #include <optional>
 #include <string_view>
 #include <vector>
 
-namespace neko {
+namespace neko::backend {
 
 class symbol_provider {
 public:
@@ -49,4 +48,4 @@ public:
   virtual type_layout layout_of(type_id id) const = 0;
 };
 
-} // namespace neko
+} // namespace neko::backend

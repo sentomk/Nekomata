@@ -4,8 +4,8 @@
 // contract. Run from a writable working directory: the descriptor's root
 // hint resolves against it.
 
+#include <neko/elf.hpp>
 #include <neko/log.hpp>
-#include <neko/platforms/elf.hpp>
 #include <neko/session.hpp>
 
 #include "protocol/descriptor_section.hpp"

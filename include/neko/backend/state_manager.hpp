@@ -10,11 +10,9 @@
 
 #pragma once
 
-#include <neko/runtime/fwd.hpp>
-
 #include <string_view>
 
-namespace neko {
+namespace neko::backend {
 
 class state_manager {
 public:
@@ -25,4 +23,4 @@ public:
   virtual void* map_global(std::string_view name) = 0;
 };
 
-} // namespace neko
+} // namespace neko::backend

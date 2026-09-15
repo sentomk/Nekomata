@@ -1,17 +1,28 @@
-// Umbrella header for the nekomata kernel.
+// Single-include entry for the nekomata library: the platform-neutral kernel
+// plus the reload backend of the compiling platform.
 //
-// The kernel is platform-neutral: it knows the interfaces below and nothing
-// else. ELF/DWARF and PE/PDB live behind them, in src/platforms/.
-
+// Deliberately not included:
+//   - fwd.hpp: lean entry for compile-radius-sensitive TUs
+//   - legacy/depfile_planner.hpp: the manual integration model, include on
+//     demand
 #pragma once
 
-#include <neko/core/types.hpp>
+#include <neko/config.hpp>
+
+#include <neko/backend.hpp>
 #include <neko/log.hpp>
-#include <neko/runtime/code_substituter.hpp>
-#include <neko/runtime/depfile_planner.hpp>
-#include <neko/runtime/object_loader.hpp>
-#include <neko/runtime/patch_planner.hpp>
-#include <neko/runtime/state_manager.hpp>
-#include <neko/runtime/symbol_provider.hpp>
 #include <neko/session.hpp>
 #include <neko/version.hpp>
+
+// One factory header per platform backend; branches without a backend yet
+// stay commented until the backend lands ("not supported yet").
+#if defined(__linux__)
+#include <neko/elf.hpp>
+#elif defined(_WIN32)
+// #include <neko/pe.hpp>   // not supported yet
+#endif
+
+// The optional monitor joins only when the build provides it.
+#if ENABLE_NEKOMATA_TUI
+#include <neko/tui.hpp>
+#endif

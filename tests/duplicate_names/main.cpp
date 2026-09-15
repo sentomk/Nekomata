@@ -7,8 +7,8 @@
 #include <exception>
 #include <thread>
 
+#include <neko/elf.hpp>
 #include <neko/log.hpp>
-#include <neko/platforms/elf.hpp>
 #include <neko/session.hpp>
 
 int a_value();

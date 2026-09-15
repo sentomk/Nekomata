@@ -11,7 +11,7 @@
 // When stderr is not a TTY (pipes, CI, captured demos) the same cats are
 // printed plain (no ANSI), keeping logs greppable.
 
-#include <neko/cats.hpp>
+#include "cats.hpp"
 #include <neko/log.hpp>
 
 #include <cstdarg>

@@ -4,10 +4,11 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include <neko/runtime/code_substituter.hpp>
-#include <neko/runtime/object_loader.hpp>
-#include <neko/runtime/state_manager.hpp>
-#include <neko/runtime/symbol_provider.hpp>
+#include <neko/backend.hpp>
+#include <neko/backend/code_substituter.hpp>
+#include <neko/backend/object_loader.hpp>
+#include <neko/backend/state_manager.hpp>
+#include <neko/backend/symbol_provider.hpp>
 #include <neko/session.hpp>
 
 #include <algorithm>
@@ -79,24 +80,25 @@ void publish_generation(const std::filesystem::path& manifest, std::string_view 
   std::filesystem::rename(staging, manifest);
 }
 
-class fake_process final : public neko::symbol_provider, public neko::state_manager {
+class fake_process final : public neko::backend::symbol_provider,
+                           public neko::backend::state_manager {
 public:
-  std::vector<neko::function_info> all_functions() const override { return {}; }
+  std::vector<neko::backend::function_info> all_functions() const override { return {}; }
 
-  std::optional<neko::function_info> function_by_name(std::string_view) const override {
+  std::optional<neko::backend::function_info> function_by_name(std::string_view) const override {
     return std::nullopt;
   }
 
   std::size_t count_functions(std::string_view) const override { return 0; }
 
-  std::optional<neko::global_variable> global_by_name(std::string_view) const override {
+  std::optional<neko::backend::global_variable> global_by_name(std::string_view) const override {
     return std::nullopt;
   }
 
   std::size_t count_globals(std::string_view) const override { return 0; }
 
-  neko::type_layout layout_of(neko::type_id id) const override {
-    neko::type_layout layout;
+  neko::backend::type_layout layout_of(neko::backend::type_id id) const override {
+    neko::backend::type_layout layout;
     layout.id = id;
     return layout;
   }
@@ -104,11 +106,12 @@ public:
   void* map_global(std::string_view) override { return nullptr; }
 };
 
-class queued_loader final : public neko::object_loader {
+class queued_loader final : public neko::backend::object_loader {
 public:
-  explicit queued_loader(std::vector<neko::loaded_image> images) : images_(std::move(images)) {}
+  explicit queued_loader(std::vector<neko::backend::loaded_image> images)
+      : images_(std::move(images)) {}
 
-  neko::loaded_image load(const std::uint8_t*, std::size_t) override {
+  neko::backend::loaded_image load(const std::uint8_t*, std::size_t) override {
     if (next_ == images_.size()) {
       throw std::runtime_error("unexpected object load");
     }
@@ -118,11 +121,11 @@ public:
   std::size_t load_count() const { return next_; }
 
 private:
-  std::vector<neko::loaded_image> images_;
+  std::vector<neko::backend::loaded_image> images_;
   std::size_t next_ = 0;
 };
 
-class recording_substituter final : public neko::code_substituter {
+class recording_substituter final : public neko::backend::code_substituter {
 public:
   explicit recording_substituter(std::uintptr_t fail_entry) : fail_entry_(fail_entry) {}
 
@@ -169,8 +172,8 @@ private:
   std::uintptr_t fail_entry_;
 };
 
-neko::loaded_image image(void* code, std::string name, std::uintptr_t old_entry) {
-  neko::loaded_image loaded;
+neko::backend::loaded_image image(void* code, std::string name, std::uintptr_t old_entry) {
+  neko::backend::loaded_image loaded;
   loaded.code = code;
   loaded.code_size = 8;
   loaded.replacements.push_back({std::move(name), old_entry, 0});
@@ -185,7 +188,7 @@ TEST_CASE("one update rolls back entries patched for earlier watched objects") {
 
   std::array<std::uint8_t, 8> a_code{};
   std::array<std::uint8_t, 8> b_code{};
-  std::vector<neko::loaded_image> images;
+  std::vector<neko::backend::loaded_image> images;
   images.push_back(image(a_code.data(), "a_tick", a_entry));
   images.push_back(image(b_code.data(), "b_tick", b_entry));
 
@@ -193,7 +196,7 @@ TEST_CASE("one update rolls back entries patched for earlier watched objects") {
   auto process = std::make_shared<fake_process>();
   auto substituter = std::make_shared<recording_substituter>(b_entry);
 
-  neko::backend_bundle backends;
+  neko::backend::bundle backends;
   backends.loader = loader;
   backends.symbols = process;
   backends.state = process;
@@ -238,7 +241,7 @@ TEST_CASE("one update rejects objects that replace the same live entry") {
 
   std::array<std::uint8_t, 8> first_code{};
   std::array<std::uint8_t, 8> second_code{};
-  std::vector<neko::loaded_image> images;
+  std::vector<neko::backend::loaded_image> images;
   images.push_back(image(first_code.data(), "first_tick", shared_entry));
   images.push_back(image(second_code.data(), "second_tick", shared_entry));
 
@@ -246,7 +249,7 @@ TEST_CASE("one update rejects objects that replace the same live entry") {
   auto process = std::make_shared<fake_process>();
   auto substituter = std::make_shared<recording_substituter>(0);
 
-  neko::backend_bundle backends;
+  neko::backend::bundle backends;
   backends.loader = loader;
   backends.symbols = process;
   backends.state = process;
@@ -286,7 +289,7 @@ TEST_CASE("a generation marker exposes only a complete immutable object set") {
 
   std::array<std::uint8_t, 8> a_code{};
   std::array<std::uint8_t, 8> b_code{};
-  std::vector<neko::loaded_image> images;
+  std::vector<neko::backend::loaded_image> images;
   images.push_back(image(a_code.data(), "a_tick", a_entry));
   images.push_back(image(b_code.data(), "b_tick", b_entry));
 
@@ -294,7 +297,7 @@ TEST_CASE("a generation marker exposes only a complete immutable object set") {
   auto process = std::make_shared<fake_process>();
   auto substituter = std::make_shared<recording_substituter>(0);
 
-  neko::backend_bundle backends;
+  neko::backend::bundle backends;
   backends.loader = loader;
   backends.symbols = process;
   backends.state = process;

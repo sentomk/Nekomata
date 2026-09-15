@@ -1,8 +1,8 @@
 // Consumer of the CMake adapter fixture group: the documented managed
 // integration — construct, watch(), update() at the frame safe point.
 
+#include <neko/elf.hpp>
 #include <neko/log.hpp>
-#include <neko/platforms/elf.hpp>
 #include <neko/session.hpp>
 
 #include <chrono>

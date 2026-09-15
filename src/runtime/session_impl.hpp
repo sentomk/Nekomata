@@ -7,15 +7,16 @@
 //   reload_transaction.cpp the zero-write/commit/rollback engine
 //   managed_worker.cpp     the managed-group state machine and its worker
 
+#include <neko/backend.hpp>
 #include <neko/session.hpp>
 
 #include "generation_stream.hpp"
 
 #include <protocol/group_descriptor.hpp>
 
-#include <neko/runtime/code_substituter.hpp>
-#include <neko/runtime/object_loader.hpp>
-#include <neko/runtime/patch_planner.hpp>
+#include <neko/backend/code_substituter.hpp>
+#include <neko/backend/object_loader.hpp>
+#include <neko/backend/patch_planner.hpp>
 
 #include <condition_variable>
 #include <cstdint>
@@ -49,14 +50,14 @@ namespace neko {
 
 // Trivial planner: every changed file is one translation unit to rebuild.
 // Real dependency graphs (compiler .d files) are planned.
-class trivial_planner final : public patch_planner {
+class trivial_planner final : public backend::patch_planner {
 public:
-  std::vector<patch_plan> plan(const change_set& changes) const override;
+  std::vector<backend::patch_plan> plan(const backend::change_set& changes) const override;
 };
 
 class reload_session::impl {
 public:
-  explicit impl(backend_bundle backends);
+  explicit impl(backend::bundle backends);
   ~impl();
 
   impl(const impl&) = delete;
@@ -70,7 +71,7 @@ public:
   struct prepared_reload {
     std::string watch_key;
     std::string build_information;
-    loaded_image image;
+    backend::loaded_image image;
   };
 
   struct prepared_generation {
@@ -125,7 +126,7 @@ public:
   void raise_fatal_worker_error(std::exception_ptr error);
   void check_fatal_worker_error() const;
 
-  backend_bundle backends_;
+  backend::bundle backends_;
   std::vector<watched_object> watched_;
   std::vector<generation_watch> generation_watches_;
   std::vector<std::unique_ptr<managed_group>> managed_groups_;

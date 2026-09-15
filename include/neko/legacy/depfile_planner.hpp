@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <neko/runtime/patch_planner.hpp>
+#include <neko/backend/patch_planner.hpp>
 
 #include <filesystem>
 #include <vector>
@@ -31,11 +31,11 @@ struct depfile_entry {
 /// Missing or malformed files throw std::runtime_error rather than returning
 /// an incomplete plan. Relative paths in change_set use the process working
 /// directory at plan() time.
-class depfile_planner final : public patch_planner {
+class depfile_planner final : public backend::patch_planner {
 public:
   explicit depfile_planner(std::vector<depfile_entry> entries);
 
-  std::vector<patch_plan> plan(const change_set& changes) const override;
+  std::vector<backend::patch_plan> plan(const backend::change_set& changes) const override;
 
 private:
   std::vector<depfile_entry> entries_;

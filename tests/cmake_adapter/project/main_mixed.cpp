@@ -1,7 +1,7 @@
 // Consumer of the heterogeneous group: two units, one atomic commit.
 
+#include <neko/elf.hpp>
 #include <neko/log.hpp>
-#include <neko/platforms/elf.hpp>
 #include <neko/session.hpp>
 
 #include <chrono>

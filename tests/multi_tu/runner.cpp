@@ -7,9 +7,9 @@
 #include <utility>
 #include <vector>
 
+#include <neko/elf.hpp>
+#include <neko/legacy/depfile_planner.hpp>
 #include <neko/log.hpp>
-#include <neko/platforms/elf.hpp>
-#include <neko/runtime/depfile_planner.hpp>
 #include <neko/session.hpp>
 
 int a_value();

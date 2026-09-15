@@ -7,12 +7,11 @@
 
 #pragma once
 
-#include <neko/core/types.hpp>
-#include <neko/runtime/fwd.hpp>
+#include <neko/backend/types.hpp>
 
 #include <vector>
 
-namespace neko {
+namespace neko::backend {
 
 class patch_planner {
 public:
@@ -22,4 +21,4 @@ public:
   virtual std::vector<patch_plan> plan(const change_set& changes) const = 0;
 };
 
-} // namespace neko
+} // namespace neko::backend

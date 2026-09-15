@@ -9,8 +9,6 @@
 
 #pragma once
 
-#include <neko/runtime/fwd.hpp>
-
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -18,7 +16,7 @@
 #include <string_view>
 #include <vector>
 
-namespace neko {
+namespace neko::backend {
 
 /// One function that must be redirected after a successful load.
 struct function_replacement {
@@ -82,4 +80,4 @@ public:
   virtual void link_generation(std::span<loaded_image* const> images) { (void)images; }
 };
 
-} // namespace neko
+} // namespace neko::backend

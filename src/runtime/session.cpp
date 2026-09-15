@@ -49,18 +49,18 @@ reload_error_code classify_transaction_rejection(const std::string& message) {
 
 namespace neko {
 
-std::vector<patch_plan> trivial_planner::plan(const change_set& changes) const {
-  std::vector<patch_plan> plans;
+std::vector<backend::patch_plan> trivial_planner::plan(const backend::change_set& changes) const {
+  std::vector<backend::patch_plan> plans;
   plans.reserve(changes.changed_files.size());
   for (const auto& file : changes.changed_files) {
-    patch_plan plan;
+    backend::patch_plan plan;
     plan.translation_units.push_back(file);
     plans.push_back(std::move(plan));
   }
   return plans;
 }
 
-reload_session::impl::impl(backend_bundle backends) : backends_(std::move(backends)) {
+reload_session::impl::impl(backend::bundle backends) : backends_(std::move(backends)) {
   if (!backends_.loader || !backends_.symbols || !backends_.state || !backends_.substituter) {
     throw std::runtime_error("reload_session: incomplete backend bundle");
   }
@@ -269,7 +269,7 @@ update_result reload_session::impl::update() {
   return result;
 }
 
-reload_session::reload_session(backend_bundle backends)
+reload_session::reload_session(backend::bundle backends)
     : impl_(std::make_unique<impl>(std::move(backends))) {}
 
 reload_session::~reload_session() = default;

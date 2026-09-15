@@ -1,4 +1,4 @@
-#include <neko/runtime/depfile_planner.hpp>
+#include <neko/legacy/depfile_planner.hpp>
 
 #include <base/file.hpp>
 
@@ -185,7 +185,7 @@ depfile_planner::depfile_planner(std::vector<depfile_entry> entries)
   }
 }
 
-std::vector<patch_plan> depfile_planner::plan(const change_set& changes) const {
+std::vector<backend::patch_plan> depfile_planner::plan(const backend::change_set& changes) const {
   if (changes.changed_files.empty()) {
     return {};
   }
@@ -195,7 +195,7 @@ std::vector<patch_plan> depfile_planner::plan(const change_set& changes) const {
     changed.insert(normalized_path(path).generic_string());
   }
 
-  patch_plan plan;
+  backend::patch_plan plan;
   for (const auto& entry : entries_) {
     const auto dependencies = dependencies_for(entry);
     const bool affected = std::any_of(changed.begin(), changed.end(), [&](const auto& path) {

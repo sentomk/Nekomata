@@ -13,7 +13,7 @@
 
 #include "glyph/core/text.h"
 
-#include <neko/cats.hpp>
+#include "core/cats.hpp"
 
 #include <cstddef>
 

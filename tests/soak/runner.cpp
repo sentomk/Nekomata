@@ -13,8 +13,8 @@
 #include <thread>
 #include <unistd.h>
 
+#include <neko/elf.hpp>
 #include <neko/log.hpp>
-#include <neko/platforms/elf.hpp>
 #include <neko/session.hpp>
 
 void tick();

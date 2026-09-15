@@ -32,9 +32,11 @@
 #include <cstdint>
 #include <vector>
 
-#include <neko/runtime/code_substituter.hpp>
+#include <neko/backend/code_substituter.hpp>
 
 namespace neko::elf {
+
+using neko::backend::code_substituter;
 
 class code_pages final : public code_substituter {
 public:

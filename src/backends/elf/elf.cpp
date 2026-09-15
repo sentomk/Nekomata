@@ -1,4 +1,4 @@
-#include <neko/platforms/elf.hpp>
+#include <neko/elf.hpp>
 
 #include <memory>
 
@@ -8,8 +8,8 @@
 
 namespace neko::elf {
 
-neko::backend_bundle create_backend() {
-  backend_bundle bundle;
+neko::backend::bundle create_backend() {
+  backend::bundle bundle;
   auto symbols = std::make_shared<process_symbols>();
   bundle.symbols = symbols;
   bundle.state = symbols; // same table backs both roles

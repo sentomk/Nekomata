@@ -4,8 +4,8 @@
 // mode::terminal:      separate terminal window via pty, Nekomata panel
 //                      with optional dual-pane layout (monitor + app log).
 
-#include <neko/cats.hpp>
-#include <neko/tui/tui.hpp>
+#include "../core/cats.hpp"
+#include <neko/tui.hpp>
 
 #include <atomic>
 #include <cerrno>

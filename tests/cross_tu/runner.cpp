@@ -2,8 +2,8 @@
 // published by the script exercise new-symbol cross-object calls, unresolved
 // rejections, and whole-generation rollback with a cross-linked partner.
 
+#include <neko/elf.hpp>
 #include <neko/log.hpp>
-#include <neko/platforms/elf.hpp>
 #include <neko/session.hpp>
 
 #include "protocol/descriptor_section.hpp"
