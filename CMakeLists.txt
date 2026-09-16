@@ -34,6 +34,9 @@ if(MSVC)
   add_compile_options(/utf-8)
 endif()
 
+# Include dirs for installation must be known before src/ references them.
+include(GNUInstallDirs)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -160,7 +163,6 @@ endif()
 # ride the export for the static link closure; they are internal. The TUI
 # is not exported yet: its Glyph dependency needs an install story first.
 # ---------------------------------------------------------------------------
-include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 find_package(Threads REQUIRED)
