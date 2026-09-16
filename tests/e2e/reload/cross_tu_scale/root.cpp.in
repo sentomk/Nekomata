@@ -1,0 +1,11 @@
+// Baseline root of a generated high-cardinality reload group.
+
+static int s_scale_@NEKO_SCALE_INDEX@ = 0;
+
+extern "C" int scale_value_@NEKO_SCALE_INDEX@() {
+  return ++s_scale_@NEKO_SCALE_INDEX@;
+}
+
+extern "C" int scale_generation_marker() {
+  return 1;
+}

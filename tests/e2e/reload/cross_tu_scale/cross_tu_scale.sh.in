@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# High-cardinality cross-TU generation test. One root calls a brand-new symbol
+# from every sibling object, a later complete generation is rejected, and a
+# corrected generation recovers without resetting root state.
+set -euo pipefail
+
+CXX="@CMAKE_CXX_COMPILER@"
+HERE="@CMAKE_CURRENT_BINARY_DIR@"
+COUNT="@NEKO_SCALE_TU_COUNT@"
+WORK="${1:-$(mktemp -d /tmp/neko-cross-scale-${COUNT}.XXXXXX)}"
+OUT="$WORK/out.txt"
+BASE="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
+PUB="$WORK/neko-cross-scale/cross-scale-$COUNT"
+: > "$OUT"
+
+runner_pid=""
+cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+trap cleanup EXIT
+
+fail() { echo "FAIL: $1"; tail -20 "$OUT"; exit 1; }
+wait_for() { # pattern min timeout label
+  local pattern="$1" min="$2" timeout="$3" label="$4" waited=0 found
+  while :; do
+    found=$(grep -ac -- "$pattern" "$OUT" || true)
+    [ "$found" -ge "$min" ] && return 0
+    sleep 0.1
+    waited=$((waited + 1))
+    if [ "$waited" -gt $((timeout * 10)) ]; then
+      echo "FAIL($label): '$pattern' x$found < $min"
+      tail -20 "$OUT"
+      exit 1
+    fi
+  done
+}
+
+write_root() { # version output
+  local version="$1" output="$2" index
+  {
+    echo 'static int s_scale_0 = 0;'
+    for ((index = 1; index < COUNT; ++index)); do
+      printf 'extern "C" int scale_brand_new_fixup_symbol_%d();\n' "$index"
+    done
+    if [ "$version" -eq 3 ]; then
+      echo 'extern "C" int scale_missing_symbol_for_rejected_generation();'
+    fi
+    echo 'extern "C" int scale_value_0() {'
+    echo '  int total = ++s_scale_0 * 10000;'
+    for ((index = 1; index < COUNT; ++index)); do
+      printf '  total += scale_brand_new_fixup_symbol_%d();\n' "$index"
+    done
+    if [ "$version" -eq 3 ]; then
+      echo '  total += scale_missing_symbol_for_rejected_generation();'
+    fi
+    echo '  return total;'
+    echo '}'
+    printf 'extern "C" int scale_generation_marker() { return %d; }\n' "$version"
+  } > "$output"
+}
+
+write_sibling() { # index output
+  local index="$1" output="$2"
+  {
+    printf 'static int s_scale_%d = 0;\n' "$index"
+    printf 'extern "C" int scale_value_%d() { return ++s_scale_%d; }\n' "$index" "$index"
+    printf 'extern "C" int scale_brand_new_fixup_symbol_%d() { return %d; }\n' \
+      "$index" "$index"
+  } > "$output"
+}
+
+compile_initial_generation() {
+  local index dir="$WORK/v2"
+  mkdir -p "$dir"
+  write_root 2 "$dir/unit_0.cpp"
+  "$CXX" $BASE -c "$dir/unit_0.cpp" -o "$dir/unit_0.o"
+  for ((index = 1; index < COUNT; ++index)); do
+    write_sibling "$index" "$dir/unit_$index.cpp"
+    "$CXX" $BASE -c "$dir/unit_$index.cpp" -o "$dir/unit_$index.o"
+  done
+}
+
+compile_root() { # version
+  local version="$1"
+  local dir="$WORK/v$version"
+  mkdir -p "$dir"
+  write_root "$version" "$dir/unit_0.cpp"
+  "$CXX" $BASE -c "$dir/unit_0.cpp" -o "$dir/unit_0.o"
+}
+
+publish() { # version sequence
+  local version="$1" sequence="$2" index source_object digest
+  local generation="$PUB/generations/gen-$sequence"
+  mkdir -p "$generation/objects" "$PUB/offers"
+  for ((index = 0; index < COUNT; ++index)); do
+    if [ "$index" -eq 0 ]; then
+      source_object="$WORK/v$version/unit_0.o"
+    else
+      source_object="$WORK/v2/unit_$index.o"
+    fi
+    cp "$source_object" "$generation/objects/unit_$index.o"
+  done
+  {
+    printf 'nekomata-generation-v2\n'
+    printf 'group_id "//cross:scale-%s"\n' "$COUNT"
+    printf 'sequence %s\n' "$sequence"
+    printf 'generation_id "gen-%s"\n' "$sequence"
+    printf 'compatibility_id "e2e-scale-compatibility-%s"\n' "$COUNT"
+    printf 'abi_id "elf-e2e-patch"\n'
+    for ((index = 0; index < COUNT; ++index)); do
+      digest=$(sha256sum "$generation/objects/unit_$index.o" | cut -d' ' -f1)
+      printf 'member "scale/unit-%d" "objects/unit_%d.o" "%s" "//cross_scale_%s:unit_%d.cpp" "%s"\n' \
+        "$index" "$index" "$digest" "$COUNT" "$index" "$BASE"
+    done
+    printf 'changed_input "//cross_scale_%s:unit_0.cpp"\n' "$COUNT"
+  } > "$generation/manifest.staging"
+  mv "$generation/manifest.staging" "$generation/manifest"
+  : > "$PUB/offers/$sequence-gen-$sequence.ready.staging"
+  mv "$PUB/offers/$sequence-gen-$sequence.ready.staging" \
+    "$PUB/offers/$sequence-gen-$sequence.ready"
+}
+
+value_for_marker() { # marker first|last
+  local marker="$1" position="$2"
+  if [ "$position" = first ]; then
+    grep -a "^marker=$marker " "$OUT" | head -1 | sed -n 's/.*value=\([0-9]*\).*/\1/p'
+  else
+    grep -a "^marker=$marker " "$OUT" | tail -1 | sed -n 's/.*value=\([0-9]*\).*/\1/p'
+  fi
+}
+
+echo "== neko.cross_tu_scale: $COUNT translation units (workdir: $WORK) =="
+
+compile_initial_generation
+compile_root 3
+compile_root 4
+
+( cd "$WORK" && "$HERE/cross_tu_scale_${COUNT}_runner" ) > "$OUT" 2>&1 &
+runner_pid=$!
+wait_for '^marker=1 ' 3 10 baseline
+
+publish 2 2
+wait_for '^applied generation=gen-2 ' 1 30 applied-v2
+wait_for '^marker=2 ' 3 10 live-v2
+
+publish 3 3
+wait_for "reload failed: cannot resolve external symbol 'scale_missing_symbol_for_rejected_generation'" \
+  1 30 rejected-v3
+wait_for '^marker=2 ' 6 10 old-code-preserved
+if grep -aq '^marker=3 ' "$OUT"; then
+  fail "rejected generation became observable"
+fi
+last_v2=$(value_for_marker 2 last)
+
+publish 4 4
+wait_for '^applied generation=gen-4 ' 1 30 applied-v4
+wait_for '^marker=4 ' 3 10 live-v4
+first_v4=$(value_for_marker 4 first)
+[ -n "$last_v2" ] && [ -n "$first_v4" ] || fail "missing state-continuity samples"
+[ "$first_v4" -gt "$last_v2" ] || \
+  fail "root state reset across recovery ($last_v2 -> $first_v4)"
+
+kill "$runner_pid" 2>/dev/null || true
+wait "$runner_pid" 2>/dev/null || true
+runner_pid=""
+
+[ "$(grep -ac '^applied generation=' "$OUT")" -eq 2 ] || \
+  fail "expected exactly two applied generations"
+[ "$(grep -ac '^reload failed:' "$OUT")" -eq 1 ] || \
+  fail "expected exactly one rejected generation"
+
+echo "CROSS-TU-SCALE PASS — $COUNT members linked, rejected atomically, and recovered"
+echo "output kept at: $OUT"
