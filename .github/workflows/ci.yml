@@ -83,7 +83,7 @@ jobs:
           -DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF
 
       - name: Build the TUI and its tests
-        run: bash scripts/build.sh debug --target neko_tui_layout neko_tui_monitor_input
+        run: bash scripts/build.sh debug --target neko_unit_tui_layout neko_unit_tui_monitor_input
 
       - name: Test
         run: bash scripts/test.sh debug -L tui
