@@ -10,6 +10,10 @@ concept complete_type = requires { sizeof(Type); };
 // Forward headers expose names without pulling in implementation definitions.
 static_assert(std::is_same_v<neko::backend::type_id, std::uint32_t>);
 static_assert(std::is_same_v<std::underlying_type_t<neko::log_level>, std::uint8_t>);
+static_assert(
+    std::is_same_v<std::underlying_type_t<neko::backend::generation_symbol_kind>, std::uint8_t>);
+static_assert(
+    std::is_same_v<std::underlying_type_t<neko::backend::generation_fixup_kind>, std::uint8_t>);
 static_assert(!complete_type<neko::backend::function_info>);
 static_assert(!complete_type<neko::backend::global_variable>);
 static_assert(!complete_type<neko::backend::type_layout>);
@@ -22,6 +26,8 @@ static_assert(!complete_type<neko::backend::state_manager>);
 static_assert(!complete_type<neko::backend::symbol_provider>);
 static_assert(!complete_type<neko::reload_session>);
 static_assert(!complete_type<neko::backend::function_replacement>);
+static_assert(!complete_type<neko::backend::generation_symbol>);
+static_assert(!complete_type<neko::backend::generation_fixup>);
 static_assert(!complete_type<neko::backend::loaded_image>);
 static_assert(!complete_type<neko::backend::bundle>);
 static_assert(!complete_type<neko::legacy::depfile_planner>);

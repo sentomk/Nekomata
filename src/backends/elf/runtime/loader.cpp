@@ -113,7 +113,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
   // rejections, so resolve before any memory is reserved.
   std::unordered_map<std::uint32_t, std::uint64_t> trampoline_offset_for_symbol;
   std::unordered_map<std::uint32_t, bool> symbol_pending_in_generation;
-  std::vector<pending_call_fixup> pending_fixups;
+  std::vector<generation_fixup> pending_fixups;
   for (const auto& rel : obj.relocations) {
     if (!is_call_to_undefined(rel.type) || rel.symbol_index == 0 ||
         rel.symbol_index >= obj.symbols.size()) {
@@ -178,7 +178,9 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     const auto& sym = obj.symbols[sym_index];
     if (symbol_pending_in_generation.count(sym_index) != 0) {
       write_trampoline(image.data() + offset, 0); // patched by link_generation()
-      pending_fixups.push_back({sym.name, static_cast<std::uint32_t>(offset)});
+      pending_fixups.push_back({sym.name, generation_symbol_kind::function,
+                                generation_fixup_kind::function_trampoline,
+                                static_cast<std::uint32_t>(offset)});
       continue;
     }
     void* target = symbols_.resolve_external(sym.name, STT_FUNC, sym.bind);
@@ -334,7 +336,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
   // ---- 8. what to redirect ----------------------------------------------
   loaded_image out;
   out.allocation = std::move(allocation);
-  out.pending_call_fixups = std::move(pending_fixups);
+  out.pending_fixups = std::move(pending_fixups);
 
   // Functions that end up with no redirect are not necessarily wrong (a new
   // static helper has nothing to replace), but a skipped name that LIVE code
@@ -352,8 +354,9 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     }
     if (sym.bind == STB_GLOBAL || sym.bind == STB_WEAK || sym.bind == STB_GNU_UNIQUE) {
       // Sibling objects of the same generation may call this fresh body.
-      out.exported_functions.push_back(
-          {sym.name, static_cast<std::uint32_t>(section_offset[sym.section_index] + sym.value)});
+      out.exported_symbols.push_back(
+          {sym.name, generation_symbol_kind::function,
+           static_cast<std::uint32_t>(section_offset[sym.section_index] + sym.value)});
     }
     std::optional<function_info> old = symbols_.function_by_name(sym.name);
     const auto duplicates = symbols_.count_functions(sym.name);
@@ -442,31 +445,44 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
 }
 
 void loader::link_generation(std::span<loaded_image* const> images) {
+  struct linked_symbol {
+    generation_symbol_kind kind;
+    std::uintptr_t address;
+  };
+
   // Prefer the candidate set: a sibling's fresh body is the new definition.
-  std::unordered_map<std::string_view, std::uintptr_t> exported;
+  std::unordered_map<std::string_view, linked_symbol> exported;
   for (const auto* image : images) {
     const auto base = reinterpret_cast<std::uintptr_t>(image->code());
-    for (const auto& function : image->exported_functions) {
-      exported.emplace(function.name, base + function.offset_in_image);
+    for (const auto& symbol : image->exported_symbols) {
+      exported.emplace(symbol.name, linked_symbol{symbol.kind, base + symbol.offset_in_image});
     }
   }
   for (auto* image : images) {
-    for (const auto& fixup : image->pending_call_fixups) {
-      const auto found = exported.find(fixup.name);
+    for (const auto& fixup : image->pending_fixups) {
+      const auto found = exported.find(fixup.symbol_name);
       if (found == exported.end()) {
-        throw std::runtime_error("cannot resolve external symbol '" + fixup.name +
+        throw std::runtime_error("cannot resolve external symbol '" + fixup.symbol_name +
                                  "' — the process has no link-visible definition and the dynamic "
                                  "linker cannot see one either");
       }
+      if (found->second.kind != fixup.target_kind) {
+        throw std::runtime_error("generation symbol '" + fixup.symbol_name +
+                                 "' has an incompatible target kind");
+      }
+      if (fixup.kind != generation_fixup_kind::function_trampoline ||
+          fixup.target_kind != generation_symbol_kind::function) {
+        throw std::runtime_error("unsupported generation fixup for '" + fixup.symbol_name + "'");
+      }
       std::uint8_t trampoline[13];
-      write_trampoline(trampoline, found->second);
-      if (!substituter_.rewrite_reservation(*image->allocation, fixup.trampoline_offset_in_image,
-                                            trampoline, sizeof(trampoline))) {
-        throw std::runtime_error("cannot patch cross-object call to '" + fixup.name +
+      write_trampoline(trampoline, found->second.address);
+      if (!substituter_.rewrite_reservation(*image->allocation, fixup.offset_in_image, trampoline,
+                                            sizeof(trampoline))) {
+        throw std::runtime_error("cannot patch cross-object call to '" + fixup.symbol_name +
                                  "' inside its code image");
       }
     }
-    image->pending_call_fixups.clear();
+    image->pending_fixups.clear();
   }
 }
 

@@ -31,11 +31,13 @@
 namespace neko::elf {
 
 using neko::backend::code_substituter;
-using neko::backend::exported_function;
 using neko::backend::function_replacement;
+using neko::backend::generation_fixup;
+using neko::backend::generation_fixup_kind;
+using neko::backend::generation_symbol;
+using neko::backend::generation_symbol_kind;
 using neko::backend::loaded_image;
 using neko::backend::object_loader;
-using neko::backend::pending_call_fixup;
 using neko::backend::symbol_provider;
 
 class loader final : public object_loader {

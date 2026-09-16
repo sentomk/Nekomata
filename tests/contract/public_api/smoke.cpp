@@ -52,6 +52,26 @@ TEST_CASE("kernel interfaces are implementable and default-usable") {
   CHECK(provider.layout_of(7).id == 7);
 }
 
+TEST_CASE("generation linkage metadata keeps target and encoding distinct") {
+  const neko::backend::generation_symbol object_symbol{
+      "counter",
+      neko::backend::generation_symbol_kind::object,
+      16,
+  };
+  const neko::backend::generation_fixup function_call{
+      "tick",
+      neko::backend::generation_symbol_kind::function,
+      neko::backend::generation_fixup_kind::function_trampoline,
+      32,
+  };
+
+  CHECK(object_symbol.kind == neko::backend::generation_symbol_kind::object);
+  CHECK(object_symbol.offset_in_image == 16);
+  CHECK(function_call.target_kind == neko::backend::generation_symbol_kind::function);
+  CHECK(function_call.kind == neko::backend::generation_fixup_kind::function_trampoline);
+  CHECK(function_call.offset_in_image == 32);
+}
+
 TEST_CASE("reload_session rejects incomplete backend bundles") {
   neko::backend::bundle incomplete;
   incomplete.symbols = std::make_shared<null_symbol_provider>();

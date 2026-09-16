@@ -31,31 +31,49 @@ struct function_replacement {
   std::uint32_t offset_in_image = 0;
 };
 
-/// A link-visible function this object defines in its fresh image. Cross-TU
-/// calls that cannot resolve against the process are patched to these.
-struct exported_function {
+/// The target category of a symbol participating in generation-wide linking.
+/// Object symbols are modeled for upcoming state allocation; the current ELF
+/// loader exports and resolves only function symbols.
+enum class generation_symbol_kind : std::uint8_t {
+  function,
+  object,
+};
+
+/// A link-visible definition this object contributes to its generation.
+struct generation_symbol {
   std::string name;
+  generation_symbol_kind kind = generation_symbol_kind::function;
   std::uint32_t offset_in_image = 0;
 };
 
-/// A call this object could not resolve at load time; the trampoline bytes
-/// carry a placeholder until `link_generation()` patches them or rejects.
-struct pending_call_fixup {
-  std::string name;
-  std::uint32_t trampoline_offset_in_image = 0;
+/// The encoding a generation fixup writes. New encodings are added only when
+/// a backend implements them; modeling object symbols alone does not claim
+/// that object-reference fixups are supported.
+enum class generation_fixup_kind : std::uint8_t {
+  function_trampoline,
 };
 
-/// A fresh object file placed into executable memory, fully relocated.
+/// An unresolved reference whose target may be defined by a sibling image.
+struct generation_fixup {
+  std::string symbol_name;
+  generation_symbol_kind target_kind = generation_symbol_kind::function;
+  generation_fixup_kind kind = generation_fixup_kind::function_trampoline;
+  std::uint32_t offset_in_image = 0;
+};
+
+/// A fresh object file placed into executable memory. Local and process
+/// references are already relocated; generation-wide references remain as
+/// typed fixups until `link_generation()`.
 struct loaded_image {
   /// Candidate executable mapping. Preparation owns it here; a successful
   /// transaction moves it into reload_session's active allocation set.
   executable_allocation_ptr allocation;
   /// Function entries that still need redirecting.
   std::vector<function_replacement> replacements;
-  /// Link-visible functions provided to sibling objects of the generation.
-  std::vector<exported_function> exported_functions;
-  /// Calls deferred to `link_generation()` — new cross-TU symbols.
-  std::vector<pending_call_fixup> pending_call_fixups;
+  /// Link-visible definitions provided to sibling images of the generation.
+  std::vector<generation_symbol> exported_symbols;
+  /// Typed references deferred until the complete generation is available.
+  std::vector<generation_fixup> pending_fixups;
 
   [[nodiscard]] void* code() noexcept {
     return allocation == nullptr ? nullptr : allocation->data();
@@ -88,10 +106,11 @@ public:
     return load(object_data, size);
   }
 
-  /// Resolve calls between the objects of one candidate generation. Called
-  /// once every object of the generation is loaded and before validation or
-  /// commit; throws for a call no sibling defines and the process cannot
-  /// resolve either. The default accepts images without pending cross links.
+  /// Resolve typed symbol references between the objects of one candidate
+  /// generation. Called once every object is loaded and before validation or
+  /// commit; throws when a pending fixup has no compatible sibling
+  /// definition. Process-visible references have already been handled by
+  /// `load()`. The default accepts images without pending cross links.
   virtual void link_generation(std::span<loaded_image* const> images) { (void)images; }
 };
 

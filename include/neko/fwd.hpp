@@ -14,6 +14,9 @@ namespace backend {
 
 using type_id = std::uint32_t;
 
+enum class generation_symbol_kind : std::uint8_t;
+enum class generation_fixup_kind : std::uint8_t;
+
 class object_loader;
 class symbol_provider;
 class state_manager;
@@ -27,6 +30,8 @@ struct type_layout;
 struct change_set;
 struct patch_plan;
 struct function_replacement;
+struct generation_symbol;
+struct generation_fixup;
 struct loaded_image;
 
 } // namespace backend
