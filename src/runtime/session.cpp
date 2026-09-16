@@ -96,21 +96,32 @@ reload_session::impl::~impl() {
   }
 }
 
+void reload_session::impl::check_fatal_error() const {
+  if (commit_poisoned_) {
+    throw detail::fatal_reload_error(std::string{detail::incomplete_rollback_message});
+  }
+  check_fatal_worker_error();
+}
+
 void reload_session::impl::watch(std::filesystem::path object_path) {
+  check_fatal_error();
   watched_.push_back({std::move(object_path), {}});
 }
 
 void reload_session::impl::watch(std::filesystem::path object_path,
                                  const std::filesystem::path& source_path) {
+  check_fatal_error();
   watched_.push_back({std::move(object_path), detail::normalized_source_path(source_path)});
 }
 
 void reload_session::impl::watch(generation_watch generation) {
+  check_fatal_error();
   generation.manifest_path = detail::normalized_source_path(generation.manifest_path);
   generation_watches_.push_back(std::move(generation));
 }
 
 void reload_session::impl::watch() {
+  check_fatal_error();
   if (managed_groups_.empty()) {
     throw std::runtime_error(
         "reload_session: no embedded reload group descriptors; nothing to watch");
@@ -121,21 +132,24 @@ void reload_session::impl::watch() {
 }
 
 void reload_session::impl::watch(std::string_view group_id) {
+  check_fatal_error();
   enable_managed_group(find_managed_group(group_id));
 }
 
 void reload_session::impl::unwatch() {
+  check_fatal_error();
   for (auto& group : managed_groups_) {
     group->enabled = false;
   }
 }
 
 void reload_session::impl::unwatch(std::string_view group_id) {
+  check_fatal_error();
   find_managed_group(group_id).enabled = false;
 }
 
 session_snapshot reload_session::impl::snapshot() const {
-  check_fatal_worker_error();
+  check_fatal_error();
   std::lock_guard<std::mutex> lock(worker_mutex_);
   session_snapshot out;
   out.applied = applied_;
@@ -169,7 +183,7 @@ session_snapshot reload_session::impl::snapshot() const {
 }
 
 update_result reload_session::impl::update() {
-  check_fatal_worker_error();
+  check_fatal_error();
   update_result result;
   const auto redirected = [](const prepared_generation& generation) {
     std::size_t count = 0;
@@ -201,6 +215,8 @@ update_result reload_session::impl::update() {
           group->prepared.reset();
           event.redirected_function_count = count;
           result.events.push_back(std::move(event));
+        } catch (const detail::fatal_reload_error&) {
+          throw;
         } catch (const std::exception& e) {
           group->prepared.reset();
           event.status = update_status::rejected;
@@ -260,6 +276,8 @@ update_result reload_session::impl::update() {
       event.redirected_function_count = count;
       result.events.push_back(std::move(event));
     }
+  } catch (const detail::fatal_reload_error&) {
+    throw;
   } catch (const std::exception& e) {
     ++rejected_;
     last_result_ = e.what();

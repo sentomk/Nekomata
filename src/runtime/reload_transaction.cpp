@@ -106,9 +106,27 @@ void reload_session::impl::commit(prepared_generation& generation) {
   std::size_t patched = 0;
   for (const auto& entry : saved) {
     if (!backends_.substituter->patch_entry(entry.entry, entry.target)) {
+      std::size_t restore_failures = 0;
       for (std::size_t index = patched; index > 0; --index) {
         const auto& written = saved[index - 1];
-        backends_.substituter->restore_entry(written.entry, written.original);
+        if (!backends_.substituter->restore_entry(written.entry, written.original)) {
+          ++restore_failures;
+        }
+      }
+      if (restore_failures != 0) {
+        // A failed write may be partial, and a failed restore leaves at least
+        // one live entry with an unknown target. Preserve the complete
+        // candidate generation before throwing so no possible target becomes
+        // dangling. The session cannot make another safe transaction.
+        commit_poisoned_ = true;
+        for (auto& prepared : generation.reloads) {
+          active_allocations_.push_back(std::move(prepared->image.allocation));
+        }
+        neko::log(neko::log_level::error,
+                  "entry patch failed at '%s'; rollback failed for %zu of %zu written entries; "
+                  "session is unusable\n",
+                  entry.name->c_str(), restore_failures, patched);
+        throw detail::fatal_reload_error(std::string{detail::incomplete_rollback_message});
       }
       throw std::runtime_error("reload rejected and rolled back " + std::to_string(patched) +
                                " entr" + (patched == 1 ? "y" : "ies") + ": cannot patch entry of " +

@@ -34,6 +34,15 @@
 
 namespace neko::detail {
 
+inline constexpr std::string_view incomplete_rollback_message =
+    "reload session is unusable: an entry patch failed and rollback could not restore every "
+    "written entry";
+
+class fatal_reload_error final : public std::runtime_error {
+public:
+  using std::runtime_error::runtime_error;
+};
+
 /// Lexically normalized, absolute form of a watched source path. Compared
 /// without opening or canonicalizing the file.
 [[nodiscard]] std::filesystem::path normalized_source_path(const std::filesystem::path& path);
@@ -124,6 +133,7 @@ public:
   void worker_loop();
   void prepare_managed_group(managed_group& group);
   void raise_fatal_worker_error(std::exception_ptr error);
+  void check_fatal_error() const;
   void check_fatal_worker_error() const;
 
   backend::bundle backends_;
@@ -141,6 +151,7 @@ public:
   std::thread worker_;
   bool worker_running_ = false;
   std::exception_ptr fatal_worker_error_;
+  bool commit_poisoned_ = false;
   std::unordered_map<std::string, std::unordered_set<std::string>>
       applied_generation_ids_by_manifest_;
   /// Functions redirected by the last fully-applied load of each watched

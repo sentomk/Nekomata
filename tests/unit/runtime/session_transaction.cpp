@@ -127,7 +127,8 @@ private:
 
 class recording_substituter final : public neko::backend::code_substituter {
 public:
-  explicit recording_substituter(std::uintptr_t fail_entry) : fail_entry_(fail_entry) {}
+  explicit recording_substituter(std::uintptr_t fail_entry, std::uintptr_t fail_restore_entry = 0)
+      : fail_entry_(fail_entry), fail_restore_entry_(fail_restore_entry) {}
 
   neko::backend::executable_allocation_ptr reserve_code_near(std::uintptr_t,
                                                              std::uint64_t) override {
@@ -162,7 +163,7 @@ public:
 
   bool restore_entry(std::uintptr_t entry, const std::uint8_t[5]) override {
     restored.push_back(entry);
-    return true;
+    return entry != fail_restore_entry_;
   }
 
   std::size_t expected_prechecks = 2;
@@ -175,6 +176,7 @@ public:
 
 private:
   std::uintptr_t fail_entry_;
+  std::uintptr_t fail_restore_entry_;
 };
 
 struct allocation_counters {
@@ -277,6 +279,60 @@ TEST_CASE("one update rolls back entries patched for earlier watched objects") {
   CHECK(stats.last_result == error);
   CHECK(allocations->reclaimed == 2);
   CHECK(allocations->released_to_process == 0);
+}
+
+TEST_CASE("an incomplete rollback poisons the session and retains candidate code") {
+  constexpr std::uintptr_t a_entry = 0x1110;
+  constexpr std::uintptr_t b_entry = 0x2220;
+  constexpr auto fatal_error =
+      "reload session is unusable: an entry patch failed and rollback could not restore every "
+      "written entry";
+
+  std::array<std::uint8_t, 8> a_code{};
+  std::array<std::uint8_t, 8> b_code{};
+  auto allocations = std::make_shared<allocation_counters>();
+  std::vector<neko::backend::loaded_image> images;
+  images.push_back(image(a_code.data(), "a_tick", a_entry, allocations));
+  images.push_back(image(b_code.data(), "b_tick", b_entry, allocations));
+
+  auto loader = std::make_shared<queued_loader>(std::move(images));
+  auto process = std::make_shared<fake_process>();
+  auto substituter = std::make_shared<recording_substituter>(b_entry, a_entry);
+
+  neko::backend::bundle backends;
+  backends.loader = loader;
+  backends.symbols = process;
+  backends.state = process;
+  backends.substituter = substituter;
+
+  temporary_directory temporary;
+  const auto a_offer = temporary.path() / "a.new.o";
+  const auto b_offer = temporary.path() / "b.new.o";
+  offer(a_offer);
+  offer(b_offer);
+
+  {
+    neko::reload_session session{std::move(backends)};
+    session.watch(a_offer);
+    session.watch(b_offer);
+
+    CHECK_THROWS_WITH_AS(static_cast<void>(session.update()), fatal_error, std::runtime_error);
+    REQUIRE(substituter->patched.size() == 2);
+    CHECK(substituter->patched[0] == a_entry);
+    CHECK(substituter->patched[1] == b_entry);
+    REQUIRE(substituter->restored.size() == 1);
+    CHECK(substituter->restored[0] == a_entry);
+    CHECK(allocations->reclaimed == 0);
+    CHECK(allocations->released_to_process == 0);
+
+    CHECK_THROWS_WITH_AS(static_cast<void>(session.update()), fatal_error, std::runtime_error);
+    CHECK_THROWS_WITH_AS(static_cast<void>(session.snapshot()), fatal_error, std::runtime_error);
+    CHECK_THROWS_WITH_AS(session.unwatch(), fatal_error, std::runtime_error);
+    CHECK(substituter->patched.size() == 2);
+  }
+
+  CHECK(allocations->reclaimed == 0);
+  CHECK(allocations->released_to_process == 2);
 }
 
 TEST_CASE("one update rejects objects that replace the same live entry") {

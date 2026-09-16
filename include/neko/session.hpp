@@ -53,7 +53,7 @@ enum class reload_error_code : std::uint8_t {
   incompatible,     ///< group, compatibility, or ABI identity mismatch
   integrity,        ///< missing object, digest mismatch, or unsafe path
   object_rejected,  ///< parse, symbol, relocation, or entry-check failure
-  commit_failed,    ///< an entry write failed and was rolled back
+  commit_failed,    ///< an entry write failed and was successfully rolled back
 };
 
 /// One transaction outcome. Managed reload groups carry their `group_id` and
@@ -180,8 +180,10 @@ public:
   /// Each managed group is its own all-or-nothing transaction; one group's
   /// rejection does not prevent the others from applying. Artifact problems
   /// are rejected events, not exceptions: no entry changed for a rejected
-  /// transaction remains modified. Exceptions are reserved for programming
-  /// errors.
+  /// transaction remains modified. If an entry write fails and rollback
+  /// cannot restore every earlier write, `update()` throws `std::runtime_error`
+  /// and the session becomes unusable; later member calls throw the same
+  /// error. This fatal case is not represented as a rejected event.
   ///
   /// Before calling, the caller must ensure that no thread can enter or execute
   /// reloadable code, and must preserve that quiescent state until this method
