@@ -1,14 +1,12 @@
 # nekomata backends.
 #
 # Backends carry all platform knowledge and are isolated in their own
-# directories with their own tests:
+# directories with their own tests. Their responsibilities map as follows:
 #
-#   backend            Linux             Windows
-#   -----------------  ----------------  ------------------------------
-#   compiler frontend  Clang (>= 14)     MSVC
-#   symbol backend     DWARF + symtab    PDB (MS DIA SDK)
-#   binary backend     ELF               PE
-#   runtime agent      mmap/mprotect     VirtualProtect
+# - compiler frontend: Clang (>= 14) on Linux; MSVC on Windows
+# - symbol backend: DWARF + symtab on Linux; PDB (MS DIA SDK) on Windows
+# - binary backend: ELF on Linux; PE on Windows
+# - runtime agent: mmap/mprotect on Linux; VirtualProtect on Windows
 #
 # The kernel (include/neko) must stay buildable on every platform so the
 # orchestration logic is testable everywhere; backends are gated below.

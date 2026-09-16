@@ -58,6 +58,9 @@ not enough for Linux runtime changes.
 7. The supported product surface is the library API. Do not present
    development utilities under `tools/` as a user-facing CLI or add public
    compatibility promises for them.
+8. **Comments are concise prose.** Do not simulate headings with repeated
+   punctuation or numbered ruler banners such as `// ---- 1. ... ----`.
+   Prefer a short sentence that explains intent, constraints, or invariants.
 
 ## Known sharp edges
 

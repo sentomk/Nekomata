@@ -67,7 +67,7 @@ function(nekomata_add_reload_group name)
     set(neko_publisher_executable "$<TARGET_FILE:nekomata::host_publisher>")
   endif()
 
-  # ---- identity ------------------------------------------------------------
+  # Resolve the group identity.
   if(ARG_GROUP_ID)
     set(group_id "${ARG_GROUP_ID}")
   else()
@@ -79,7 +79,7 @@ function(nekomata_add_reload_group name)
       "backslashes or quotes")
   endif()
 
-  # ---- member units ---------------------------------------------------------
+  # Collect and validate the member units.
   # SOURCES form creates its own internal unit; UNITS form validates that
   # every unit was declared by nekomata_add_reload_unit.
   if(ARG_SOURCES)
@@ -99,7 +99,7 @@ function(nekomata_add_reload_group name)
     set(member_units "${ARG_UNITS}")
   endif()
 
-  # ---- group target ----------------------------------------------------------
+  # Create the group target.
   # For SOURCES the group target IS the unit (an OBJECT library); for UNITS
   # it is an INTERFACE library injecting every unit's objects plus the
   # descriptor into its direct consumer.
@@ -115,7 +115,7 @@ function(nekomata_add_reload_group name)
     target_link_libraries(${name} INTERFACE ${member_units})
   endif()
 
-  # ---- compatibility fingerprint ---------------------------------------------
+  # Compute the compatibility fingerprint.
   set(fingerprint "${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}-"
     "${CMAKE_CXX_STANDARD}-${name}")
   foreach(unit IN LISTS member_units)
@@ -129,7 +129,7 @@ function(nekomata_add_reload_group name)
   set(abi_id "elf-${CMAKE_SYSTEM_PROCESSOR}-patch-v1")
   set(generation_root "${CMAKE_BINARY_DIR}/nekomata")
 
-  # ---- member keys and publication arguments -----------------------------------
+  # Build member keys and publication arguments.
   # Iterate every unit's sources in declaration order to build the ordered
   # member list the descriptor and manifest require.
   set(member_keys "")
@@ -157,7 +157,7 @@ function(nekomata_add_reload_group name)
     list(APPEND publication_depends "${unit}")
   endforeach()
 
-  # ---- the embedded descriptor TU ------------------------------------------
+  # Generate the embedded descriptor translation unit.
   set(descriptor_tu "${CMAKE_BINARY_DIR}/nekomata-generators/${name}/descriptor_$<CONFIG>.cpp")
   set(descriptor_args --group "${group_id}" --key "${publication_key}"
     --compat "${compat_id}" --abi "${abi_id}" --root "${generation_root}")
@@ -179,7 +179,7 @@ function(nekomata_add_reload_group name)
   target_sources(${name} INTERFACE
     "$<TARGET_OBJECTS:${name}_neko_descriptor>")
 
-  # ---- publication ----------------------------------------------------------
+  # Publish immutable generations.
   set(stamp "${generation_root}/$<CONFIG>/${name}.reload.stamp")
   add_custom_command(
     OUTPUT "${stamp}"

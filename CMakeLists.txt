@@ -5,9 +5,7 @@ project(nekomata
   DESCRIPTION "Native hot-reload for C/C++ — no restarts, no refactor."
   LANGUAGES C CXX)
 
-# ---------------------------------------------------------------------------
-# Options
-# ---------------------------------------------------------------------------
+# Build options.
 option(NEKOMATA_BUILD_TESTS "Build nekomata tests" ON)
 option(NEKOMATA_BUILD_TOOLS "Build nekomata command line tools" ON)
 option(NEKOMATA_BUILD_EXAMPLES "Build nekomata examples" ON)
@@ -22,9 +20,7 @@ if(NEKOMATA_ENABLE_CLANG_TIDY)
   find_program(NEKOMATA_CLANG_TIDY_EXECUTABLE NAMES clang-tidy-18 clang-tidy REQUIRED)
 endif()
 
-# ---------------------------------------------------------------------------
-# Global compile settings
-# ---------------------------------------------------------------------------
+# Global compile settings.
 # Source and output are UTF-8: the cat faces in `cats.hpp` and the TUI's box
 # drawing are multi-byte, and log lines are meant to reach the terminal as
 # UTF-8. MSVC defaults both character sets to the machine's code page, which
@@ -55,9 +51,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
   set(NEKOMATA_TARGET_WINDOWS ON)
 endif()
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# Shared CMake helpers.
 function(nekomata_apply_clang_tidy target)
   if(NEKOMATA_ENABLE_CLANG_TIDY)
     set(tidy_command "${NEKOMATA_CLANG_TIDY_EXECUTABLE}"
@@ -102,10 +96,8 @@ function(nekomata_apply_sanitizers target)
   endif()
 endfunction()
 
-# ---------------------------------------------------------------------------
 # Public generated headers and compiled implementation.
 # Runtime interfaces must not depend on platform backends.
-# ---------------------------------------------------------------------------
 configure_file(include/neko/version.hpp.in generated/neko/version.hpp @ONLY)
 
 # The generated config header describes what this build carries; the umbrella
@@ -116,9 +108,7 @@ if(NEKOMATA_TUI)
 endif()
 configure_file(include/neko/config.hpp.in generated/neko/config.hpp)
 
-# ---------------------------------------------------------------------------
-# Tests, tools & examples
-# ---------------------------------------------------------------------------
+# Tests, tools, and examples.
 # enable_testing() must run before any subdirectory that calls add_test().
 if(NEKOMATA_BUILD_TESTS)
   enable_testing()
@@ -154,15 +144,12 @@ if(NEKOMATA_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
-# ---------------------------------------------------------------------------
-# Install & export
-#
+# Install and export the public targets and package metadata.
 # The installed package exposes `nekomata::neko` (runtime + the platform
 # backend), `nekomata::runtime`, `nekomata::elf`, and the adapter-facing
 # `nekomata::host_publisher` executable. `neko_protocol` and `neko_base_c`
 # ride the export for the static link closure; they are internal. The TUI
 # is not exported yet: its Glyph dependency needs an install story first.
-# ---------------------------------------------------------------------------
 include(CMakePackageConfigHelpers)
 
 find_package(Threads REQUIRED)
@@ -224,9 +211,7 @@ install(FILES
 install(FILES cmake/nekomata.cmake
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/nekomata)
 
-# ---------------------------------------------------------------------------
-# Configuration summary
-# ---------------------------------------------------------------------------
+# Configuration summary.
 message(STATUS "nekomata ${PROJECT_VERSION}")
 message(STATUS "  compiler:   ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "  build type: ${CMAKE_BUILD_TYPE}")

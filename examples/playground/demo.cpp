@@ -11,14 +11,14 @@
 #include <cmath>
 #include <cstdio>
 
-// ---- World state (preserved across reloads; keep these globals unchanged) ----
+// World state persists across reloads, so keep these globals unchanged.
 double g_x = 1.0;  // Ball position along the horizontal axis.
 double g_y = 18.0; // Ball height; positive points upward.
 double g_vx = 5.0; // Horizontal velocity.
 double g_vy = 0.0; // Vertical velocity.
 int g_frame = 0;   // Frame counter for observing state continuity.
 
-// ---- Physics parameters (edit and reload to see the effect) -----------------
+// Physics parameters are safe to edit and reload.
 const double kGravity = -9.8;     // Try -1.6 for Moon-like gravity, or -30.
 const double kRestitution = 0.85; // A value of 1.01 makes each bounce higher.
 const double kDt = 0.05;          // Simulation time step.

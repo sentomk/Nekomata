@@ -200,7 +200,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     }
   }
 
-  // ---- 1. layout: text/rodata sections get arena offsets ---------------
+  // Lay out text and read-only data sections in the executable arena.
   std::vector<std::uint64_t> section_offset(obj.sections.size(), 0);
   std::uint64_t image_size = 0;
   for (const auto& sec : obj.sections) {
@@ -220,7 +220,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     throw std::runtime_error("object file carries no code");
   }
 
-  // ---- 2. undefined-symbol CALLS get in-arena trampolines --------------
+  // Reserve in-arena trampolines for unresolved calls.
   // Slot assignment happens before the arena is reserved: the trampolines
   // are part of the image, so their bytes must be covered by the
   // reservation. Growing image_size after reserve_code_near() would commit
@@ -252,7 +252,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     image_size += 13; // movabs r11, imm64 (10) + jmp r11 (3, needs REX.B)
   }
 
-  // ---- 3. arena near the code being replaced ---------------------------
+  // Reserve the arena near the code being replaced.
   // Hint = the old entry of the first function we will redirect.
   std::uintptr_t hint = 0;
   for (const auto& sym : obj.symbols) {
@@ -279,7 +279,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
   void* arena = allocation->data();
   const auto base = reinterpret_cast<std::uintptr_t>(arena);
 
-  // ---- 4. build the image ----------------------------------------------
+  // Build the candidate code image.
   std::vector<std::uint8_t> image(image_size, 0);
   for (const auto& sec : obj.sections) {
     if (sec.cls != section_class::text && sec.cls != section_class::rodata) {
@@ -307,7 +307,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
   out.allocation = std::move(allocation);
   out.pending_fixups = std::move(pending_fixups);
 
-  // ---- 5. data-section anchors for state preservation ------------------
+  // Map mutable sections onto preserved or newly allocated state.
   // The assembler folds static-variable accesses into
   // `<data section> + addend` relocations (st_value + RIP adjustment), so a
   // data section needs an OLD base address. We anchor it on the named
@@ -418,7 +418,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
         {sym.name, generation_symbol_kind::object, 0, state_by_symbol[symbol_index]->address});
   }
 
-  // ---- 6. symbol resolution ---------------------------------------------
+  // Resolve symbols against the process, candidate image, or state storage.
   auto resolve = [&](const symbol& sym) -> std::uintptr_t {
     if (sym.section_index == SHN_UNDEF) {
       // Data/address references to undefined symbols resolve against
@@ -461,7 +461,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     return base + section_offset[sym.section_index] + sym.value;
   };
 
-  // ---- 7. relocations of text sections ----------------------------------
+  // Apply relocations to text sections.
   for (const auto& rel : obj.relocations) {
     if (rel.target_section >= obj.sections.size()) {
       continue;
@@ -574,7 +574,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     }
   }
 
-  // ---- 8. what to redirect ----------------------------------------------
+  // Select live function entries to redirect.
   // Functions that end up with no redirect are not necessarily wrong (a new
   // static helper has nothing to replace), but a skipped name that LIVE code
   // also carries is how signature changes and overloads quietly keep running
@@ -654,7 +654,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     out.replacements.push_back(std::move(repl));
   }
 
-  // ---- 9. make it executable ---------------------------------------------
+  // Commit the finished image as executable memory.
   if (!substituter_.commit_code(*out.allocation, image.data(), image.size())) {
     throw std::runtime_error("failed to commit code image");
   }

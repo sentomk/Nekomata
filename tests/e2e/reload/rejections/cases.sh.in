@@ -148,7 +148,7 @@ build_arena_variant() { # build_arena_variant <page_size> <output>
 
 echo "== neko.rejections (workdir: $WORK) =="
 
-# ---- PIE host: fully supported — startup AND a live reload --------------
+# A PIE host supports both startup and live reload.
 # The hot TU recipe follows the host: PIE hosts need -fpie objects (the
 # linker rejects absolute relocations from -fno-pie code in a PIE link).
 PIE_OUT="$WORK/pie_out.txt"
@@ -179,7 +179,7 @@ wait "$pie_pid" 2>/dev/null || true
 check_clean_log "$PIE_OUT"
 echo "PASS pie_host (startup + live reload under ASLR)"
 
-# ---- one runner absorbs all broken drops ---------------------------------
+# Keep one runner alive while feeding all malformed objects.
 "$CXX" $BASE -c "$SRC/hot.cpp" -o "$WORK/baseline.o"
 
 # The disambiguation cases need the offline map, and the fixture is now
@@ -360,7 +360,7 @@ boundary_after=$(grep -c '\[hot\] tick' "$boundary_log" || true)
 finish_runner "$boundary_pid" "$WORK/boundary_stop" "$boundary_log"
 echo "PASS arena_boundary"
 
-# ---- a VALID reload must still work after all the abuse ------------------
+# A valid reload must still work after every rejection case.
 build_variant 's|++g_counter;|g_counter += 10;|; s|\[hot\]|[recovered]|'
 final_cursor=$(log_cursor "$OUT")
 mv "$WORK/staging.o" "$WORK/bad.new.o"

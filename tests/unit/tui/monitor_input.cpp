@@ -46,9 +46,7 @@
 
 namespace {
 
-// ---------------------------------------------------------------------------
 // Null backend: these tests exercise the monitor, not a real reload.
-// ---------------------------------------------------------------------------
 class null_loader final : public neko::backend::object_loader {
 public:
   neko::backend::loaded_image load(const std::uint8_t*, std::size_t) override {
@@ -91,7 +89,6 @@ public:
   bool restore_entry(std::uintptr_t, const std::uint8_t[5]) override { return false; }
 };
 
-// ---------------------------------------------------------------------------
 // Just enough terminal to reconstruct what a viewer sees: absolute cursor
 // moves, carriage returns, line feeds, and a clear. Styles and mode toggles
 // are consumed and dropped. Cells hold bytes rather than glyphs, which is
@@ -103,7 +100,6 @@ public:
 // anywhere, including in the middle of an escape sequence. A parser that
 // only understood sequences contained in a single feed() call left escape
 // tails on screen as text and quietly produced garbage.
-// ---------------------------------------------------------------------------
 class terminal_screen {
 public:
   terminal_screen(int cols, int rows) : cols_(cols), cells_(rows, std::string(cols, ' ')) {}
@@ -282,9 +278,7 @@ private:
   utf8_decoder utf8_;
 };
 
-// ---------------------------------------------------------------------------
 // A monitor on a pty, driven from the parent side of the pair.
-// ---------------------------------------------------------------------------
 constexpr int kCols = 140;
 constexpr int kRows = 40;
 constexpr int kLogLines = 60;

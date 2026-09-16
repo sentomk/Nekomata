@@ -1,7 +1,7 @@
 Expected transcript of `bash run_demo.sh` (counts vary with timing; the
 structure and the acceptance relationships do not):
 
-    == nekomata phase 1 demo (workdir: /tmp/neko-hello.AbCdEf) ==
+    == nekomata hello reload demo (workdir: /tmp/neko-hello.AbCdEf) ==
     -- v1 running, e.g.: [v1] tick #5, g_counter=5
     -- edit applied:
     9c9

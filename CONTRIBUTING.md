@@ -58,6 +58,10 @@ DWARF support can be disabled with
   is the only place phase vocabulary appears.
 - **Formatting**: pinned clang-format 22 (`bash scripts/format.sh --check`, or
   `--fix`); CI enforces it.
+- **Comments**: write concise prose that explains intent, constraints, or
+  invariants. Do not simulate headings with repeated punctuation or numbered
+  ruler banners such as `// ---- 1. ... ----`; use a normal sentence and
+  code structure instead.
 
 ## Layout, headers and file names
 

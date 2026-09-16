@@ -180,9 +180,7 @@ struct utf8_decoder {
 
 } // namespace
 
-// ---------------------------------------------------------------------------
 // Terminal monitor: owns a pty, renders in a background thread.
-// ---------------------------------------------------------------------------
 class monitor::terminal_monitor {
 public:
   terminal_monitor(reload_session& session, const monitor_config& config)
@@ -624,10 +622,7 @@ private:
   std::int64_t note_tick_ = 0;
 };
 
-// ---------------------------------------------------------------------------
 // Public monitor: dispatches by mode.
-// ---------------------------------------------------------------------------
-
 monitor::monitor(reload_session& session, monitor_config config)
     : session_(session), config_(std::move(config)) {
   if (config_.render_mode != mode::inline_status) {

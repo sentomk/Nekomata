@@ -54,13 +54,13 @@ echo "== neko.atomicity (workdir: $WORK) =="
 runner_pid=$!
 wait_count '\[tick v1\]' 2 10 startup
 
-# ---- v2: success, both functions swapped -------------------------------
+# v2 succeeds and swaps both functions.
 variant v2 1 0 "tick v2"
 mv "$WORK/staging.o" "$WORK/atomic.new.o"
 wait_count '\[tick v2\]' 2 15 v2-live
 grep -aq "reload applied" "$OUT" || fail "v2 did not apply"
 
-# ---- v3: must be rejected AND rolled back ------------------------------
+# v3 must be rejected and rolled back.
 variant v3 1 1 "tick v3"
 mv "$WORK/staging.o" "$WORK/atomic.new.o"
 wait_count "rejected" 1 15 v3-rejected
@@ -81,7 +81,7 @@ wait_count '\[tick v2\]' 1 5 v2-still-live
 kill -0 "$runner_pid" 2>/dev/null || fail "runner died on the rejected reload"
 echo "PASS atomic: v3 rejected with zero partial state, v2 code still running"
 
-# ---- v4: success + stale-redirect warning for the dropped tock ---------
+# v4 succeeds and warns about the dropped tock redirect.
 variant v4 0 0 "tick v4"
 mv "$WORK/staging.o" "$WORK/atomic.new.o"
 wait_count '\[tick v4\]' 2 15 v4-live
