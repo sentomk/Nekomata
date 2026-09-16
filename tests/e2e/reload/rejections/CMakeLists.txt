@@ -21,7 +21,8 @@ nekomata_add_e2e_test(
   LABELS linux
   TEST_ARGS --cli "$<TARGET_FILE:nekomata>")
 
-# The same harness built PIE: process_symbols must refuse it at startup.
+# The same harness built PIE: PIE hosts work end to end — startup and a
+# live reload, with hot objects compiled -fpie to match the host link.
 add_executable(reject_runner_pie runner.cpp hot.cpp collide.cpp)
 target_link_libraries(reject_runner_pie PRIVATE nekomata::backends::elf)
 target_compile_options(reject_runner_pie PRIVATE -O0)

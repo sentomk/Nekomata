@@ -6,9 +6,11 @@
 #   1. the process did not restart, yet later calls run the new logic;
 #   2. g_counter / s_calls kept counting across the swap (state preserved).
 #
-# Build requirements (current pruning): -no-pie (process_symbols reads the
-# executable's .symtab and expects link-time == runtime addresses) and -O0
-# (entry-prologue pattern). PIE support is planned.
+# Build requirements (current pruning): -no-pie and -O0 (entry-prologue
+# pattern). PIE hosts are fully supported — the runtime rebases symtab
+# values by the load slide and only refuses static PIE (no base) — this
+# demo simply prunes to the ET_EXEC shape; PIE hosts compile their hot
+# objects -fpie to match the link (see the rejections PIE case).
 
 add_executable(hello_reload main.cpp hot.cpp)
 target_link_libraries(hello_reload PRIVATE nekomata::backends::elf)

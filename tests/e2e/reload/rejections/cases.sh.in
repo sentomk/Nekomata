@@ -2,7 +2,8 @@
 # neko.rejections — boundary tests: every known-bad input must be
 # rejected with a SPECIFIC message, the process must survive, and the old
 # code must keep running. One runner process absorbs all the broken drops
-# sequentially; a second (PIE) runner asserts the startup rejection.
+# sequentially; a second (PIE) runner proves PIE hosts work end to end:
+# startup and a live reload.
 #
 # Probe note: expected patterns below were first recorded by running each
 # case on a real Linux machine.
