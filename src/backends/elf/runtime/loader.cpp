@@ -72,6 +72,67 @@ void write_trampoline(std::uint8_t* out, std::uintptr_t target) {
   out[12] = 0xE3; // jmp r11
 }
 
+std::optional<generation_fixup_kind> data_fixup_kind(std::uint32_t relocation_type) {
+  switch (relocation_type) {
+  case kRelPc32:
+    return generation_fixup_kind::relative_32;
+  case kRel32:
+    return generation_fixup_kind::absolute_32;
+  case kRel32s:
+    return generation_fixup_kind::absolute_32_signed;
+  case kRel64:
+    return generation_fixup_kind::absolute_64;
+  default:
+    return std::nullopt;
+  }
+}
+
+std::uint64_t data_fixup_size(generation_fixup_kind kind) {
+  switch (kind) {
+  case generation_fixup_kind::relative_32:
+  case generation_fixup_kind::absolute_32:
+  case generation_fixup_kind::absolute_32_signed:
+    return sizeof(std::int32_t);
+  case generation_fixup_kind::absolute_64:
+    return sizeof(std::int64_t);
+  case generation_fixup_kind::function_trampoline:
+    break;
+  }
+  return 0;
+}
+
+std::uint64_t write_data_fixup(std::uint8_t* out, generation_fixup_kind kind, std::uintptr_t target,
+                               std::uintptr_t place, std::int64_t addend,
+                               std::string_view symbol_name) {
+  std::int64_t value = 0;
+  switch (kind) {
+  case generation_fixup_kind::relative_32:
+    value = static_cast<std::int64_t>(target) + addend - static_cast<std::int64_t>(place);
+    if (value > 0x7FFF'FFFF || value < -0x8000'0000LL) {
+      throw std::runtime_error("relocation out of rel32 range for '" + std::string(symbol_name) +
+                               "'");
+    }
+    std::memcpy(out, &value, sizeof(std::int32_t));
+    return sizeof(std::int32_t);
+  case generation_fixup_kind::absolute_32:
+  case generation_fixup_kind::absolute_32_signed:
+    value = static_cast<std::int64_t>(target) + addend;
+    if (value > 0x7FFF'FFFF || value < -0x8000'0000LL) {
+      throw std::runtime_error("32-bit relocation does not fit for '" + std::string(symbol_name) +
+                               "'");
+    }
+    std::memcpy(out, &value, sizeof(std::int32_t));
+    return sizeof(std::int32_t);
+  case generation_fixup_kind::absolute_64:
+    value = static_cast<std::int64_t>(target) + addend;
+    std::memcpy(out, &value, sizeof(std::int64_t));
+    return sizeof(std::int64_t);
+  case generation_fixup_kind::function_trampoline:
+    break;
+  }
+  throw std::runtime_error("unsupported data fixup for '" + std::string(symbol_name) + "'");
+}
+
 bool has_external_binding(std::uint8_t binding) {
   if (binding == STB_GLOBAL || binding == STB_WEAK) {
     return true;
@@ -347,6 +408,16 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     out.state_allocations.push_back(std::move(state_allocation));
   }
 
+  for (std::size_t symbol_index = 0; symbol_index < obj.symbols.size(); ++symbol_index) {
+    const auto& sym = obj.symbols[symbol_index];
+    if (sym.type != STT_OBJECT || !has_external_binding(sym.bind) ||
+        !state_by_symbol[symbol_index]) {
+      continue;
+    }
+    out.exported_symbols.push_back(
+        {sym.name, generation_symbol_kind::object, 0, state_by_symbol[symbol_index]->address});
+  }
+
   // ---- 6. symbol resolution ---------------------------------------------
   auto resolve = [&](const symbol& sym) -> std::uintptr_t {
     if (sym.section_index == SHN_UNDEF) {
@@ -414,6 +485,8 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
       throw std::runtime_error("relocation with bad symbol index");
     }
     const auto& sym = obj.symbols[rel.symbol_index];
+    const std::uint64_t write_at = section_offset[rel.target_section] + rel.offset;
+    const std::uintptr_t p = base + write_at;
     std::uintptr_t s = 0;
     if (is_call_to_undefined(rel.type) && sym.section_index == SHN_UNDEF) {
       const auto it = trampoline_offset_for_symbol.find(rel.symbol_index);
@@ -449,11 +522,30 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
       } else {
         s = resolve(sym);
       }
+    } else if (sym.section_index == SHN_UNDEF) {
+      if (void* external = symbols_.resolve_external(sym.name, sym.type, sym.bind)) {
+        s = reinterpret_cast<std::uintptr_t>(external);
+      } else {
+        const auto kind = data_fixup_kind(rel.type);
+        if (!kind) {
+          throw std::runtime_error("cannot resolve external symbol '" + sym.name +
+                                   "' — the process has no link-visible definition and the "
+                                   "dynamic linker cannot see one either");
+        }
+        const auto target_kind = sym.type == STT_FUNC ? generation_symbol_kind::function
+                                                      : generation_symbol_kind::object;
+        out.pending_fixups.push_back(
+            {sym.name, target_kind, *kind, static_cast<std::uint32_t>(write_at), rel.addend});
+        const auto width = data_fixup_size(*kind);
+        if (write_at > image.size() || width > image.size() - write_at) {
+          throw std::runtime_error("relocation for '" + sym.name + "' is outside the code image");
+        }
+        std::memset(image.data() + write_at, 0, static_cast<std::size_t>(width));
+        continue;
+      }
     } else {
       s = resolve(sym);
     }
-    const std::uint64_t write_at = section_offset[rel.target_section] + rel.offset;
-    const std::uintptr_t p = base + write_at;
     std::int64_t value = 0;
     switch (rel.type) {
     case kRelPc32:
@@ -600,7 +692,22 @@ void loader::link_generation(std::span<loaded_image* const> images) {
   for (const auto* image : images) {
     const auto base = reinterpret_cast<std::uintptr_t>(image->code());
     for (const auto& symbol : image->exported_symbols) {
-      exported.emplace(symbol.name, linked_symbol{symbol.kind, base + symbol.offset_in_image});
+      const auto address = symbol.kind == generation_symbol_kind::function
+                               ? base + symbol.offset_in_image
+                               : symbol.address;
+      if (address == 0) {
+        throw std::runtime_error("generation symbol '" + symbol.name + "' has no address");
+      }
+      const auto [existing, inserted] =
+          exported.emplace(symbol.name, linked_symbol{symbol.kind, address});
+      if (!inserted && existing->second.kind != symbol.kind) {
+        throw std::runtime_error("generation symbol '" + symbol.name +
+                                 "' has conflicting definition kinds");
+      }
+      if (!inserted && symbol.kind == generation_symbol_kind::object) {
+        throw std::runtime_error("generation defines mutable symbol '" + symbol.name +
+                                 "' more than once");
+      }
     }
   }
   for (auto* image : images) {
@@ -615,15 +722,27 @@ void loader::link_generation(std::span<loaded_image* const> images) {
         throw std::runtime_error("generation symbol '" + fixup.symbol_name +
                                  "' has an incompatible target kind");
       }
-      if (fixup.kind != generation_fixup_kind::function_trampoline ||
-          fixup.target_kind != generation_symbol_kind::function) {
-        throw std::runtime_error("unsupported generation fixup for '" + fixup.symbol_name + "'");
+      if (fixup.kind == generation_fixup_kind::function_trampoline) {
+        if (fixup.target_kind != generation_symbol_kind::function) {
+          throw std::runtime_error("unsupported generation fixup for '" + fixup.symbol_name + "'");
+        }
+        std::uint8_t trampoline[13];
+        write_trampoline(trampoline, found->second.address);
+        if (!substituter_.rewrite_reservation(*image->allocation, fixup.offset_in_image, trampoline,
+                                              sizeof(trampoline))) {
+          throw std::runtime_error("cannot patch cross-object call to '" + fixup.symbol_name +
+                                   "' inside its code image");
+        }
+        continue;
       }
-      std::uint8_t trampoline[13];
-      write_trampoline(trampoline, found->second.address);
-      if (!substituter_.rewrite_reservation(*image->allocation, fixup.offset_in_image, trampoline,
-                                            sizeof(trampoline))) {
-        throw std::runtime_error("cannot patch cross-object call to '" + fixup.symbol_name +
+
+      std::uint8_t bytes[sizeof(std::int64_t)]{};
+      const auto place = reinterpret_cast<std::uintptr_t>(image->code()) + fixup.offset_in_image;
+      const auto width = write_data_fixup(bytes, fixup.kind, found->second.address, place,
+                                          fixup.addend, fixup.symbol_name);
+      if (!substituter_.rewrite_reservation(*image->allocation, fixup.offset_in_image, bytes,
+                                            width)) {
+        throw std::runtime_error("cannot patch cross-object reference to '" + fixup.symbol_name +
                                  "' inside its code image");
       }
     }

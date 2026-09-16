@@ -43,14 +43,20 @@ enum class generation_symbol_kind : std::uint8_t {
 struct generation_symbol {
   std::string name;
   generation_symbol_kind kind = generation_symbol_kind::function;
+  /// Function definitions use an image-relative offset; object definitions
+  /// use their persistent absolute address.
   std::uint32_t offset_in_image = 0;
+  std::uintptr_t address = 0;
 };
 
 /// The encoding a generation fixup writes. New encodings are added only when
-/// a backend implements them; modeling object symbols alone does not claim
-/// that object-reference fixups are supported.
+/// a backend implements them.
 enum class generation_fixup_kind : std::uint8_t {
   function_trampoline,
+  relative_32,
+  absolute_32,
+  absolute_32_signed,
+  absolute_64,
 };
 
 /// An unresolved reference whose target may be defined by a sibling image.
@@ -59,6 +65,7 @@ struct generation_fixup {
   generation_symbol_kind target_kind = generation_symbol_kind::function;
   generation_fixup_kind kind = generation_fixup_kind::function_trampoline;
   std::uint32_t offset_in_image = 0;
+  std::int64_t addend = 0;
 };
 
 /// Mutable storage visible from one candidate image. `identity` is the

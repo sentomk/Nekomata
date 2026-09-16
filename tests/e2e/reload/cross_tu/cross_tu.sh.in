@@ -71,34 +71,38 @@ publish() { # version sequence guard(0=omit,1=include)
 write_sources() { # version dir
   local version="$1" dir="$2"
   case "$version" in
-    2) # b defines a fresh b_new; a calls it — cross-object new symbol.
+    2) # B defines a fresh function and global; A references both.
       cat > "$dir/a.cpp" <<'EOF'
 extern "C" int b_new();
+extern "C" int b_new_state;
 static int s_a = 0;
 extern "C" int a_value() {
   ++s_a;
-  return s_a * 10 + b_new();
+  return s_a * 10 + b_new() + b_new_state;
 }
 EOF
       cat > "$dir/b.cpp" <<'EOF'
 #include "cross_tu_sources.hpp"
 static int s_b = 0;
+extern "C" {
+int b_new_state = 5;
+}
 extern "C" int b_value() {
   ++s_b;
   return s_b;
 }
 extern "C" int b_new() {
-  return 7;
+  return 2;
 }
 EOF
       ;;
-    3) # a calls a symbol no sibling defines — stable rejection message.
+    3) # A reads a mutable object no sibling defines — stable rejection.
       cat > "$dir/a.cpp" <<'EOF'
-extern "C" int nowhere();
+extern "C" int nowhere;
 static int s_a = 0;
 extern "C" int a_value() {
   ++s_a;
-  return s_a * 10 + nowhere();
+  return s_a * 10 + nowhere;
 }
 EOF
       cp "$WORK/v2/b.cpp" "$dir/b.cpp"
@@ -146,7 +150,7 @@ runner_pid=$!
 
 wait_for 'tick=[0-9]*1$' 3 10 v1-live
 
-# v2: the cross-object new symbol resolves inside the candidate set.
+# v2: cross-object function and mutable-object references resolve together.
 publish 2 2 0
 wait_for '^applied$' 1 15 v2-applied
 wait_for 'tick=[0-9]*7$' 3 15 v2-live
@@ -181,5 +185,5 @@ if [ "$(grep -c '^applied$' "$OUT")" -ne 2 ]; then
   fail "expected exactly two applied generations"
 fi
 
-echo "CROSS-TU PASS — new cross-object symbols resolve, rejections roll back whole generations"
+echo "CROSS-TU PASS — new functions and globals link, rejections roll back whole generations"
 echo "output kept at: $OUT"
