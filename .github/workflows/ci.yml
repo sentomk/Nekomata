@@ -86,7 +86,7 @@ jobs:
         run: bash scripts/build.sh debug --target neko_tui_layout neko_tui_monitor_input
 
       - name: Test
-        run: bash scripts/test.sh debug -R neko.tui
+        run: bash scripts/test.sh debug -L tui
 
   # Windows has no backend yet (pe/pdb are stubs), so this job covers what
   # does run there: the kernel (log, session, harness, public_api) and

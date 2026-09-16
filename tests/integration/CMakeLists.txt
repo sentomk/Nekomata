@@ -1,0 +1,2 @@
+add_subdirectory(publisher)
+add_subdirectory(descriptor_discovery)

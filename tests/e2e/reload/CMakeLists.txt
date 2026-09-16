@@ -1,0 +1,7 @@
+add_subdirectory(multi_tu)
+add_subdirectory(atomicity)
+add_subdirectory(soak)
+add_subdirectory(duplicate_names)
+add_subdirectory(rejections)
+add_subdirectory(cross_tu)
+add_subdirectory(managed)

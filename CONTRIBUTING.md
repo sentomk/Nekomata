@@ -147,21 +147,28 @@ Two rules follow from this:
 
 ## Test suite map
 
+Suites live under `tests/` by verification level (`neko.<level>.<module>.<case>`
+test names, matching CTest labels): `unit/`, `contract/`, `integration/`,
+`e2e/`, `tooling/`, `fuzz/`, plus `support/` for the shared registration
+helpers and doctest.
+
 | Directory | Covers |
 |---|---|
-| `tests/smoke.cpp` | platform-neutral kernel interfaces |
-| `tests/session_transaction.cpp`, `tests/depfile_planner.cpp` | generation transaction and compiler depfile planning |
-| `tests/group_descriptor.cpp`, `tests/generation_offer.cpp`, `tests/generation_stream.cpp`, `tests/sha256.cpp` | managed descriptor and immutable-generation protocol codecs, validation, integrity and consumer cursors |
-| `tests/descriptor_section.cpp`, `tests/descriptor_discovery.cpp`, `tests/managed_session.cpp` | embedded descriptor framing/discovery and managed session API behavior |
-| `tests/managed_reload/` | managed ELF end-to-end reload, state continuity, rejection recovery and unwatch/resume |
+| `tests/unit/runtime/`, `tests/unit/base/` | kernel: generation transactions, managed session API, stream cursors, depfile planning, digests |
+| `tests/unit/protocol/` | descriptor and immutable-generation codecs, validation, integrity |
+| `tests/unit/backends/elf/`, `tests/unit/backends/dwarf/` | offline ELF/DWARF parsing and metadata |
+| `tests/unit/tui/` | TUI layout and input behavior when `NEKOMATA_TUI=ON` |
+| `tests/contract/` | public-header hygiene and the API surface (`smoke`, `public_api`) |
+| `tests/integration/` | publisher acceptance and embedded-descriptor discovery |
+| `tests/e2e/reload/managed/` | managed ELF end-to-end reload, state continuity, rejection recovery and unwatch/resume |
 | `examples/hello_reload/` | end-to-end reload: logic swap and state continuity |
-| `tests/multi_tu/`, `tests/atomicity/` | complete multi-object generations, all-or-nothing commit and recovery |
-| `tests/duplicate_names/` | translation-unit identity for same-named local symbols |
-| `tests/rejections/` | loud rejection, process survival and old-code continuity |
-| `tests/elf/`, `tests/dwarf/` | offline ELF/DWARF parsing and metadata |
-| `tests/tui/` | TUI layout and input behavior when `NEKOMATA_TUI=ON` |
-| `tests/harness/`, `tests/headers/`, `tests/public_api.cpp`, `tests/tooling/` | harness, header hygiene, API shape and environment setup |
-| `tests/soak/` | multi-generation reload soak: state continuity and arena accounting |
+| `tests/e2e/reload/multi_tu/`, `tests/e2e/reload/atomicity/` | complete multi-object generations, all-or-nothing commit and recovery |
+| `tests/e2e/reload/duplicate_names/` | translation-unit identity for same-named local symbols |
+| `tests/e2e/reload/rejections/` | loud rejection, process survival and old-code continuity |
+| `tests/e2e/reload/cross_tu/` | cross-object calls inside one generation, including brand-new symbols |
+| `tests/e2e/reload/soak/` | multi-generation reload soak: state continuity and arena accounting |
+| `tests/e2e/adapters/cmake/` | the CMake adapter end to end, per generator and group form |
+| `tests/tooling/` | harness fault injection, CLI contracts, envsetup, sanitizer canary |
 | `tests/fuzz/` | libFuzzer on the ELF parser; corpus doubles as regression inputs |
 
 ## CI

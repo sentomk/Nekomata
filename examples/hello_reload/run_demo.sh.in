@@ -12,7 +12,7 @@ set -euo pipefail
 RUNNER="@CMAKE_CURRENT_BINARY_DIR@/hello_reload"
 REBUILD="@CMAKE_CURRENT_BINARY_DIR@/rebuild_hot.sh"
 SRC_HOT="@CMAKE_CURRENT_SOURCE_DIR@/hot.cpp"
-source "@PROJECT_SOURCE_DIR@/scripts/test_helpers.sh"
+source "@PROJECT_SOURCE_DIR@/tests/support/scripts/test_helpers.sh"
 
 work="${1:-$(mktemp -d /tmp/neko-hello.XXXXXX)}"
 out="$work/output.txt"

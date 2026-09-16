@@ -20,7 +20,7 @@ done < <(git -c "safe.directory=$nekomata_repository_root" \
   ls-files --cached --others --exclude-standard -z -- \
   '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx' \
   '*.h.in' '*.hpp.in' \
-  ':(exclude)tests/vendor/**' ':(exclude)third_party/**' ':(exclude)vendor/**')
+  ':(exclude)tests/support/doctest/**' ':(exclude)third_party/**' ':(exclude)vendor/**')
 
 if [[ ${#nekomata_source_files[@]} -eq 0 ]]; then
   echo "No C/C++ files to format."

@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# Cross-TU candidate resolution end to end: a fresh object calls a symbol
+# another fresh object of the same generation defines (and the baseline does
+# not), an unresolved call rejects the generation with its stable message,
+# and an unpatchable partner rolls the whole generation back.
+set -euo pipefail
+
+CXX="@CMAKE_CXX_COMPILER@"
+SRC="@CMAKE_CURRENT_SOURCE_DIR@"
+HERE="@CMAKE_CURRENT_BINARY_DIR@"
+WORK="${1:-$(mktemp -d /tmp/neko-cross-tu.XXXXXX)}"
+OUT="$WORK/out.txt"
+: > "$OUT"
+
+BASE="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
+PUB="$WORK/neko-cross-tu/cross-tu-e2e"
+
+runner_pid=""
+cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+trap cleanup EXIT
+
+fail() { echo "FAIL: $1"; tail -15 "$OUT"; exit 1; }
+wait_for() { # pattern min timeout label
+  local pattern="$1" min="$2" timeout="$3" label="$4" waited=0 n
+  while :; do
+    n=$(grep -ac -- "$pattern" "$OUT" || true)
+    [ "$n" -ge "$min" ] && return 0
+    sleep 0.15; waited=$((waited + 1))
+    if [ "$waited" -gt $((timeout * 6)) ]; then
+      echo "FAIL($label): '$pattern' x$n < $min"; tail -15 "$OUT"; exit 1
+    fi
+  done
+}
+
+# Writes version sources, compiles both members, and publishes one complete
+# immutable generation with fresh digests.
+publish() { # version sequence guard(0=omit,1=include)
+  local version="$1" sequence="$2" guard="$3"
+  local dir="$WORK/v$version"
+  local guard_flag=()
+  [ "$guard" = 1 ] || guard_flag=(-DCROSS_TU_OMIT_GUARD=1)
+  mkdir -p "$dir"
+  write_sources "$version" "$dir"
+  for member in a b; do
+    "$CXX" $BASE "${guard_flag[@]}" -I"$SRC" -c "$dir/$member.cpp" -o "$dir/$member.staging.o"
+    mv "$dir/$member.staging.o" "$dir/$member.o"
+  done
+  local gen="$PUB/generations/gen-$sequence"
+  mkdir -p "$gen/objects" "$PUB/offers"
+  cp "$dir/a.o" "$gen/objects/a.o"
+  cp "$dir/b.o" "$gen/objects/b.o"
+  local digest_a digest_b
+  digest_a=$(sha256sum "$gen/objects/a.o" | cut -d' ' -f1)
+  digest_b=$(sha256sum "$gen/objects/b.o" | cut -d' ' -f1)
+  {
+    printf 'nekomata-generation-v2\n'
+    printf 'group_id "//cross:tu"\n'
+    printf 'sequence %s\n' "$sequence"
+    printf 'generation_id "gen-%s"\n' "$sequence"
+    printf 'compatibility_id "e2e-compatibility"\n'
+    printf 'abi_id "elf-e2e-patch"\n'
+    printf 'member "cross/a" "objects/a.o" "%s" "//cross_tu:a.cpp" "%s"\n' "$digest_a" "$BASE"
+    printf 'member "cross/b" "objects/b.o" "%s" "//cross_tu:b.cpp" "%s"\n' "$digest_b" "$BASE"
+    printf 'changed_input "//cross_tu:a.cpp"\n'
+  } > "$gen/manifest.staging"
+  mv "$gen/manifest.staging" "$gen/manifest"
+  : > "$PUB/offers/$sequence-gen-$sequence.ready.staging"
+  mv "$PUB/offers/$sequence-gen-$sequence.ready.staging" "$PUB/offers/$sequence-gen-$sequence.ready"
+}
+
+write_sources() { # version dir
+  local version="$1" dir="$2"
+  case "$version" in
+    2) # b defines a fresh b_new; a calls it — cross-object new symbol.
+      cat > "$dir/a.cpp" <<'EOF'
+extern "C" int b_new();
+static int s_a = 0;
+extern "C" int a_value() {
+  ++s_a;
+  return s_a * 10 + b_new();
+}
+EOF
+      cat > "$dir/b.cpp" <<'EOF'
+#include "cross_tu_sources.hpp"
+static int s_b = 0;
+extern "C" int b_value() {
+  ++s_b;
+  return s_b;
+}
+extern "C" int b_new() {
+  return 7;
+}
+EOF
+      ;;
+    3) # a calls a symbol no sibling defines — stable rejection message.
+      cat > "$dir/a.cpp" <<'EOF'
+extern "C" int nowhere();
+static int s_a = 0;
+extern "C" int a_value() {
+  ++s_a;
+  return s_a * 10 + nowhere();
+}
+EOF
+      cp "$WORK/v2/b.cpp" "$dir/b.cpp"
+      ;;
+    4) # b again defines the unpatchable guard — whole generation rolls back.
+      cat > "$dir/a.cpp" <<'EOF'
+static int s_a = 0;
+extern "C" int a_value() {
+  ++s_a;
+  return s_a * 10 + 2;
+}
+EOF
+      cat > "$dir/b.cpp" <<'EOF'
+#include "cross_tu_sources.hpp"
+static int s_b = 0;
+extern "C" int b_value() {
+  ++s_b;
+  return s_b;
+}
+__attribute__((naked)) void b_guard() {
+  __asm__ volatile("nop\n\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n\tret");
+}
+EOF
+      ;;
+    5) # plain recovery generation.
+      cat > "$dir/a.cpp" <<'EOF'
+static int s_a = 0;
+extern "C" int a_value() {
+  ++s_a;
+  return s_a * 10 + 3;
+}
+EOF
+      cp "$WORK/v2/b.cpp" "$dir/b.cpp"
+      ;;
+    *)
+      fail "unknown version $version"
+      ;;
+  esac
+}
+
+echo "== neko.cross_tu (workdir: $WORK) =="
+
+( cd "$WORK" && "$HERE/cross_tu_runner" 600 ) > "$OUT" 2>&1 &
+runner_pid=$!
+
+wait_for 'tick=[0-9]*1$' 3 10 v1-live
+
+# v2: the cross-object new symbol resolves inside the candidate set.
+publish 2 2 0
+wait_for '^applied$' 1 15 v2-applied
+wait_for 'tick=[0-9]*7$' 3 15 v2-live
+
+# v3: unresolved call rejects the generation with the stable message.
+publish 3 3 0
+wait_for "reload failed: cannot resolve external symbol 'nowhere'" 1 15 v3-rejected
+wait_for 'tick=[0-9]*7$' 1 10 v2-still-live
+
+# v4: the unpatchable partner rejects the whole generation — A stays old.
+# The guard keeps its C++ mangled name, so match its tail.
+publish 4 4 1
+wait_for 'reload failed: reload rejected before any write: cannot patch entry of .*b_guardv' \
+  1 15 v4-rejected
+if grep -aq 'tick=[0-9]*2$' "$OUT"; then
+  fail "cross-linked partner became visible despite rejection"
+fi
+
+# v5: recovery applies after two rejections.
+publish 5 5 0
+wait_for '^applied$' 2 20 v5-applied
+wait_for 'tick=[0-9]*3$' 3 15 v5-live
+
+wait "$runner_pid" || fail "runner exited unsuccessfully"
+runner_pid=""
+
+if ! grep -o 'tick=[0-9]*' "$OUT" | cut -d= -f2 | \
+     awk 'NR>1 && $1+0 <= prev+0 {bad=1} {prev=$1} END{exit bad?1:0}'; then
+  fail "tick counter reset or replayed"
+fi
+if [ "$(grep -c '^applied$' "$OUT")" -ne 2 ]; then
+  fail "expected exactly two applied generations"
+fi
+
+echo "CROSS-TU PASS — new cross-object symbols resolve, rejections roll back whole generations"
+echo "output kept at: $OUT"
