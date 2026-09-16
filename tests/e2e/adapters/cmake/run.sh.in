@@ -2,15 +2,19 @@
 # CMake adapter end to end: a fixture project consumes
 # nekomata_add_reload_group(), publishes through the native build graph, and
 # the documented runtime integration applies generations at update().
-# Two generator rounds (Ninja, Unix Makefiles) prove generator independence.
+# Invoked once per (generator, group form) cell so each combination reports
+# independently: run.sh <Ninja|Unix Makefiles> <sources|units>.
 set -euo pipefail
+
+GENERATOR="${1:?usage: run.sh <generator> <sources|units>}"
+SCOPE="${2:?usage: run.sh <generator> <sources|units>}"
 
 CMAKE="@CMAKE_COMMAND@"
 CXX="@CMAKE_CXX_COMPILER@"
 MAKE_PROGRAM="@CMAKE_MAKE_PROGRAM@"
 SRC="@CMAKE_CURRENT_SOURCE_DIR@/project"
 NEKO="@PROJECT_SOURCE_DIR@"
-WORK="${1:-$(mktemp -d /tmp/neko-cmake-adapter.XXXXXX)}"
+WORK="$(mktemp -d /tmp/neko-cmake-adapter.XXXXXX)"
 OUT="$WORK/out.txt"
 
 runner_pid=""
@@ -30,7 +34,7 @@ wait_for() { # pattern min timeout label
   done
 }
 
-run_round() { # generator
+prepare_round() { # generator -> echoes the round directory
   local generator="$1"
   local round="$WORK/${generator// /-}"
   rm -rf "$round"
@@ -52,6 +56,11 @@ run_round() { # generator
   "$CMAKE" --build "$round/build" --target adapter_mixed > "$round/build_mixed.log" 2>&1 \
     || { cp "$round/build_mixed.log" "$OUT"; fail "$generator mixed baseline build"; }
 
+  echo "$round"
+}
+
+run_sources() { # generator round
+  local generator="$1" round="$2"
   "$round/build/adapter_demo" 600 > "$OUT" 2>&1 &
   runner_pid=$!
   wait_for 'tick=[0-9]*1$' 3 20 "$generator v1-live"
@@ -79,8 +88,10 @@ run_round() { # generator
   if [ "$(grep -c '^applied$' "$OUT")" -ne 2 ]; then
     fail "$generator expected exactly two applied generations"
   fi
+}
 
-  # ---- heterogeneous UNITS group -------------------------------------------
+run_units() { # generator round
+  local generator="$1" round="$2"
   : > "$OUT"
   "$round/build/adapter_mixed" 400 > "$OUT" 2>&1 &
   runner_pid=$!
@@ -114,8 +125,12 @@ run_round() { # generator
   fi
 }
 
-echo "== neko.cmake_adapter (workdir: $WORK) =="
-run_round "Ninja"
-run_round "Unix Makefiles"
-echo "CMAKE ADAPTER PASS — two generators, single-config and heterogeneous groups"
+echo "== neko.e2e.adapters.cmake: $GENERATOR ($SCOPE groups, workdir: $WORK) =="
+ROUND="$(prepare_round "$GENERATOR")"
+case "$SCOPE" in
+  sources) run_sources "$GENERATOR" "$ROUND" ;;
+  units) run_units "$GENERATOR" "$ROUND" ;;
+  *) echo "FAIL: unknown scope '$SCOPE'"; exit 1 ;;
+esac
+echo "CMAKE ADAPTER PASS — $GENERATOR, $SCOPE groups"
 echo "output kept at: $OUT"
