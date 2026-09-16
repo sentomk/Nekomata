@@ -464,8 +464,8 @@ void loader::link_generation(std::span<loaded_image* const> images) {
         throw std::runtime_error("cannot patch cross-object call to '" + fixup.name +
                                  "' inside its code image");
       }
-      image->pending_call_fixups.clear();
     }
+    image->pending_call_fixups.clear();
   }
 }
 

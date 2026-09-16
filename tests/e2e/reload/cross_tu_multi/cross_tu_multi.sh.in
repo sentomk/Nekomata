@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# Cross-TU multi-fixup end to end: one member's fresh object calls three
+# brand-new symbols, each defined by a different sibling object of the same
+# generation — three pending cross-object call fixups in one image. The
+# generation applies, all three calls reach the fresh bodies, the caller's
+# state is continuous, and a follow-up plain generation still applies.
+set -euo pipefail
+
+CXX="@CMAKE_CXX_COMPILER@"
+SRC="@CMAKE_CURRENT_SOURCE_DIR@"
+HERE="@CMAKE_CURRENT_BINARY_DIR@"
+WORK="${1:-$(mktemp -d /tmp/neko-cross-multi.XXXXXX)}"
+OUT="$WORK/out.txt"
+: > "$OUT"
+
+BASE="-std=c++20 -O0 -fno-pie -fno-pic -fno-exceptions -fno-asynchronous-unwind-tables"
+PUB="$WORK/neko-cross-multi/cross-multi-e2e"
+
+runner_pid=""
+cleanup() { [ -n "$runner_pid" ] && kill "$runner_pid" 2>/dev/null || true; }
+trap cleanup EXIT
+
+fail() { echo "FAIL: $1"; tail -15 "$OUT"; exit 1; }
+wait_for() { # pattern min timeout label
+  local pattern="$1" min="$2" timeout="$3" label="$4" waited=0 n
+  while :; do
+    n=$(grep -ac -- "$pattern" "$OUT" || true)
+    [ "$n" -ge "$min" ] && return 0
+    sleep 0.15; waited=$((waited + 1))
+    if [ "$waited" -gt $((timeout * 6)) ]; then
+      echo "FAIL($label): '$pattern' x$n < $min"; tail -15 "$OUT"; exit 1
+    fi
+  done
+}
+
+write_sources() { # version dir
+  local version="$1" dir="$2"
+  case "$version" in
+    2)
+      # a calls THREE fresh symbols, one per sibling — no live definitions
+      # anywhere in the baseline, so all three become pending call fixups.
+      cat > "$dir/a.cpp" <<'EOF'
+extern "C" int b_brand_new_fixup_symbol_one();
+extern "C" int c_brand_new_fixup_symbol_two();
+extern "C" int d_brand_new_fixup_symbol_three();
+static int s_a = 0;
+extern "C" int a_value() {
+  ++s_a;
+  return s_a * 10 + b_brand_new_fixup_symbol_one() +
+         c_brand_new_fixup_symbol_two() + d_brand_new_fixup_symbol_three();
+}
+EOF
+      cat > "$dir/b.cpp" <<'EOF'
+static int s_b = 0;
+extern "C" int b_value() {
+  ++s_b;
+  return s_b;
+}
+extern "C" int b_brand_new_fixup_symbol_one() {
+  return 2;
+}
+EOF
+      cat > "$dir/c.cpp" <<'EOF'
+static int s_c = 0;
+extern "C" int c_value() {
+  ++s_c;
+  return s_c;
+}
+extern "C" int c_brand_new_fixup_symbol_two() {
+  return 3;
+}
+EOF
+      cat > "$dir/d.cpp" <<'EOF'
+static int s_d = 0;
+extern "C" int d_value() {
+  ++s_d;
+  return s_d;
+}
+extern "C" int d_brand_new_fixup_symbol_three() {
+  return 4;
+}
+EOF
+      ;;
+    3)
+      # Plain recovery generation: one changed member, no pending calls.
+      cat > "$dir/a.cpp" <<'EOF'
+static int s_a = 0;
+extern "C" int a_value() {
+  ++s_a;
+  return s_a * 10 + 5;
+}
+EOF
+      cp "$WORK/v2/b.cpp" "$dir/b.cpp"
+      cp "$WORK/v2/c.cpp" "$dir/c.cpp"
+      cp "$WORK/v2/d.cpp" "$dir/d.cpp"
+      ;;
+    *)
+      fail "unknown version $version"
+      ;;
+  esac
+}
+
+# Writes version sources, compiles all four members, and publishes one
+# complete immutable generation with fresh digests.
+publish() { # version sequence
+  local version="$1" sequence="$2"
+  local dir="$WORK/v$version"
+  mkdir -p "$dir"
+  write_sources "$version" "$dir"
+  local gen="$PUB/generations/gen-$sequence"
+  mkdir -p "$gen/objects" "$PUB/offers"
+  local digests=()
+  for member in a b c d; do
+    "$CXX" $BASE -c "$dir/$member.cpp" -o "$dir/$member.staging.o"
+    mv "$dir/$member.staging.o" "$dir/$member.o"
+    cp "$dir/$member.o" "$gen/objects/$member.o"
+    digests+=("$(sha256sum "$gen/objects/$member.o" | cut -d' ' -f1)")
+  done
+  {
+    printf 'nekomata-generation-v2\n'
+    printf 'group_id "//cross:multi"\n'
+    printf 'sequence %s\n' "$sequence"
+    printf 'generation_id "gen-%s"\n' "$sequence"
+    printf 'compatibility_id "e2e-compatibility"\n'
+    printf 'abi_id "elf-e2e-patch"\n'
+    for i in 0 1 2 3; do
+      local member
+      case "$i" in
+        0) member=a ;;
+        1) member=b ;;
+        2) member=c ;;
+        3) member=d ;;
+      esac
+      printf 'member "cross/%s" "objects/%s.o" "%s" "//cross_multi:%s.cpp" "%s"\n' \
+        "$member" "$member" "${digests[$i]}" "$member" "$BASE"
+    done
+    printf 'changed_input "//cross_multi:a.cpp"\n'
+  } > "$gen/manifest.staging"
+  mv "$gen/manifest.staging" "$gen/manifest"
+  : > "$PUB/offers/$sequence-gen-$sequence.ready.staging"
+  mv "$PUB/offers/$sequence-gen-$sequence.ready.staging" "$PUB/offers/$sequence-gen-$sequence.ready"
+}
+
+echo "== neko.cross_tu_multi (workdir: $WORK) =="
+
+( cd "$WORK" && "$HERE/cross_tu_multi_runner" 600 ) > "$OUT" 2>&1 &
+runner_pid=$!
+
+wait_for 'tick=[0-9]*1$' 3 10 v1-live
+
+# v2: three pending cross-object fixups in one image, all resolve.
+# The three symbols exceed the small-string threshold, so each
+# pending fixup holds a heap-allocated name.
+publish 2 2
+wait_for '^applied$' 1 15 v2-applied
+wait_for 'tick=[0-9]*9$' 3 15 v2-live
+
+# v3: a plain generation still applies after the multi-fixup swap.
+publish 3 3
+wait_for '^applied$' 2 20 v3-applied
+wait_for 'tick=[0-9]*5$' 3 15 v3-live
+
+wait "$runner_pid" || fail "runner exited unsuccessfully"
+runner_pid=""
+
+if ! grep -o 'tick=[0-9]*' "$OUT" | cut -d= -f2 | \
+     awk 'NR>1 && $1+0 <= prev+0 {bad=1} {prev=$1} END{exit bad?1:0}'; then
+  fail "tick counter reset or replayed"
+fi
+if [ "$(grep -c '^applied$' "$OUT")" -ne 2 ]; then
+  fail "expected exactly two applied generations"
+fi
+
+echo "CROSS-TU-MULTI PASS — three pending fixups in one image resolve atomically"
+echo "output kept at: $OUT"
