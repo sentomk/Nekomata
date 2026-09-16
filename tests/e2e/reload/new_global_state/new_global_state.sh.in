@@ -109,12 +109,15 @@ publish() { # version sequence
     "$PUB/offers/$sequence-gen-$sequence.ready"
 }
 
+# Runtime diagnostics and runner output share one sink. A diagnostic prefix can
+# be written immediately before a complete runner record, so recognize the
+# marker anywhere on the line while still parsing every state field exactly.
 field() { # marker first|last field
   local marker="$1" position="$2" name="$3"
   if [ "$position" = first ]; then
-    grep -a "^marker=$marker " "$OUT" | head -1 | sed -n "s/.* $name=\(-*[0-9]*\).*/\1/p"
+    grep -a "marker=$marker " "$OUT" | head -1 | sed -n "s/.* $name=\(-*[0-9]*\).*/\1/p"
   else
-    grep -a "^marker=$marker " "$OUT" | tail -1 | sed -n "s/.* $name=\(-*[0-9]*\).*/\1/p"
+    grep -a "marker=$marker " "$OUT" | tail -1 | sed -n "s/.* $name=\(-*[0-9]*\).*/\1/p"
   fi
 }
 
@@ -135,41 +138,41 @@ echo "== neko.new_global_state (workdir: $WORK) =="
 
 ( cd "$WORK" && "$HERE/new_global_state_runner" ) > "$OUT" 2>&1 &
 runner_pid=$!
-wait_for '^marker=1 ' 3 10 baseline
+wait_for 'marker=1 ' 3 10 baseline
 
 publish 2 2
 wait_for '^applied generation=gen-2$' 1 20 applied-v2
-wait_for '^marker=2 ' 3 10 live-v2
+wait_for 'marker=2 ' 3 10 live-v2
 [ "$(field 2 first a)" -eq 11 ] || fail "A's new local did not use its initializer"
 [ "$(field 2 first b)" -eq 21 ] || fail "B's same-named local aliased A or initialized incorrectly"
 [ "$(field 2 first shared)" -eq 111 ] || fail "new external state initialized incorrectly"
 
 publish 3 3
 wait_for '^applied generation=gen-3$' 1 20 applied-v3
-wait_for '^marker=3 ' 3 10 live-v3
+wait_for 'marker=3 ' 3 10 live-v3
 assert_continuity 2 3
 
 publish 4 4
 wait_for 'reload failed: reload rejected before any write: cannot patch entry of .*state_unpatchable_guardv' \
   1 20 rejected-v4
-v3_count=$(grep -ac '^marker=3 ' "$OUT")
-wait_for '^marker=3 ' $((v3_count + 3)) 10 v3-still-live
-grep -aq '^marker=4 ' "$OUT" && fail "rejected generation became observable"
+v3_count=$(grep -ac 'marker=3 ' "$OUT")
+wait_for 'marker=3 ' $((v3_count + 3)) 10 v3-still-live
+grep -aq 'marker=4 ' "$OUT" && fail "rejected generation became observable"
 
 publish 5 5
 wait_for '^applied generation=gen-5$' 1 20 applied-v5
-wait_for '^marker=5 ' 3 10 live-v5
+wait_for 'marker=5 ' 3 10 live-v5
 assert_continuity 3 5
 [ "$(field 5 first retry)" -eq 7 ] || fail "rejected storage was published or retry initialized twice"
 
 publish 6 6
 wait_for '^applied generation=gen-6$' 1 20 applied-v6
-wait_for '^marker=6 ' 3 10 live-v6
+wait_for 'marker=6 ' 3 10 live-v6
 assert_continuity 5 6
 
 publish 7 7
 wait_for '^applied generation=gen-7$' 1 20 applied-v7
-wait_for '^marker=7 ' 3 10 live-v7
+wait_for 'marker=7 ' 3 10 live-v7
 assert_continuity 6 7
 retry_before=$(field 6 last retry)
 retry_after=$(field 7 first retry)
@@ -178,9 +181,9 @@ retry_after=$(field 7 first retry)
 
 publish 8 8
 wait_for "reload failed: global '.*' changed layout" 1 20 rejected-v8
-v7_count=$(grep -ac '^marker=7 ' "$OUT")
-wait_for '^marker=7 ' $((v7_count + 3)) 10 v7-still-live
-grep -aq '^marker=8 ' "$OUT" && fail "layout-changing generation became observable"
+v7_count=$(grep -ac 'marker=7 ' "$OUT")
+wait_for 'marker=7 ' $((v7_count + 3)) 10 v7-still-live
+grep -aq 'marker=8 ' "$OUT" && fail "layout-changing generation became observable"
 
 kill "$runner_pid" 2>/dev/null || true
 wait "$runner_pid" 2>/dev/null || true
