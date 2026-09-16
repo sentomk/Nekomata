@@ -30,17 +30,17 @@ has tried yet.
 |---|---|
 | Hot reload | one or more translation units per atomically published generation, `-O0`, Linux/ELF |
 | Managed groups | embedded ELF descriptors, immutable multi-consumer generation streams, managed `watch()`/`unwatch()`, and structured update events |
-| Build integration | managed adapters are specified for CMake, GNU Make, GN, and Meson, but are not implemented yet |
+| Build integration | the CMake adapter is implemented (`nekomata_add_reload_group`/`_unit`, in-tree or from an installed package); GNU Make, GN, and Meson adapters are specified but not implemented yet |
 | Dependency discovery | legacy GCC/Clang Make depfiles through `depfile_planner`; incomplete graphs are rejected |
 | State preservation | globals and statics keep their values across reloads |
 | Multiple functions per reload | yes — applied all-or-nothing; a failed attempt rolls back |
 | PIE binaries | yes, when hot objects are built `-fpie` (GOT-style `-fpic` is not supported yet) |
-| Cross-TU references | not supported yet — a reloaded function cannot call into another unit |
+| Cross-TU references | supported inside one published generation — a reloaded function can call symbols defined by sibling objects of the same generation, including brand-new ones; across generations this is not supported yet |
 | New globals, changed global layout | not supported yet — refused with a diagnostic |
 | Virtual functions | not supported yet — a vtable that needs relocation is refused with a diagnostic |
 | Optimized builds (`-O2`) | not supported yet — an inlined function has no body of its own |
 | Platforms | Linux/ELF runtime; kernel and TUI portability builds on macOS and Windows |
-| Compilers | GCC and Clang ≥ 14 for live reload; MSVC 2022 for portability builds |
+| Compilers | GCC ≥ 11 or Clang ≥ 14 for live reload; MSVC 2022 for portability builds |
 | TUI reload control | experimental — its manual trigger does not coordinate application threads yet |
 
 Thread coordination is the caller's responsibility. `reload_session` performs
