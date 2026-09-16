@@ -5,10 +5,16 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
+#include <cinttypes>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -31,67 +37,279 @@ std::uint64_t round_up(std::uint64_t v, std::uint64_t align) {
 
 /// ±2 GiB minus slack, so `jmp rel32` from anywhere in the old function
 /// reaches anywhere in the new image.
-constexpr std::int64_t kRel32Limit = 0x7FFF'F000;
+constexpr std::uintptr_t rel32_limit = 0x7FFF'F000;
+constexpr std::uint64_t default_pool_size = 64ull * 1024 * 1024;
+
+#ifdef MAP_FIXED_NOREPLACE
+constexpr int map_fixed_no_replace = MAP_FIXED_NOREPLACE;
+#else
+// Linux 4.17 assigned this stable UAPI value. Older kernels may ignore an
+// unknown flag and treat the address as a hint, so callers must still verify
+// that mmap returned the requested address.
+constexpr int map_fixed_no_replace = 0x100000;
+#endif
 
 bool within_rel32(std::uintptr_t a, std::uintptr_t b) {
-  const std::int64_t delta = static_cast<std::int64_t>(a > b ? a - b : b - a);
-  return delta < kRel32Limit;
+  const auto delta = a > b ? a - b : b - a;
+  return delta < rel32_limit;
+}
+
+bool range_within_rel32(std::uintptr_t begin, std::uintptr_t end, std::uintptr_t hint) {
+  return begin < end && within_rel32(begin, hint) && within_rel32(end - 1, hint);
+}
+
+std::uintptr_t align_up_address(std::uintptr_t value, std::uintptr_t alignment) {
+  const auto remainder = value % alignment;
+  if (remainder == 0) {
+    return value;
+  }
+  const auto addition = alignment - remainder;
+  if (value > std::numeric_limits<std::uintptr_t>::max() - addition) {
+    return std::numeric_limits<std::uintptr_t>::max();
+  }
+  return value + addition;
+}
+
+std::uintptr_t align_down_address(std::uintptr_t value, std::uintptr_t alignment) {
+  return value - value % alignment;
+}
+
+std::uintptr_t minimum_mappable_address() {
+  static const auto minimum = [] {
+    // 64 KiB is Linux's common security floor. Prefer a conservative value
+    // if the sysctl is hidden by a container rather than proposing an address
+    // the kernel will reject with EPERM.
+    std::uint64_t configured = 64 * 1024;
+    std::ifstream setting("/proc/sys/vm/mmap_min_addr");
+    if (setting) {
+      setting >> configured;
+    }
+    const auto page = static_cast<std::uintptr_t>(page_size());
+    const auto bounded = configured > std::numeric_limits<std::uintptr_t>::max()
+                             ? std::numeric_limits<std::uintptr_t>::max()
+                             : static_cast<std::uintptr_t>(configured);
+    return align_up_address(std::max(page, bounded), page);
+  }();
+  return minimum;
+}
+
+struct mapped_range {
+  std::uintptr_t begin;
+  std::uintptr_t end;
+};
+
+struct pool_candidate {
+  std::uintptr_t begin;
+  std::uint64_t size;
+  std::uintptr_t distance;
+};
+
+std::vector<mapped_range> process_mappings() {
+  std::ifstream maps("/proc/self/maps");
+  if (!maps) {
+    return {};
+  }
+
+  std::vector<mapped_range> ranges;
+  std::string line;
+  while (std::getline(maps, line)) {
+    mapped_range range{};
+    if (std::sscanf(line.c_str(), "%" SCNxPTR "-%" SCNxPTR, &range.begin, &range.end) == 2 &&
+        range.begin < range.end) {
+      ranges.push_back(range);
+    }
+  }
+  std::sort(ranges.begin(), ranges.end(), [](const mapped_range& left, const mapped_range& right) {
+    return left.begin < right.begin;
+  });
+  return ranges;
+}
+
+std::vector<pool_candidate> find_pool_candidates(std::uintptr_t hint, std::uint64_t minimum_size) {
+  const auto page = static_cast<std::uintptr_t>(page_size());
+  const auto maximum = std::numeric_limits<std::uintptr_t>::max();
+  const auto address_floor = minimum_mappable_address();
+  auto window_begin = hint > rel32_limit ? hint - rel32_limit : address_floor;
+  auto window_end = hint < maximum - rel32_limit ? hint + rel32_limit : maximum;
+  window_begin = align_up_address(std::max(window_begin, address_floor), page);
+  window_end = align_down_address(window_end, page);
+  if (window_begin >= window_end || minimum_size > window_end - window_begin) {
+    return {};
+  }
+
+  std::vector<pool_candidate> candidates;
+  const auto add_gap = [&](std::uintptr_t gap_begin, std::uintptr_t gap_end) {
+    gap_begin = align_up_address(gap_begin, page);
+    gap_end = align_down_address(gap_end, page);
+    if (gap_begin >= gap_end || minimum_size > gap_end - gap_begin) {
+      return;
+    }
+
+    const auto available = static_cast<std::uint64_t>(gap_end - gap_begin);
+    const auto preferred = std::max(default_pool_size, minimum_size);
+    const auto size = std::min(preferred, available);
+    const auto ideal = hint > size / 2 ? align_down_address(hint - size / 2, page) : gap_begin;
+    const auto latest = gap_end - size;
+    const auto begin = std::clamp(ideal, gap_begin, latest);
+    const auto end = begin + size;
+    const auto distance = hint < begin ? begin - hint : (hint >= end ? hint - (end - 1) : 0);
+    candidates.push_back({begin, size, distance});
+  };
+
+  auto cursor = window_begin;
+  for (const auto& mapping : process_mappings()) {
+    if (mapping.end <= cursor) {
+      continue;
+    }
+    if (mapping.begin >= window_end) {
+      break;
+    }
+    if (mapping.begin > cursor) {
+      add_gap(cursor, std::min(mapping.begin, window_end));
+    }
+    cursor = std::max(cursor, align_up_address(mapping.end, page));
+    if (cursor >= window_end) {
+      break;
+    }
+  }
+  if (cursor < window_end) {
+    add_gap(cursor, window_end);
+  }
+
+  std::sort(candidates.begin(), candidates.end(),
+            [](const pool_candidate& left, const pool_candidate& right) {
+              if (left.distance != right.distance) {
+                return left.distance < right.distance;
+              }
+              return left.size > right.size;
+            });
+  return candidates;
 }
 
 } // namespace
 
 struct code_pages::allocation_state {
-  struct arena_range {
+  struct slot {
     std::uintptr_t begin;
-    std::uintptr_t end; // exclusive; the guard page lives at [end, end+page)
+    std::uintptr_t usable_end;
+    std::uintptr_t extent_end;
+    bool active = true;
     bool process_lifetime = false;
   };
 
+  struct arena_pool {
+    std::uintptr_t begin;
+    std::uintptr_t end;
+    std::uintptr_t cursor;
+    std::vector<slot> slots;
+  };
+
   ~allocation_state() {
+    for (const auto& pool : pools) {
+      auto retained_begin = pool.end;
+      auto retained_end = pool.begin;
+      for (const auto& candidate : pool.slots) {
+        if (!candidate.active || !candidate.process_lifetime) {
+          continue;
+        }
+        retained_begin = std::min(retained_begin, candidate.begin);
+        retained_end = std::max(retained_end, candidate.extent_end);
+      }
+      if (retained_begin == pool.end) {
+        munmap(reinterpret_cast<void*>(pool.begin), pool.end - pool.begin);
+        continue;
+      }
+      if (pool.begin < retained_begin) {
+        munmap(reinterpret_cast<void*>(pool.begin), retained_begin - pool.begin);
+      }
+      if (retained_end < pool.end) {
+        munmap(reinterpret_cast<void*>(retained_end), pool.end - retained_end);
+      }
+    }
+  }
+
+  [[nodiscard]] slot* find(std::uintptr_t begin) noexcept {
+    for (auto& pool : pools) {
+      for (auto& candidate : pool.slots) {
+        if (candidate.active && candidate.begin == begin) {
+          return &candidate;
+        }
+      }
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] const slot* find(std::uintptr_t begin) const noexcept {
+    for (const auto& pool : pools) {
+      for (const auto& candidate : pool.slots) {
+        if (candidate.active && candidate.begin == begin) {
+          return &candidate;
+        }
+      }
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] std::optional<std::uintptr_t> reserve(std::uintptr_t hint, std::uint64_t span) {
     const auto page = page_size();
-    for (const auto& arena : arenas) {
-      if (!arena.process_lifetime) {
-        munmap(reinterpret_cast<void*>(arena.begin), arena.end - arena.begin + page);
+    const auto total = span + page;
+    for (auto& pool : pools) {
+      for (auto& candidate : pool.slots) {
+        if (candidate.active || total > candidate.extent_end - candidate.begin ||
+            !range_within_rel32(candidate.begin, candidate.begin + span, hint)) {
+          continue;
+        }
+        if (mprotect(reinterpret_cast<void*>(candidate.begin), span, PROT_READ | PROT_WRITE) != 0) {
+          continue;
+        }
+        candidate.usable_end = candidate.begin + span;
+        candidate.active = true;
+        candidate.process_lifetime = false;
+        return candidate.begin;
       }
-    }
-  }
 
-  [[nodiscard]] arena_range* find(std::uintptr_t begin) noexcept {
-    for (auto& arena : arenas) {
-      if (arena.begin == begin) {
-        return &arena;
+      if (pool.cursor > pool.end || total > pool.end - pool.cursor ||
+          !range_within_rel32(pool.cursor, pool.cursor + span, hint)) {
+        continue;
       }
-    }
-    return nullptr;
-  }
-
-  [[nodiscard]] const arena_range* find(std::uintptr_t begin) const noexcept {
-    for (const auto& arena : arenas) {
-      if (arena.begin == begin) {
-        return &arena;
+      pool.slots.reserve(pool.slots.size() + 1);
+      if (mprotect(reinterpret_cast<void*>(pool.cursor), span, PROT_READ | PROT_WRITE) != 0) {
+        continue;
       }
+      const auto begin = pool.cursor;
+      pool.slots.push_back({begin, begin + span, begin + total});
+      pool.cursor += total;
+      return begin;
     }
-    return nullptr;
+    return std::nullopt;
   }
 
   void reclaim(std::uintptr_t begin) noexcept {
-    for (auto it = arenas.begin(); it != arenas.end(); ++it) {
-      if (it->begin != begin) {
-        continue;
-      }
-      munmap(reinterpret_cast<void*>(it->begin), it->end - it->begin + page_size());
-      arenas.erase(it);
+    auto* candidate = find(begin);
+    if (candidate == nullptr) {
       return;
     }
+    const auto extent = candidate->extent_end - candidate->begin;
+    if (mprotect(reinterpret_cast<void*>(candidate->begin), extent, PROT_NONE) != 0) {
+      candidate->process_lifetime = true;
+      neko::log(neko::log_level::error,
+                "reclaiming a candidate code slot failed (%s): reservation stays mapped\n",
+                std::strerror(errno));
+      return;
+    }
+    static_cast<void>(madvise(reinterpret_cast<void*>(candidate->begin), extent, MADV_DONTNEED));
+    candidate->active = false;
+    candidate->process_lifetime = false;
+    candidate->usable_end = candidate->begin;
   }
 
   void release_to_process(std::uintptr_t begin) noexcept {
-    if (auto* arena = find(begin)) {
-      arena->process_lifetime = true;
+    if (auto* candidate = find(begin)) {
+      candidate->process_lifetime = true;
     }
   }
 
-  std::vector<arena_range> arenas;
+  std::vector<arena_pool> pools;
 };
 
 class code_pages::allocation final : public backend::executable_allocation {
@@ -134,46 +352,76 @@ backend::executable_allocation_ptr code_pages::reserve_code_near(std::uintptr_t 
     return nullptr;
   }
   const std::uint64_t page = page_size();
+  if (bytes > std::numeric_limits<std::uint64_t>::max() - (page - 1)) {
+    return nullptr;
+  }
   const std::uint64_t span = round_up(bytes, page);
+  if (span > std::numeric_limits<std::uint64_t>::max() - page) {
+    return nullptr;
+  }
   const std::uint64_t total = span + page; // usable span + PROT_NONE guard page
-  for (int step = 1; step <= 16; ++step) {
-    for (const std::int64_t sign : {std::int64_t{1}, std::int64_t{-1}}) {
-      const std::uintptr_t addr = hint + sign * static_cast<std::uintptr_t>(step) * 0x0800'0000ull;
-      void* mapping = mmap(reinterpret_cast<void*>(addr), total, PROT_READ | PROT_WRITE,
-                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-      if (mapping == MAP_FAILED) {
-        continue;
-      }
-      const auto begin = reinterpret_cast<std::uintptr_t>(mapping);
-      if (!within_rel32(begin, hint)) {
-        munmap(mapping, total); // kernel placed it too far away
-        continue;
-      }
-      if (mprotect(reinterpret_cast<void*>(begin + span), page, PROT_NONE) != 0) {
-        munmap(mapping, total); // cannot arm the guard — try the next hint
+
+  if (const auto existing = state_->reserve(hint, span)) {
+    try {
+      return std::make_unique<allocation>(state_, *existing, bytes);
+    } catch (...) {
+      state_->reclaim(*existing);
+      throw;
+    }
+  }
+
+  for (const auto& candidate : find_pool_candidates(hint, total)) {
+    void* mapping = mmap(reinterpret_cast<void*>(candidate.begin), candidate.size, PROT_NONE,
+                         MAP_PRIVATE | MAP_ANONYMOUS | map_fixed_no_replace, -1, 0);
+    if (mapping == MAP_FAILED) {
+      continue;
+    }
+    if (reinterpret_cast<std::uintptr_t>(mapping) != candidate.begin) {
+      // An old kernel ignored MAP_FIXED_NOREPLACE and treated the address as
+      // a hint. Never accept a surprise mapping: it may be out of rel32 range.
+      munmap(mapping, candidate.size);
+      continue;
+    }
+
+    try {
+      state_->pools.push_back(
+          {candidate.begin, candidate.begin + candidate.size, candidate.begin, {}});
+    } catch (...) {
+      munmap(mapping, candidate.size);
+      throw;
+    }
+
+    try {
+      const auto reserved = state_->reserve(hint, span);
+      if (!reserved) {
+        state_->pools.pop_back();
+        munmap(mapping, candidate.size);
         continue;
       }
       try {
-        state_->arenas.push_back({begin, begin + span});
+        return std::make_unique<allocation>(state_, *reserved, bytes);
       } catch (...) {
-        munmap(mapping, total);
+        state_->reclaim(*reserved);
         throw;
       }
-      try {
-        return std::make_unique<allocation>(state_, begin, bytes);
-      } catch (...) {
-        state_->reclaim(begin);
-        throw;
+    } catch (...) {
+      if (!state_->pools.empty() && state_->pools.back().begin == candidate.begin &&
+          state_->pools.back().slots.empty()) {
+        state_->pools.pop_back();
+        munmap(mapping, candidate.size);
       }
+      throw;
     }
   }
   return nullptr;
 }
 
 bool code_pages::owns_address(std::uintptr_t address) const {
-  for (const auto& arena : state_->arenas) {
-    if (address >= arena.begin && address < arena.end) {
-      return true;
+  for (const auto& pool : state_->pools) {
+    for (const auto& candidate : pool.slots) {
+      if (candidate.active && address >= candidate.begin && address < candidate.usable_end) {
+        return true;
+      }
     }
   }
   return false;
@@ -189,17 +437,17 @@ bool code_pages::commit_code(backend::executable_allocation& reservation, const 
   // reservation — reject loudly instead of writing past the span (the
   // guard page would catch it as a crash; this turns it into a message).
   const auto begin = reinterpret_cast<std::uintptr_t>(reservation.data());
-  const auto* arena = state_->find(begin);
-  if (arena == nullptr) {
+  const auto* slot = state_->find(begin);
+  if (slot == nullptr) {
     throw std::runtime_error("commit_code: not a reservation made by this substituter");
   }
-  if (bytes > reservation.size()) {
+  if (bytes > reservation.size() || bytes > slot->usable_end - slot->begin) {
     throw std::runtime_error("code image (" + std::to_string(bytes) +
                              " bytes) exceeds its reservation (" +
                              std::to_string(reservation.size()) + " bytes) — refusing to commit");
   }
   std::memcpy(reservation.data(), image, bytes);
-  if (mprotect(reservation.data(), arena->end - arena->begin, PROT_READ | PROT_EXEC) != 0) {
+  if (mprotect(reservation.data(), slot->usable_end - slot->begin, PROT_READ | PROT_EXEC) != 0) {
     throw std::runtime_error(std::string("mprotect(PROT_EXEC) failed: ") + std::strerror(errno));
   }
   __builtin___clear_cache(static_cast<char*>(reservation.data()),
@@ -283,27 +531,25 @@ bool code_pages::rewrite_reservation(backend::executable_allocation& reservation
   const auto base = reinterpret_cast<std::uintptr_t>(reservation.data());
   const auto at = base + offset;
   const auto end = at + size;
-  for (const auto& arena : state_->arenas) {
-    if (base < arena.begin || base >= arena.end || end > arena.end) {
-      continue;
-    }
-    const std::uint64_t page = page_size();
-    const std::uintptr_t page_start = at & ~(page - 1);
-    const std::uint64_t page_len = ((end - 1) & ~(page - 1)) - page_start + page;
-    if (mprotect(reinterpret_cast<void*>(page_start), page_len,
-                 PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-      return false;
-    }
-    std::memcpy(reinterpret_cast<void*>(at), bytes, static_cast<std::size_t>(size));
-    if (mprotect(reinterpret_cast<void*>(page_start), page_len, PROT_READ | PROT_EXEC) != 0) {
-      neko::log(neko::log_level::error,
-                "restoring r-x on a rewritten image page failed (%s): page stays writable\n",
-                std::strerror(errno));
-    }
-    __builtin___clear_cache(reinterpret_cast<char*>(at), reinterpret_cast<char*>(end));
-    return true;
+  const auto* slot = state_->find(base);
+  if (slot == nullptr || end > slot->usable_end) {
+    return false;
   }
-  return false;
+  const std::uint64_t page = page_size();
+  const std::uintptr_t page_start = at & ~(page - 1);
+  const std::uint64_t page_len = ((end - 1) & ~(page - 1)) - page_start + page;
+  if (mprotect(reinterpret_cast<void*>(page_start), page_len, PROT_READ | PROT_WRITE | PROT_EXEC) !=
+      0) {
+    return false;
+  }
+  std::memcpy(reinterpret_cast<void*>(at), bytes, static_cast<std::size_t>(size));
+  if (mprotect(reinterpret_cast<void*>(page_start), page_len, PROT_READ | PROT_EXEC) != 0) {
+    neko::log(neko::log_level::error,
+              "restoring r-x on a rewritten image page failed (%s): page stays writable\n",
+              std::strerror(errno));
+  }
+  __builtin___clear_cache(reinterpret_cast<char*>(at), reinterpret_cast<char*>(end));
+  return true;
 }
 
 bool code_pages::restore_entry(std::uintptr_t entry, const std::uint8_t original[5]) {

@@ -166,7 +166,7 @@ helpers and doctest.
 | `tests/e2e/reload/duplicate_names/` | translation-unit identity for same-named local symbols |
 | `tests/e2e/reload/rejections/` | loud rejection, process survival and old-code continuity |
 | `tests/e2e/reload/cross_tu/` | cross-object calls inside one generation, including brand-new symbols |
-| `tests/e2e/reload/soak/` | multi-generation reload soak: state continuity and arena accounting |
+| `tests/e2e/reload/soak/` | multi-generation reload soak: state continuity and executable-slot accounting |
 | `tests/e2e/adapters/cmake/` | the CMake adapter end to end, per generator and group form |
 | `tests/tooling/` | harness fault injection, CLI contracts, envsetup, sanitizer canary |
 | `tests/fuzz/` | libFuzzer on the ELF parser; corpus doubles as regression inputs |

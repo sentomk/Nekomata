@@ -8,7 +8,7 @@
 #     (state continuity, no reset, also across the swap boundary),
 # and at the end:
 #   * applied == number of dropped variants,
-#   * arenas_after - arenas_before == applied (allocation accounting).
+#   * slots_after - slots_before == applied (allocation accounting).
 #
 # Runtime ~20 s. Longer manual runs: SOAK_GENERATIONS / SOAK_TICKS env.
 set -euo pipefail
@@ -94,12 +94,12 @@ runner_pid=""
 summary=$(grep -a '^summary' "$OUT" | tail -1)
 echo "$summary"
 applied=$(echo "$summary" | sed -n 's/.*applied=\([0-9]*\).*/\1/p')
-before=$(echo "$summary" | sed -n 's/.*arenas_before=\([0-9]*\).*/\1/p')
-after=$(echo "$summary" | sed -n 's/.*arenas_after=\([0-9]*\).*/\1/p')
+before=$(echo "$summary" | sed -n 's/.*slots_before=\([0-9]*\).*/\1/p')
+after=$(echo "$summary" | sed -n 's/.*slots_after=\([0-9]*\).*/\1/p')
 [ "$applied" -eq "$GEN" ] || fail "applied=$applied, expected $GEN"
 [ $((after - before)) -eq "$applied" ] \
-  || fail "arena accounting: delta=$((after - before)) != applied=$applied"
+  || fail "slot accounting: delta=$((after - before)) != applied=$applied"
 
 echo ""
-echo "SOAK PASS — $GEN generations, state continuous, arenas accounted ($before -> $after)"
+echo "SOAK PASS — $GEN generations, state continuous, slots accounted ($before -> $after)"
 echo "output kept at: $OUT"

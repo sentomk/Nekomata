@@ -1,18 +1,19 @@
 // code_pages — executable memory and entry redirection on Linux.
 //
-// The rel32 constraint: a 5-byte `jmp rel32` reaches ±2 GiB. Fresh code is
-// therefore mmap'd as close to the functions it replaces as the kernel lets
-// us (hinted allocation, distance-checked, retried in 128 MiB steps).
+// The rel32 constraint: a 5-byte `jmp rel32` reaches ±2 GiB. code_pages
+// finds real gaps in /proc/self/maps, reserves reusable PROT_NONE pools with
+// MAP_FIXED_NOREPLACE, and only suballocates slots whose complete usable span
+// is reachable from the old function. A distant code region gets another
+// pool; the number of translation units is not a probe-count limit.
 //
-// Every arena is followed by a PROT_NONE guard page. Any write past the
-// reserved span — from any code path, in any geometry, in test runs and in
-// user processes alike — turns into a deterministic SIGSEGV instead of
-// silent corruption of whatever happens to be mapped next. This is the
-// runtime-invariant layer of the testing contract (see CONTRIBUTING.md):
-// it converts a whole class of geometry-dependent bugs into loud failures.
+// Every allocation slot is followed by a PROT_NONE guard page. Any write past
+// the reserved span — from any code path, in any geometry, in test runs and
+// in user processes alike — turns into a deterministic SIGSEGV instead of
+// silent corruption of whatever happens to be mapped next. Discarded
+// candidates return their protected slot to the pool for reuse.
 //
 // Each reservation is represented by an owning executable_allocation. A
-// discarded candidate is unmapped automatically; committed code can be
+// discarded candidate returns its slot automatically; committed code can be
 // transferred to process lifetime when its installed redirects outlive the
 // reload session. commit_code additionally verifies the image fits its
 // reservation, so overflow attempts are rejected loudly before any write.
