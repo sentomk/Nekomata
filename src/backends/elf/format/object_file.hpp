@@ -20,8 +20,8 @@ namespace neko::elf {
 enum class section_class : std::uint8_t {
   text,   // SHF_ALLOC | SHF_EXECINSTR — code, goes into the executable arena
   rodata, // SHF_ALLOC, read-only — string literals etc., arena too
-  data,   // SHF_ALLOC | SHF_WRITE — .data/.bss; NOT loaded: existing state
-          // wins: globals resolve to existing addresses to preserve state
+  data,   // SHF_ALLOC | SHF_WRITE — .data/.bss; existing symbols bind to live
+          // state, while supported new symbols receive persistent storage
   other,  // everything we do not load
 };
 

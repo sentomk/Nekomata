@@ -80,12 +80,22 @@ void reload_session::impl::commit(prepared_generation& generation) {
     replacement_count += prepared->image.replacements.size();
   }
 
+  std::vector<backend::loaded_image*> images;
+  images.reserve(generation.reloads.size());
+  std::size_t state_allocation_count = 0;
+  for (const auto& prepared : generation.reloads) {
+    images.push_back(&prepared->image);
+    state_allocation_count += prepared->image.state_allocations.size();
+  }
+
   std::vector<saved_entry> saved;
   saved.reserve(replacement_count);
   // Allocate bookkeeping capacity before the first live write. Moving the
   // successfully installed handles below is then noexcept, so a later
   // allocation failure cannot destroy code that entries already target.
   active_allocations_.reserve(active_allocations_.size() + generation.reloads.size());
+  active_state_allocations_.reserve(active_state_allocations_.size() + state_allocation_count);
+  backends_.loader->prepare_generation_commit(images);
 
   // Capture every rollback image before the first live write.
   for (auto& prepared : generation.reloads) {
@@ -121,6 +131,10 @@ void reload_session::impl::commit(prepared_generation& generation) {
         commit_poisoned_ = true;
         for (auto& prepared : generation.reloads) {
           active_allocations_.push_back(std::move(prepared->image.allocation));
+          for (auto& allocation : prepared->image.state_allocations) {
+            active_state_allocations_.push_back(std::move(allocation));
+          }
+          prepared->image.state_allocations.clear();
         }
         neko::log(neko::log_level::error,
                   "entry patch failed at '%s'; rollback failed for %zu of %zu written entries; "
@@ -135,11 +149,16 @@ void reload_session::impl::commit(prepared_generation& generation) {
     ++patched;
   }
 
-  // Entries now point into these images. Transfer each allocation from the
-  // candidate transaction into the session before any later bookkeeping can
-  // throw; rejected transactions never reach this ownership boundary.
+  // Entries now point into these images and their candidate state. Publish
+  // the new identities through the backend's no-throw boundary, then transfer
+  // every allocation into the session. Rejected transactions never reach it.
+  backends_.loader->commit_generation(images);
   for (auto& prepared : generation.reloads) {
     active_allocations_.push_back(std::move(prepared->image.allocation));
+    for (auto& allocation : prepared->image.state_allocations) {
+      active_state_allocations_.push_back(std::move(allocation));
+    }
+    prepared->image.state_allocations.clear();
   }
 
   // Warn about functions an updated object dropped. An object not present in

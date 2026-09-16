@@ -66,6 +66,22 @@ expect_case() { # expect_case <label> <staging.o> <expected pattern>
   echo "PASS $label"
 }
 
+expect_apply() { # expect_apply <label> <staging.o>
+  local label="$1" staging="$2"
+  local cursor ticks_before
+  cursor=$(log_cursor "$OUT")
+  mv "$staging" "$WORK/bad.new.o"
+  wait_for "reload applied" 15 "$label" "$cursor"
+  ticks_before=$(count '\[hot\] tick')
+  sleep 0.6
+  alive || { echo "FAIL($label): runner died after the applied reload"; exit 1; }
+  local ticks_after
+  ticks_after=$(count '\[hot\] tick')
+  [ "$ticks_after" -gt "$ticks_before" ] || {
+    echo "FAIL($label): fresh code stopped after the applied reload"; exit 1; }
+  echo "PASS $label"
+}
+
 build_variant() { # build_variant <sed-expr|-> <extra flags...> -> $WORK/staging.o
   local sedexpr="$1"; shift
   if [ "$sedexpr" = "-" ]; then
@@ -222,9 +238,10 @@ o2_ticks_after=$(count '\[hot\] tick')
   echo "FAIL(flags_o2): ticks did not continue after -O2 reload"; exit 1; }
 echo "PASS flags_o2_applies_incidentally"
 
-# 5. fresh code introduces a new mutable global
+# 5. Fresh code introduces a simply initialized mutable global. Its writable
+# storage is allocated near the fresh code before the candidate is committed.
 build_variant 's|static int s_calls = 0;|static int s_calls = 0; int g_extra = 1;|; s|++g_counter;|++g_counter; g_extra += 2;|'
-expect_case new_global "$WORK/staging.o" "new globals are not supported yet"
+expect_apply new_global "$WORK/staging.o"
 
 # 6. cross-TU call into the host program. `host_only` is defined in the
 #    runner and never exported, so this only resolves if the process's own

@@ -121,6 +121,27 @@ TEST_CASE("destroying a candidate allocation returns its slot to the pool") {
   CHECK(reused->data() == address);
 }
 
+TEST_CASE("writable candidate storage remains mutable and returns its slot") {
+  neko::elf::code_pages pages;
+  void* address = nullptr;
+  {
+    auto allocation = pages.reserve_writable_near(hint_address, sizeof(std::uint64_t));
+    REQUIRE(allocation != nullptr);
+    address = allocation->data();
+    auto* value = static_cast<std::uint64_t*>(allocation->data());
+    *value = 0x0123'4567'89AB'CDEF;
+    CHECK(*value == 0x0123'4567'89AB'CDEF);
+  }
+
+  unsigned char residency = 0;
+  CHECK(mincore(address, system_page_size(), &residency) == 0);
+  auto reused = pages.reserve_writable_near(hint_address, sizeof(std::uint64_t));
+  REQUIRE(reused != nullptr);
+  CHECK(reused->data() == address);
+  *static_cast<std::uint64_t*>(reused->data()) = 42;
+  CHECK(*static_cast<const std::uint64_t*>(reused->data()) == 42);
+}
+
 TEST_CASE("one near-code pool serves hundreds of live allocations") {
   constexpr std::size_t allocation_count = 512;
   neko::elf::code_pages pages;

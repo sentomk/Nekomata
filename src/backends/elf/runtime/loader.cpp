@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -71,10 +72,39 @@ void write_trampoline(std::uint8_t* out, std::uintptr_t target) {
   out[12] = 0xE3; // jmp r11
 }
 
+bool has_external_binding(std::uint8_t binding) {
+  if (binding == STB_GLOBAL || binding == STB_WEAK) {
+    return true;
+  }
+#ifdef STB_GNU_UNIQUE
+  return binding == STB_GNU_UNIQUE;
+#else
+  return false;
+#endif
+}
+
+std::optional<std::string> state_identity(const symbol& sym, std::string_view source_path) {
+  if (has_external_binding(sym.bind)) {
+    return "external:" + sym.name;
+  }
+  if (sym.bind == STB_LOCAL && !source_path.empty()) {
+    return "local:" + std::to_string(source_path.size()) + ":" + std::string(source_path) +
+           sym.name;
+  }
+  return std::nullopt;
+}
+
 } // namespace
 
 loader::loader(process_symbols& symbols, state_manager& state, code_substituter& substituter)
     : symbols_(symbols), state_(state), substituter_(substituter) {}
+
+const loader::committed_state* loader::find_committed_state(std::string_view identity) const {
+  const auto found =
+      std::find_if(committed_state_.begin(), committed_state_.end(),
+                   [identity](const committed_state& state) { return state.identity == identity; });
+  return found == committed_state_.end() ? nullptr : &*found;
+}
 
 loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
   return load(object_data, size, {});
@@ -83,6 +113,31 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size) {
 loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
                           std::string_view source_path) {
   const object_file obj = parse_object(object_data, size);
+
+  for (const auto& sym : obj.symbols) {
+    if (sym.type == STT_TLS) {
+      throw std::runtime_error("thread-local symbol '" + sym.name +
+                               "' is not supported by hot reload yet");
+    }
+    if (sym.name.starts_with("_ZGV") || sym.name == "__cxa_guard_acquire" ||
+        sym.name == "__cxa_guard_release" || sym.name == "__cxa_guard_abort" ||
+        sym.name == "__cxa_atexit") {
+      throw std::runtime_error(
+          "dynamic initialization or destruction of mutable state is not supported yet");
+    }
+  }
+  for (const auto& rel : obj.relocations) {
+    if (rel.target_section >= obj.sections.size()) {
+      continue;
+    }
+    const auto& target = obj.sections[rel.target_section];
+    if (target.cls == section_class::data) {
+      throw std::runtime_error(
+          "section '" + target.name +
+          "' carries relocations — mutable initializers requiring relocations are not "
+          "supported yet");
+    }
+  }
 
   // ---- 1. layout: text/rodata sections get arena offsets ---------------
   std::vector<std::uint64_t> section_offset(obj.sections.size(), 0);
@@ -187,6 +242,10 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     write_trampoline(image.data() + offset, reinterpret_cast<std::uintptr_t>(target));
   }
 
+  loaded_image out;
+  out.allocation = std::move(allocation);
+  out.pending_fixups = std::move(pending_fixups);
+
   // ---- 5. data-section anchors for state preservation ------------------
   // The assembler folds static-variable accesses into
   // `<data section> + addend` relocations (st_value + RIP adjustment), so a
@@ -212,6 +271,80 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
                                "' has inconsistent state anchors — the global layout changed");
     }
     slot = anchor;
+  }
+
+  struct mapped_state {
+    std::uintptr_t address;
+    std::uint64_t size;
+  };
+  std::vector<std::optional<mapped_state>> state_by_symbol(obj.symbols.size());
+  for (std::size_t symbol_index = 0; symbol_index < obj.symbols.size(); ++symbol_index) {
+    const auto& sym = obj.symbols[symbol_index];
+    if (sym.type != STT_OBJECT || sym.section_index >= obj.sections.size()) {
+      continue;
+    }
+    const auto& sec = obj.sections[sym.section_index];
+    if (sec.cls != section_class::data) {
+      continue;
+    }
+    if (sym.size == 0 || sym.value > sec.size || sym.size > sec.size - sym.value) {
+      throw std::runtime_error("mutable symbol '" + sym.name +
+                               "' has an invalid or unknown storage extent");
+    }
+
+    const auto identity = state_identity(sym, source_path);
+    if (identity) {
+      if (const auto* committed = find_committed_state(*identity)) {
+        if (committed->size != sym.size || committed->alignment != sec.align) {
+          throw std::runtime_error(
+              "global '" + sym.name + "' changed layout (size " + std::to_string(committed->size) +
+              " -> " + std::to_string(sym.size) + ", alignment " +
+              std::to_string(committed->alignment) + " -> " + std::to_string(sec.align) +
+              ") — changing the layout of existing globals is not "
+              "supported yet");
+        }
+        state_by_symbol[symbol_index] = mapped_state{committed->address, committed->size};
+        continue;
+      }
+    }
+
+    if (void* existing = state_.map_global(sym.name)) {
+      if (auto old = symbols_.global_by_name(sym.name); old && sym.size != old->size) {
+        throw std::runtime_error(
+            "global '" + sym.name + "' changed size (" + std::to_string(old->size) + " -> " +
+            std::to_string(sym.size) +
+            ") — changing the layout of existing globals is not supported yet");
+      }
+      state_by_symbol[symbol_index] =
+          mapped_state{reinterpret_cast<std::uintptr_t>(existing), sym.size};
+      continue;
+    }
+
+    if (!identity) {
+      throw std::runtime_error("fresh file-local mutable symbol '" + sym.name +
+                               "' has no source identity — use a managed reload group or "
+                               "watch(object, source)");
+    }
+    if (sec.align > kMaxSectionAlign) {
+      throw std::runtime_error("mutable symbol '" + sym.name + "' requires alignment " +
+                               std::to_string(sec.align) +
+                               " — over-aligned globals beyond a page are not supported yet");
+    }
+    auto state_allocation = substituter_.reserve_writable_near(hint, sym.size);
+    if (state_allocation == nullptr) {
+      throw std::runtime_error("could not reserve writable memory near the target for global '" +
+                               sym.name + "'");
+    }
+    if (sec.bytes.empty()) {
+      std::memset(state_allocation->data(), 0, static_cast<std::size_t>(sym.size));
+    } else {
+      std::memcpy(state_allocation->data(), sec.bytes.data() + sym.value,
+                  static_cast<std::size_t>(sym.size));
+    }
+    const auto address = reinterpret_cast<std::uintptr_t>(state_allocation->data());
+    state_by_symbol[symbol_index] = mapped_state{address, sym.size};
+    out.state_definitions.push_back({*identity, sym.name, address, sym.size, sec.align, true});
+    out.state_allocations.push_back(std::move(state_allocation));
   }
 
   // ---- 6. symbol resolution ---------------------------------------------
@@ -245,20 +378,11 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
         }
         return *data_base[sym.section_index];
       }
-      // Mutable data: bind to existing storage so state survives.
-      void* existing = state_.map_global(sym.name);
-      if (existing == nullptr) {
-        throw std::runtime_error("fresh code introduces mutable symbol '" + sym.name +
-                                 "' with no existing storage — new globals are not supported yet");
+      const auto index = static_cast<std::size_t>(&sym - obj.symbols.data());
+      if (index >= state_by_symbol.size() || !state_by_symbol[index]) {
+        throw std::runtime_error("cannot map mutable symbol '" + sym.name + "' onto live state");
       }
-      if (auto old = symbols_.global_by_name(sym.name);
-          old && sym.size != 0 && sym.size != old->size) {
-        throw std::runtime_error(
-            "global '" + sym.name + "' changed size (" + std::to_string(old->size) + " -> " +
-            std::to_string(sym.size) +
-            ") — changing the layout of existing globals is not supported yet");
-      }
-      return reinterpret_cast<std::uintptr_t>(existing);
+      return state_by_symbol[index]->address;
     }
     if (sym.type == STT_SECTION) {
       return base + section_offset[sym.section_index]; // st_value is 0
@@ -279,9 +403,6 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
       // arena and USED by the fresh code, but the pointer slots would stay
       // zero — a vtable, jump table or const pointer array built that way
       // crashes at first use, not at load time. Refuse loudly instead.
-      // Data-class relocations (.rela.data, .rela.init_array) are benign:
-      // data sections are never copied — symbols anchor to existing
-      // storage, so the fresh bytes are unreachable.
       if (target.cls == section_class::rodata && target.name.rfind(".eh_frame", 0) != 0) {
         throw std::runtime_error("section '" + target.name +
                                  "' carries relocations — relocated constant tables (vtables, jump "
@@ -300,6 +421,34 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
         throw std::runtime_error("internal: missing trampoline");
       }
       s = base + it->second;
+    } else if (sym.type == STT_SECTION && sym.section_index < obj.sections.size() &&
+               obj.sections[sym.section_index].cls == section_class::data) {
+      std::int64_t target_offset = rel.addend;
+      if (rel.type == kRelPc32 || rel.type == kRelPlt32) {
+        if (target_offset > std::numeric_limits<std::int64_t>::max() - 4) {
+          throw std::runtime_error("data-section relocation addend overflows");
+        }
+        target_offset += 4;
+      }
+      std::optional<std::uintptr_t> mapped_base;
+      if (target_offset >= 0) {
+        const auto offset = static_cast<std::uint64_t>(target_offset);
+        for (std::size_t index = 0; index < obj.symbols.size(); ++index) {
+          const auto& candidate = obj.symbols[index];
+          if (candidate.type != STT_OBJECT || candidate.section_index != sym.section_index ||
+              !state_by_symbol[index] || offset < candidate.value ||
+              offset - candidate.value >= candidate.size) {
+            continue;
+          }
+          mapped_base = state_by_symbol[index]->address - candidate.value;
+          break;
+        }
+      }
+      if (mapped_base) {
+        s = *mapped_base;
+      } else {
+        s = resolve(sym);
+      }
     } else {
       s = resolve(sym);
     }
@@ -334,10 +483,6 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
   }
 
   // ---- 8. what to redirect ----------------------------------------------
-  loaded_image out;
-  out.allocation = std::move(allocation);
-  out.pending_fixups = std::move(pending_fixups);
-
   // Functions that end up with no redirect are not necessarily wrong (a new
   // static helper has nothing to replace), but a skipped name that LIVE code
   // also carries is how signature changes and overloads quietly keep running
@@ -483,6 +628,45 @@ void loader::link_generation(std::span<loaded_image* const> images) {
       }
     }
     image->pending_fixups.clear();
+  }
+}
+
+void loader::prepare_generation_commit(std::span<loaded_image* const> images) {
+  std::vector<const backend::state_definition*> introduced;
+  for (const auto* image : images) {
+    for (const auto& definition : image->state_definitions) {
+      if (!definition.introduced) {
+        continue;
+      }
+      if (const auto* committed = find_committed_state(definition.identity)) {
+        throw std::runtime_error("global '" + definition.name +
+                                 "' was concurrently introduced with different storage at " +
+                                 std::to_string(committed->address));
+      }
+      const auto duplicate = std::find_if(introduced.begin(), introduced.end(),
+                                          [&](const backend::state_definition* candidate) {
+                                            return candidate->identity == definition.identity;
+                                          });
+      if (duplicate != introduced.end()) {
+        throw std::runtime_error("generation defines mutable symbol '" + definition.name +
+                                 "' more than once");
+      }
+      introduced.push_back(&definition);
+    }
+  }
+  committed_state_.reserve(committed_state_.size() + introduced.size());
+}
+
+void loader::commit_generation(std::span<loaded_image* const> images) noexcept {
+  for (auto* image : images) {
+    for (auto& definition : image->state_definitions) {
+      if (!definition.introduced) {
+        continue;
+      }
+      committed_state_.push_back({std::move(definition.identity), std::move(definition.name),
+                                  definition.address, definition.size, definition.alignment});
+      definition.introduced = false;
+    }
   }
 }
 

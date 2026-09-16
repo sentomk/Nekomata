@@ -47,7 +47,7 @@ while [ ! -f "$stop_file" ]; do
       2) echo "truncated object file" ;;
       3) if [ "$mode" != reject_stale_truncated ]; then echo "truncated object file"; fi ;;
       4) echo "reload applied" ;;
-      5) echo "new globals are not supported yet" ;;
+      5) echo "reload applied" ;;
       6) # cross-TU call into the host: applies, and the host function runs
         echo "reload applied"
         echo "[host] host_only called" ;;

@@ -214,12 +214,49 @@ private:
   bool owns_mapping_ = true;
 };
 
+class fake_writable_allocation final : public neko::backend::writable_allocation {
+public:
+  fake_writable_allocation(void* data, std::uint64_t size,
+                           std::shared_ptr<allocation_counters> counters)
+      : data_(data), size_(size), counters_(std::move(counters)) {}
+
+  ~fake_writable_allocation() override {
+    if (owns_mapping_) {
+      ++counters_->reclaimed;
+    }
+  }
+
+  void* data() noexcept override { return data_; }
+  const void* data() const noexcept override { return data_; }
+  std::uint64_t size() const noexcept override { return size_; }
+
+  void release_to_process() noexcept override {
+    if (!owns_mapping_) {
+      return;
+    }
+    owns_mapping_ = false;
+    ++counters_->released_to_process;
+  }
+
+private:
+  void* data_;
+  std::uint64_t size_;
+  std::shared_ptr<allocation_counters> counters_;
+  bool owns_mapping_ = true;
+};
+
 neko::backend::loaded_image image(void* code, std::string name, std::uintptr_t old_entry,
                                   const std::shared_ptr<allocation_counters>& counters) {
   neko::backend::loaded_image loaded;
   loaded.allocation = std::make_unique<fake_allocation>(code, 8, counters);
   loaded.replacements.push_back({std::move(name), old_entry, 0});
   return loaded;
+}
+
+void attach_state(neko::backend::loaded_image& loaded, void* data,
+                  const std::shared_ptr<allocation_counters>& counters) {
+  loaded.state_allocations.push_back(
+      std::make_unique<fake_writable_allocation>(data, sizeof(std::uint64_t), counters));
 }
 
 } // namespace
@@ -471,4 +508,76 @@ TEST_CASE("a generation marker exposes only a complete immutable object set") {
   }
   CHECK(allocations->reclaimed == 0);
   CHECK(allocations->released_to_process == 2);
+}
+
+TEST_CASE("rejected candidate state is reclaimed with its code") {
+  constexpr std::uintptr_t entry = 0x6060;
+  std::array<std::uint8_t, 8> code{};
+  std::uint64_t state = 0;
+  auto code_allocations = std::make_shared<allocation_counters>();
+  auto state_allocations = std::make_shared<allocation_counters>();
+  std::vector<neko::backend::loaded_image> images;
+  auto loaded = image(code.data(), "tick", entry, code_allocations);
+  attach_state(loaded, &state, state_allocations);
+  images.push_back(std::move(loaded));
+
+  auto loader = std::make_shared<queued_loader>(std::move(images));
+  auto process = std::make_shared<fake_process>();
+  auto substituter = std::make_shared<recording_substituter>(entry);
+  substituter->expected_prechecks = 1;
+
+  neko::backend::bundle backends;
+  backends.loader = loader;
+  backends.symbols = process;
+  backends.state = process;
+  backends.substituter = substituter;
+
+  temporary_directory temporary;
+  const auto object = temporary.path() / "rejected.new.o";
+  offer(object);
+
+  neko::reload_session session{std::move(backends)};
+  session.watch(object);
+  const auto result = session.update();
+  REQUIRE(result.events.size() == 1);
+  CHECK(result.events.front().status == neko::update_status::rejected);
+  CHECK(code_allocations->reclaimed == 1);
+  CHECK(state_allocations->reclaimed == 1);
+  CHECK(state_allocations->released_to_process == 0);
+}
+
+TEST_CASE("committed state follows redirects into process lifetime") {
+  constexpr std::uintptr_t entry = 0x7070;
+  std::array<std::uint8_t, 8> code{};
+  std::uint64_t state = 0;
+  auto code_allocations = std::make_shared<allocation_counters>();
+  auto state_allocations = std::make_shared<allocation_counters>();
+  std::vector<neko::backend::loaded_image> images;
+  auto loaded = image(code.data(), "tick", entry, code_allocations);
+  attach_state(loaded, &state, state_allocations);
+  images.push_back(std::move(loaded));
+
+  auto loader = std::make_shared<queued_loader>(std::move(images));
+  auto process = std::make_shared<fake_process>();
+  auto substituter = std::make_shared<recording_substituter>(0);
+  substituter->expected_prechecks = 1;
+
+  neko::backend::bundle backends;
+  backends.loader = loader;
+  backends.symbols = process;
+  backends.state = process;
+  backends.substituter = substituter;
+
+  temporary_directory temporary;
+  const auto object = temporary.path() / "committed.new.o";
+  offer(object);
+  {
+    neko::reload_session session{std::move(backends)};
+    session.watch(object);
+    CHECK(session.update().any_applied());
+    CHECK(state_allocations->reclaimed == 0);
+    CHECK(state_allocations->released_to_process == 0);
+  }
+  CHECK(state_allocations->reclaimed == 0);
+  CHECK(state_allocations->released_to_process == 1);
 }

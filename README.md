@@ -36,7 +36,7 @@ has tried yet.
 | Multiple functions per reload | yes — applied all-or-nothing; a failed attempt rolls back |
 | PIE binaries | yes, when hot objects are built `-fpie` (GOT-style `-fpic` is not supported yet) |
 | Cross-TU references | supported inside one published generation — a reloaded function can call symbols defined by sibling objects of the same generation, including brand-new ones; across generations this is not supported yet |
-| New globals, changed global layout | not supported yet — refused with a diagnostic |
+| New globals | simple mutable `.data`/`.bss` objects receive persistent storage; thread-local, dynamic/non-trivial initialization, initializer relocations, and changed layouts are refused |
 | Virtual functions | not supported yet — a vtable that needs relocation is refused with a diagnostic |
 | Optimized builds (`-O2`) | not supported yet — an inlined function has no body of its own |
 | Platforms | Linux/ELF runtime; kernel and TUI portability builds on macOS and Windows |

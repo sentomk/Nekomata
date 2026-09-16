@@ -49,6 +49,8 @@ public:
 
   backend::executable_allocation_ptr reserve_code_near(std::uintptr_t hint,
                                                        std::uint64_t bytes) override;
+  backend::writable_allocation_ptr reserve_writable_near(std::uintptr_t hint,
+                                                         std::uint64_t bytes) override;
   bool commit_code(backend::executable_allocation& reservation, const void* image,
                    std::uint64_t bytes) override;
   bool precheck_entry(std::uintptr_t entry, void* target) override;
@@ -64,6 +66,7 @@ private:
 
   struct allocation_state;
   class allocation;
+  std::unique_ptr<allocation> reserve_near(std::uintptr_t hint, std::uint64_t bytes);
   std::shared_ptr<allocation_state> state_;
 };
 

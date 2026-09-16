@@ -94,6 +94,9 @@ reload_session::impl::~impl() {
   for (const auto& allocation : active_allocations_) {
     allocation->release_to_process();
   }
+  for (const auto& allocation : active_state_allocations_) {
+    allocation->release_to_process();
+  }
 }
 
 void reload_session::impl::check_fatal_error() const {

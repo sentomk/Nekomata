@@ -164,6 +164,10 @@ public:
   /// one. The destructor transfers these mappings to process lifetime: entry
   /// redirects deliberately outlive the session object today.
   std::vector<backend::executable_allocation_ptr> active_allocations_;
+  /// Writable storage introduced by committed generations follows the same
+  /// lifetime rule as redirected code: the session retains it while active,
+  /// then transfers it because installed redirects are not undone.
+  std::vector<backend::writable_allocation_ptr> active_state_allocations_;
   std::size_t applied_ = 0;
   std::size_t rejected_ = 0;
   std::string last_result_ = "no offers yet";

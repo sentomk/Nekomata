@@ -195,6 +195,7 @@ struct code_pages::allocation_state {
     std::uintptr_t extent_end;
     bool active = true;
     bool process_lifetime = false;
+    bool executable = false;
   };
 
   struct arena_pool {
@@ -265,6 +266,7 @@ struct code_pages::allocation_state {
         candidate.usable_end = candidate.begin + span;
         candidate.active = true;
         candidate.process_lifetime = false;
+        candidate.executable = false;
         return candidate.begin;
       }
 
@@ -277,7 +279,7 @@ struct code_pages::allocation_state {
         continue;
       }
       const auto begin = pool.cursor;
-      pool.slots.push_back({begin, begin + span, begin + total});
+      pool.slots.push_back({begin, begin + span, begin + total, true, false, false});
       pool.cursor += total;
       return begin;
     }
@@ -300,6 +302,7 @@ struct code_pages::allocation_state {
     static_cast<void>(madvise(reinterpret_cast<void*>(candidate->begin), extent, MADV_DONTNEED));
     candidate->active = false;
     candidate->process_lifetime = false;
+    candidate->executable = false;
     candidate->usable_end = candidate->begin;
   }
 
@@ -312,7 +315,8 @@ struct code_pages::allocation_state {
   std::vector<arena_pool> pools;
 };
 
-class code_pages::allocation final : public backend::executable_allocation {
+class code_pages::allocation final : public backend::executable_allocation,
+                                     public backend::writable_allocation {
 public:
   allocation(std::shared_ptr<allocation_state> state, std::uintptr_t begin, std::uint64_t size)
       : state_(std::move(state)), begin_(begin), size_(size) {}
@@ -346,7 +350,7 @@ code_pages::code_pages() : state_(std::make_shared<allocation_state>()) {}
 
 code_pages::~code_pages() = default;
 
-backend::executable_allocation_ptr code_pages::reserve_code_near(std::uintptr_t hint,
+std::unique_ptr<code_pages::allocation> code_pages::reserve_near(std::uintptr_t hint,
                                                                  std::uint64_t bytes) {
   if (bytes == 0) {
     return nullptr;
@@ -416,10 +420,21 @@ backend::executable_allocation_ptr code_pages::reserve_code_near(std::uintptr_t 
   return nullptr;
 }
 
+backend::executable_allocation_ptr code_pages::reserve_code_near(std::uintptr_t hint,
+                                                                 std::uint64_t bytes) {
+  return reserve_near(hint, bytes);
+}
+
+backend::writable_allocation_ptr code_pages::reserve_writable_near(std::uintptr_t hint,
+                                                                   std::uint64_t bytes) {
+  return reserve_near(hint, bytes);
+}
+
 bool code_pages::owns_address(std::uintptr_t address) const {
   for (const auto& pool : state_->pools) {
     for (const auto& candidate : pool.slots) {
-      if (candidate.active && address >= candidate.begin && address < candidate.usable_end) {
+      if (candidate.active && candidate.executable && address >= candidate.begin &&
+          address < candidate.usable_end) {
         return true;
       }
     }
@@ -450,6 +465,7 @@ bool code_pages::commit_code(backend::executable_allocation& reservation, const 
   if (mprotect(reservation.data(), slot->usable_end - slot->begin, PROT_READ | PROT_EXEC) != 0) {
     throw std::runtime_error(std::string("mprotect(PROT_EXEC) failed: ") + std::strerror(errno));
   }
+  state_->find(begin)->executable = true;
   __builtin___clear_cache(static_cast<char*>(reservation.data()),
                           static_cast<char*>(reservation.data()) + bytes);
   return true;

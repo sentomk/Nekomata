@@ -61,6 +61,18 @@ struct generation_fixup {
   std::uint32_t offset_in_image = 0;
 };
 
+/// Mutable storage visible from one candidate image. `identity` is the
+/// link-level identity used across generations: externally bound names are
+/// process-wide, while file-local names include their source identity.
+struct state_definition {
+  std::string identity;
+  std::string name;
+  std::uintptr_t address = 0;
+  std::uint64_t size = 0;
+  std::uint64_t alignment = 0;
+  bool introduced = false;
+};
+
 /// A fresh object file placed into executable memory. Local and process
 /// references are already relocated; generation-wide references remain as
 /// typed fixups until `link_generation()`.
@@ -74,6 +86,12 @@ struct loaded_image {
   std::vector<generation_symbol> exported_symbols;
   /// Typed references deferred until the complete generation is available.
   std::vector<generation_fixup> pending_fixups;
+  /// Candidate writable mappings. Rejected candidates reclaim these
+  /// automatically; reload_session retains them only after a successful
+  /// commit or an incomplete rollback that may have exposed their addresses.
+  std::vector<writable_allocation_ptr> state_allocations;
+  /// State identities resolved or introduced while loading this image.
+  std::vector<state_definition> state_definitions;
 
   [[nodiscard]] void* code() noexcept {
     return allocation == nullptr ? nullptr : allocation->data();
@@ -112,6 +130,16 @@ public:
   /// definition. Process-visible references have already been handled by
   /// `load()`. The default accepts images without pending cross links.
   virtual void link_generation(std::span<loaded_image* const> images) { (void)images; }
+
+  /// Perform every potentially-throwing operation needed to publish state
+  /// introduced by this generation. Called before the first live entry write.
+  virtual void prepare_generation_commit(std::span<loaded_image* const> images) { (void)images; }
+
+  /// Publish state after every entry redirect succeeded. Implementations must
+  /// not throw: live code can observe the candidate addresses after this
+  /// boundary. Allocation ownership stays in loaded_image and is transferred
+  /// into reload_session by the transaction engine.
+  virtual void commit_generation(std::span<loaded_image* const> images) noexcept { (void)images; }
 };
 
 } // namespace neko::backend

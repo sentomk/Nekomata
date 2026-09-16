@@ -18,8 +18,9 @@ class state_manager {
 public:
   virtual ~state_manager() = default;
 
-  /// Existing storage for a mutable global/static variable, or nullptr if
-  /// the live process does not know it (fresh code introduced a new symbol).
+  /// Storage already present in the linked process for a mutable global or
+  /// static variable. A nullptr means the process has no such symbol; a
+  /// supporting object loader may allocate candidate storage for a new one.
   virtual void* map_global(std::string_view name) = 0;
 };
 
