@@ -62,12 +62,12 @@ TEST_CASE("external calls are routed through a call-site-safe trampoline") {
   const auto bytes = read_file(fixture);
   REQUIRE(!bytes.empty());
   const auto image = ldr.load(bytes.data(), bytes.size());
-  REQUIRE(image.code != nullptr);
+  REQUIRE(image.code() != nullptr);
 
   // The arena holds [text][rodata][trampolines]: locate the 13-byte window
   // whose imm64 is our probe target's address.
-  const auto* const begin = static_cast<const std::uint8_t*>(image.code);
-  const auto* const end = begin + image.code_size;
+  const auto* const begin = static_cast<const std::uint8_t*>(image.code());
+  const auto* const end = begin + image.code_size();
   const std::uintptr_t target = reinterpret_cast<std::uintptr_t>(&neko_plt_probe_target);
 
   bool found_r11 = false;

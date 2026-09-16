@@ -54,9 +54,14 @@ public:
 
 class stub_substituter final : public neko::backend::code_substituter {
 public:
-  void* reserve_code_near(std::uintptr_t, std::uint64_t) override { return nullptr; }
+  neko::backend::executable_allocation_ptr reserve_code_near(std::uintptr_t,
+                                                             std::uint64_t) override {
+    return nullptr;
+  }
 
-  bool commit_code(void*, const void*, std::uint64_t) override { return false; }
+  bool commit_code(neko::backend::executable_allocation&, const void*, std::uint64_t) override {
+    return false;
+  }
 
   bool precheck_entry(std::uintptr_t, void*) override { return false; }
 

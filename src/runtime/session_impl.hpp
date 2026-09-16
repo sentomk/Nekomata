@@ -111,7 +111,7 @@ public:
                  const std::filesystem::path& source_path, std::string build_information);
   void link_generation(prepared_generation& generation);
   void validate_generation(const prepared_generation& generation) const;
-  void commit(const prepared_generation& generation);
+  void commit(prepared_generation& generation);
 
   // prepare_generation.cpp — legacy watch claiming and preparation.
   [[nodiscard]] std::unique_ptr<prepared_reload> try_prepare(const watched_object& watched);
@@ -148,6 +148,11 @@ public:
   /// function whose entry still jumps to stale arena code.
   std::unordered_map<std::string, std::unordered_map<std::string, std::uintptr_t>>
       last_redirected_by_object_;
+  /// Every executable allocation reached by an installed redirect. Old
+  /// generations remain live because a removed function may still point into
+  /// one. The destructor transfers these mappings to process lifetime: entry
+  /// redirects deliberately outlive the session object today.
+  std::vector<backend::executable_allocation_ptr> active_allocations_;
   std::size_t applied_ = 0;
   std::size_t rejected_ = 0;
   std::string last_result_ = "no offers yet";

@@ -9,8 +9,11 @@
 
 #pragma once
 
+#include <neko/backend/code_substituter.hpp>
+
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -44,15 +47,27 @@ struct pending_call_fixup {
 
 /// A fresh object file placed into executable memory, fully relocated.
 struct loaded_image {
-  /// Executable mapping owned by the code_substituter.
-  void* code = nullptr;
-  std::uint64_t code_size = 0;
+  /// Candidate executable mapping. Preparation owns it here; a successful
+  /// transaction moves it into reload_session's active allocation set.
+  executable_allocation_ptr allocation;
   /// Function entries that still need redirecting.
   std::vector<function_replacement> replacements;
   /// Link-visible functions provided to sibling objects of the generation.
   std::vector<exported_function> exported_functions;
   /// Calls deferred to `link_generation()` — new cross-TU symbols.
   std::vector<pending_call_fixup> pending_call_fixups;
+
+  [[nodiscard]] void* code() noexcept {
+    return allocation == nullptr ? nullptr : allocation->data();
+  }
+
+  [[nodiscard]] const void* code() const noexcept {
+    return allocation == nullptr ? nullptr : allocation->data();
+  }
+
+  [[nodiscard]] std::uint64_t code_size() const noexcept {
+    return allocation == nullptr ? 0 : allocation->size();
+  }
 };
 
 class object_loader {

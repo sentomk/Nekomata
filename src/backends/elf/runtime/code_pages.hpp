@@ -11,8 +11,11 @@
 // runtime-invariant layer of the testing contract (see CONTRIBUTING.md):
 // it converts a whole class of geometry-dependent bugs into loud failures.
 //
-// commit_code additionally verifies the image fits its reservation, so
-// overflow attempts are rejected loudly (throwing) before any write.
+// Each reservation is represented by an owning executable_allocation. A
+// discarded candidate is unmapped automatically; committed code can be
+// transferred to process lifetime when its installed redirects outlive the
+// reload session. commit_code additionally verifies the image fits its
+// reservation, so overflow attempts are rejected loudly before any write.
 //
 // Entry patching safety at -O0 (current assumptions, guarded at runtime):
 //   * prologue `push rbp; mov rbp,rsp` (55 48 89 E5) — overwriting the
@@ -30,7 +33,7 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
+#include <memory>
 
 #include <neko/backend/code_substituter.hpp>
 
@@ -40,30 +43,27 @@ using neko::backend::code_substituter;
 
 class code_pages final : public code_substituter {
 public:
+  code_pages();
   ~code_pages() override;
 
-  void* reserve_code_near(std::uintptr_t hint, std::uint64_t bytes) override;
-  bool commit_code(void* reservation, const void* image, std::uint64_t bytes) override;
+  backend::executable_allocation_ptr reserve_code_near(std::uintptr_t hint,
+                                                       std::uint64_t bytes) override;
+  bool commit_code(backend::executable_allocation& reservation, const void* image,
+                   std::uint64_t bytes) override;
   bool precheck_entry(std::uintptr_t entry, void* target) override;
   bool snapshot_entry(std::uintptr_t entry, std::uint8_t out[5]) override;
   bool patch_entry(std::uintptr_t entry, void* target) override;
-  bool rewrite_reservation(void* reservation, std::uint64_t offset, const void* bytes,
-                           std::uint64_t size) override;
+  bool rewrite_reservation(backend::executable_allocation& reservation, std::uint64_t offset,
+                           const void* bytes, std::uint64_t size) override;
   bool restore_entry(std::uintptr_t entry, const std::uint8_t original[5]) override;
 
 private:
   bool patchable_entry(std::uintptr_t entry, void* target) const;
   bool owns_address(std::uintptr_t address) const;
 
-  struct arena_range {
-    std::uintptr_t begin;
-    std::uintptr_t end; // exclusive; the guard page lives at [end, end+page)
-  };
-  /// Arenas allocated so far (never freed today). Registrations serve two
-  /// invariants: patch_entry proves an E9 at an entry is one of ours by
-  /// checking the target against these ranges, and commit_code proves the
-  /// image fits before writing a byte.
-  std::vector<arena_range> arenas_;
+  struct allocation_state;
+  class allocation;
+  std::shared_ptr<allocation_state> state_;
 };
 
 } // namespace neko::elf

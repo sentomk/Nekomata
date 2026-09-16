@@ -129,9 +129,14 @@ class recording_substituter final : public neko::backend::code_substituter {
 public:
   explicit recording_substituter(std::uintptr_t fail_entry) : fail_entry_(fail_entry) {}
 
-  void* reserve_code_near(std::uintptr_t, std::uint64_t) override { return nullptr; }
+  neko::backend::executable_allocation_ptr reserve_code_near(std::uintptr_t,
+                                                             std::uint64_t) override {
+    return nullptr;
+  }
 
-  bool commit_code(void*, const void*, std::uint64_t) override { return false; }
+  bool commit_code(neko::backend::executable_allocation&, const void*, std::uint64_t) override {
+    return false;
+  }
 
   bool precheck_entry(std::uintptr_t entry, void*) override {
     prechecked.push_back(entry);
@@ -172,10 +177,45 @@ private:
   std::uintptr_t fail_entry_;
 };
 
-neko::backend::loaded_image image(void* code, std::string name, std::uintptr_t old_entry) {
+struct allocation_counters {
+  std::size_t reclaimed = 0;
+  std::size_t released_to_process = 0;
+};
+
+class fake_allocation final : public neko::backend::executable_allocation {
+public:
+  fake_allocation(void* data, std::uint64_t size, std::shared_ptr<allocation_counters> counters)
+      : data_(data), size_(size), counters_(std::move(counters)) {}
+
+  ~fake_allocation() override {
+    if (owns_mapping_) {
+      ++counters_->reclaimed;
+    }
+  }
+
+  void* data() noexcept override { return data_; }
+  const void* data() const noexcept override { return data_; }
+  std::uint64_t size() const noexcept override { return size_; }
+
+  void release_to_process() noexcept override {
+    if (!owns_mapping_) {
+      return;
+    }
+    owns_mapping_ = false;
+    ++counters_->released_to_process;
+  }
+
+private:
+  void* data_;
+  std::uint64_t size_;
+  std::shared_ptr<allocation_counters> counters_;
+  bool owns_mapping_ = true;
+};
+
+neko::backend::loaded_image image(void* code, std::string name, std::uintptr_t old_entry,
+                                  const std::shared_ptr<allocation_counters>& counters) {
   neko::backend::loaded_image loaded;
-  loaded.code = code;
-  loaded.code_size = 8;
+  loaded.allocation = std::make_unique<fake_allocation>(code, 8, counters);
   loaded.replacements.push_back({std::move(name), old_entry, 0});
   return loaded;
 }
@@ -188,9 +228,10 @@ TEST_CASE("one update rolls back entries patched for earlier watched objects") {
 
   std::array<std::uint8_t, 8> a_code{};
   std::array<std::uint8_t, 8> b_code{};
+  auto allocations = std::make_shared<allocation_counters>();
   std::vector<neko::backend::loaded_image> images;
-  images.push_back(image(a_code.data(), "a_tick", a_entry));
-  images.push_back(image(b_code.data(), "b_tick", b_entry));
+  images.push_back(image(a_code.data(), "a_tick", a_entry, allocations));
+  images.push_back(image(b_code.data(), "b_tick", b_entry, allocations));
 
   auto loader = std::make_shared<queued_loader>(std::move(images));
   auto process = std::make_shared<fake_process>();
@@ -234,6 +275,8 @@ TEST_CASE("one update rolls back entries patched for earlier watched objects") {
   CHECK(stats.applied == 0);
   CHECK(stats.rejected == 1);
   CHECK(stats.last_result == error);
+  CHECK(allocations->reclaimed == 2);
+  CHECK(allocations->released_to_process == 0);
 }
 
 TEST_CASE("one update rejects objects that replace the same live entry") {
@@ -241,9 +284,10 @@ TEST_CASE("one update rejects objects that replace the same live entry") {
 
   std::array<std::uint8_t, 8> first_code{};
   std::array<std::uint8_t, 8> second_code{};
+  auto allocations = std::make_shared<allocation_counters>();
   std::vector<neko::backend::loaded_image> images;
-  images.push_back(image(first_code.data(), "first_tick", shared_entry));
-  images.push_back(image(second_code.data(), "second_tick", shared_entry));
+  images.push_back(image(first_code.data(), "first_tick", shared_entry, allocations));
+  images.push_back(image(second_code.data(), "second_tick", shared_entry, allocations));
 
   auto loader = std::make_shared<queued_loader>(std::move(images));
   auto process = std::make_shared<fake_process>();
@@ -281,6 +325,8 @@ TEST_CASE("one update rejects objects that replace the same live entry") {
   CHECK(stats.rejected == 1);
   CHECK(stats.last_result ==
         "reload rejected before any write: multiple objects replace entry of second_tick");
+  CHECK(allocations->reclaimed == 2);
+  CHECK(allocations->released_to_process == 0);
 }
 
 TEST_CASE("a generation marker exposes only a complete immutable object set") {
@@ -289,9 +335,10 @@ TEST_CASE("a generation marker exposes only a complete immutable object set") {
 
   std::array<std::uint8_t, 8> a_code{};
   std::array<std::uint8_t, 8> b_code{};
+  auto allocations = std::make_shared<allocation_counters>();
   std::vector<neko::backend::loaded_image> images;
-  images.push_back(image(a_code.data(), "a_tick", a_entry));
-  images.push_back(image(b_code.data(), "b_tick", b_entry));
+  images.push_back(image(a_code.data(), "a_tick", a_entry, allocations));
+  images.push_back(image(b_code.data(), "b_tick", b_entry, allocations));
 
   auto loader = std::make_shared<queued_loader>(std::move(images));
   auto process = std::make_shared<fake_process>();
@@ -315,51 +362,57 @@ TEST_CASE("a generation marker exposes only a complete immutable object set") {
       {"g2/b.o", "b.cpp"},
   };
 
-  neko::reload_session session{std::move(backends)};
-  session.watch(neko::generation_watch{manifest});
+  {
+    neko::reload_session session{std::move(backends)};
+    session.watch(neko::generation_watch{manifest});
 
-  // An object becoming visible is not an offer until the producer publishes
-  // the generation marker.
-  CHECK(session.update().events.empty());
-  CHECK(loader->load_count() == 0);
-  CHECK(std::filesystem::exists(a_object));
+    // An object becoming visible is not an offer until the producer publishes
+    // the generation marker.
+    CHECK(session.update().events.empty());
+    CHECK(loader->load_count() == 0);
+    CHECK(std::filesystem::exists(a_object));
 
-  // A premature marker is consumed and rejected before any object is loaded.
-  publish_generation(manifest, "g2", members);
-  const auto missing_object_error =
-      "reload generation 'g2' rejected before any write: object file is not ready: " +
-      b_object.string();
-  const auto incomplete = session.update();
-  REQUIRE(incomplete.events.size() == 1);
-  REQUIRE(incomplete.events.front().status == neko::update_status::rejected);
-  REQUIRE(incomplete.events.front().code == neko::reload_error_code::integrity);
-  const std::string rejection = incomplete.events.front().message;
-  CHECK(rejection == missing_object_error);
-  CHECK(loader->load_count() == 0);
-  CHECK(substituter->prechecked.empty());
-  CHECK(substituter->patched.empty());
-  CHECK_FALSE(std::filesystem::exists(manifest));
-  CHECK(std::filesystem::exists(a_object));
+    // A premature marker is consumed and rejected before any object is loaded.
+    publish_generation(manifest, "g2", members);
+    const auto missing_object_error =
+        "reload generation 'g2' rejected before any write: object file is not ready: " +
+        b_object.string();
+    const auto incomplete = session.update();
+    REQUIRE(incomplete.events.size() == 1);
+    REQUIRE(incomplete.events.front().status == neko::update_status::rejected);
+    REQUIRE(incomplete.events.front().code == neko::reload_error_code::integrity);
+    const std::string rejection = incomplete.events.front().message;
+    CHECK(rejection == missing_object_error);
+    CHECK(loader->load_count() == 0);
+    CHECK(substituter->prechecked.empty());
+    CHECK(substituter->patched.empty());
+    CHECK_FALSE(std::filesystem::exists(manifest));
+    CHECK(std::filesystem::exists(a_object));
 
-  // A rejected attempt may retry its stable ID. Once all immutable objects
-  // exist, both become live together and remain available for diagnostics.
-  offer(b_object);
-  publish_generation(manifest, "g2", members);
-  CHECK(session.update().any_applied());
-  CHECK(loader->load_count() == 2);
-  CHECK(substituter->prechecked.size() == 2);
-  CHECK(substituter->patched.size() == 2);
-  CHECK(std::filesystem::exists(a_object));
-  CHECK(std::filesystem::exists(b_object));
+    // A rejected attempt may retry its stable ID. Once all immutable objects
+    // exist, both become live together and remain available for diagnostics.
+    offer(b_object);
+    publish_generation(manifest, "g2", members);
+    CHECK(session.update().any_applied());
+    CHECK(loader->load_count() == 2);
+    CHECK(substituter->prechecked.size() == 2);
+    CHECK(substituter->patched.size() == 2);
+    CHECK(std::filesystem::exists(a_object));
+    CHECK(std::filesystem::exists(b_object));
+    CHECK(allocations->reclaimed == 0);
+    CHECK(allocations->released_to_process == 0);
 
-  publish_generation(manifest, "g2", members);
-  const auto replay = session.update();
-  REQUIRE(replay.events.size() == 1);
-  CHECK(replay.events.front().status == neko::update_status::rejected);
-  CHECK(replay.events.front().message == "reload generation 'g2' was already applied");
+    publish_generation(manifest, "g2", members);
+    const auto replay = session.update();
+    REQUIRE(replay.events.size() == 1);
+    CHECK(replay.events.front().status == neko::update_status::rejected);
+    CHECK(replay.events.front().message == "reload generation 'g2' was already applied");
 
-  const auto stats = session.snapshot();
-  CHECK(stats.applied == 1);
-  CHECK(stats.rejected == 2);
-  CHECK(stats.last_result == "reload generation 'g2' was already applied");
+    const auto stats = session.snapshot();
+    CHECK(stats.applied == 1);
+    CHECK(stats.rejected == 2);
+    CHECK(stats.last_result == "reload generation 'g2' was already applied");
+  }
+  CHECK(allocations->reclaimed == 0);
+  CHECK(allocations->released_to_process == 2);
 }

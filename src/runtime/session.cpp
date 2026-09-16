@@ -91,6 +91,9 @@ reload_session::impl::~impl() {
   if (worker_.joinable()) {
     worker_.join();
   }
+  for (const auto& allocation : active_allocations_) {
+    allocation->release_to_process();
+  }
 }
 
 void reload_session::impl::watch(std::filesystem::path object_path) {

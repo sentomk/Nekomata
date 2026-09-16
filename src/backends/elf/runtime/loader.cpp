@@ -156,10 +156,11 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
     throw std::runtime_error("no function in the object matches a live process symbol — nothing "
                              "to reload");
   }
-  void* arena = substituter_.reserve_code_near(hint, image_size);
-  if (arena == nullptr) {
+  auto allocation = substituter_.reserve_code_near(hint, image_size);
+  if (allocation == nullptr) {
     throw std::runtime_error("could not reserve executable memory near the target");
   }
+  void* arena = allocation->data();
   const auto base = reinterpret_cast<std::uintptr_t>(arena);
 
   // ---- 4. build the image ----------------------------------------------
@@ -332,8 +333,7 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
 
   // ---- 8. what to redirect ----------------------------------------------
   loaded_image out;
-  out.code = arena;
-  out.code_size = image_size;
+  out.allocation = std::move(allocation);
   out.pending_call_fixups = std::move(pending_fixups);
 
   // Functions that end up with no redirect are not necessarily wrong (a new
@@ -415,14 +415,15 @@ loaded_image loader::load(const std::uint8_t* object_data, std::size_t size,
   }
 
   // ---- 9. make it executable ---------------------------------------------
-  if (!substituter_.commit_code(arena, image.data(), image.size())) {
+  if (!substituter_.commit_code(*out.allocation, image.data(), image.size())) {
     throw std::runtime_error("failed to commit code image");
   }
 
   for (const auto& repl : out.replacements) {
-    neko::log(log_level::info, "  %s -> %p (+0x%x)\n", repl.name.c_str(),
-              static_cast<void*>(reinterpret_cast<std::uint8_t*>(out.code) + repl.offset_in_image),
-              repl.offset_in_image);
+    neko::log(
+        log_level::info, "  %s -> %p (+0x%x)\n", repl.name.c_str(),
+        static_cast<void*>(reinterpret_cast<std::uint8_t*>(out.code()) + repl.offset_in_image),
+        repl.offset_in_image);
   }
   for (const auto& [name, live_count] : not_redirected) {
     if (live_count > 1) {
@@ -444,7 +445,7 @@ void loader::link_generation(std::span<loaded_image* const> images) {
   // Prefer the candidate set: a sibling's fresh body is the new definition.
   std::unordered_map<std::string_view, std::uintptr_t> exported;
   for (const auto* image : images) {
-    const auto base = reinterpret_cast<std::uintptr_t>(image->code);
+    const auto base = reinterpret_cast<std::uintptr_t>(image->code());
     for (const auto& function : image->exported_functions) {
       exported.emplace(function.name, base + function.offset_in_image);
     }
@@ -459,7 +460,7 @@ void loader::link_generation(std::span<loaded_image* const> images) {
       }
       std::uint8_t trampoline[13];
       write_trampoline(trampoline, found->second);
-      if (!substituter_.rewrite_reservation(image->code, fixup.trampoline_offset_in_image,
+      if (!substituter_.rewrite_reservation(*image->allocation, fixup.trampoline_offset_in_image,
                                             trampoline, sizeof(trampoline))) {
         throw std::runtime_error("cannot patch cross-object call to '" + fixup.name +
                                  "' inside its code image");

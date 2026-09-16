@@ -25,12 +25,15 @@ reload_session::impl::prepare_object(const std::vector<std::uint8_t>& bytes, std
   prepared->build_information = std::move(build_information);
   prepared->image =
       backends_.loader->load(bytes.data(), bytes.size(), source_path.generic_string());
+  if (prepared->image.allocation == nullptr) {
+    throw std::runtime_error("object loader returned no executable allocation");
+  }
 
   // Complete every zero-write check during preparation. A rejected object
   // therefore cannot reach the commit path or alter a live function entry.
-  const auto& image = prepared->image;
+  auto& image = prepared->image;
   for (const auto& replacement : image.replacements) {
-    auto* target = static_cast<std::uint8_t*>(image.code) + replacement.offset_in_image;
+    auto* target = static_cast<std::uint8_t*>(image.code()) + replacement.offset_in_image;
     if (!backends_.substituter->precheck_entry(replacement.old_entry, target)) {
       throw std::runtime_error("reload rejected before any write: cannot patch entry of " +
                                replacement.name);
@@ -62,7 +65,7 @@ void reload_session::impl::validate_generation(const prepared_generation& genera
   }
 }
 
-void reload_session::impl::commit(const prepared_generation& generation) {
+void reload_session::impl::commit(prepared_generation& generation) {
   // Snapshot and patch only after the complete ready-object batch passed
   // preparation. The saved list spans every object, so rollback does too.
   struct saved_entry {
@@ -79,14 +82,18 @@ void reload_session::impl::commit(const prepared_generation& generation) {
 
   std::vector<saved_entry> saved;
   saved.reserve(replacement_count);
+  // Allocate bookkeeping capacity before the first live write. Moving the
+  // successfully installed handles below is then noexcept, so a later
+  // allocation failure cannot destroy code that entries already target.
+  active_allocations_.reserve(active_allocations_.size() + generation.reloads.size());
 
   // Capture every rollback image before the first live write.
-  for (const auto& prepared : generation.reloads) {
-    const auto& image = prepared->image;
+  for (auto& prepared : generation.reloads) {
+    auto& image = prepared->image;
     for (const auto& replacement : image.replacements) {
       saved_entry entry{};
       entry.entry = replacement.old_entry;
-      entry.target = static_cast<std::uint8_t*>(image.code) + replacement.offset_in_image;
+      entry.target = static_cast<std::uint8_t*>(image.code()) + replacement.offset_in_image;
       entry.name = &replacement.name;
       if (!backends_.substituter->snapshot_entry(entry.entry, entry.original)) {
         throw std::runtime_error(
@@ -108,6 +115,13 @@ void reload_session::impl::commit(const prepared_generation& generation) {
                                *entry.name);
     }
     ++patched;
+  }
+
+  // Entries now point into these images. Transfer each allocation from the
+  // candidate transaction into the session before any later bookkeeping can
+  // throw; rejected transactions never reach this ownership boundary.
+  for (auto& prepared : generation.reloads) {
+    active_allocations_.push_back(std::move(prepared->image.allocation));
   }
 
   // Warn about functions an updated object dropped. An object not present in

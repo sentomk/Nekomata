@@ -8,8 +8,11 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace neko::elf {
 namespace {
@@ -37,9 +40,96 @@ bool within_rel32(std::uintptr_t a, std::uintptr_t b) {
 
 } // namespace
 
+struct code_pages::allocation_state {
+  struct arena_range {
+    std::uintptr_t begin;
+    std::uintptr_t end; // exclusive; the guard page lives at [end, end+page)
+    bool process_lifetime = false;
+  };
+
+  ~allocation_state() {
+    const auto page = page_size();
+    for (const auto& arena : arenas) {
+      if (!arena.process_lifetime) {
+        munmap(reinterpret_cast<void*>(arena.begin), arena.end - arena.begin + page);
+      }
+    }
+  }
+
+  [[nodiscard]] arena_range* find(std::uintptr_t begin) noexcept {
+    for (auto& arena : arenas) {
+      if (arena.begin == begin) {
+        return &arena;
+      }
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] const arena_range* find(std::uintptr_t begin) const noexcept {
+    for (const auto& arena : arenas) {
+      if (arena.begin == begin) {
+        return &arena;
+      }
+    }
+    return nullptr;
+  }
+
+  void reclaim(std::uintptr_t begin) noexcept {
+    for (auto it = arenas.begin(); it != arenas.end(); ++it) {
+      if (it->begin != begin) {
+        continue;
+      }
+      munmap(reinterpret_cast<void*>(it->begin), it->end - it->begin + page_size());
+      arenas.erase(it);
+      return;
+    }
+  }
+
+  void release_to_process(std::uintptr_t begin) noexcept {
+    if (auto* arena = find(begin)) {
+      arena->process_lifetime = true;
+    }
+  }
+
+  std::vector<arena_range> arenas;
+};
+
+class code_pages::allocation final : public backend::executable_allocation {
+public:
+  allocation(std::shared_ptr<allocation_state> state, std::uintptr_t begin, std::uint64_t size)
+      : state_(std::move(state)), begin_(begin), size_(size) {}
+
+  ~allocation() override {
+    if (owns_mapping_) {
+      state_->reclaim(begin_);
+    }
+  }
+
+  void* data() noexcept override { return reinterpret_cast<void*>(begin_); }
+  const void* data() const noexcept override { return reinterpret_cast<const void*>(begin_); }
+  std::uint64_t size() const noexcept override { return size_; }
+
+  void release_to_process() noexcept override {
+    if (!owns_mapping_) {
+      return;
+    }
+    state_->release_to_process(begin_);
+    owns_mapping_ = false;
+  }
+
+private:
+  std::shared_ptr<allocation_state> state_;
+  std::uintptr_t begin_;
+  std::uint64_t size_;
+  bool owns_mapping_ = true;
+};
+
+code_pages::code_pages() : state_(std::make_shared<allocation_state>()) {}
+
 code_pages::~code_pages() = default;
 
-void* code_pages::reserve_code_near(std::uintptr_t hint, std::uint64_t bytes) {
+backend::executable_allocation_ptr code_pages::reserve_code_near(std::uintptr_t hint,
+                                                                 std::uint64_t bytes) {
   if (bytes == 0) {
     return nullptr;
   }
@@ -63,15 +153,25 @@ void* code_pages::reserve_code_near(std::uintptr_t hint, std::uint64_t bytes) {
         munmap(mapping, total); // cannot arm the guard — try the next hint
         continue;
       }
-      arenas_.push_back({begin, begin + span});
-      return mapping;
+      try {
+        state_->arenas.push_back({begin, begin + span});
+      } catch (...) {
+        munmap(mapping, total);
+        throw;
+      }
+      try {
+        return std::make_unique<allocation>(state_, begin, bytes);
+      } catch (...) {
+        state_->reclaim(begin);
+        throw;
+      }
     }
   }
   return nullptr;
 }
 
 bool code_pages::owns_address(std::uintptr_t address) const {
-  for (const auto& arena : arenas_) {
+  for (const auto& arena : state_->arenas) {
     if (address >= arena.begin && address < arena.end) {
       return true;
     }
@@ -79,36 +179,31 @@ bool code_pages::owns_address(std::uintptr_t address) const {
   return false;
 }
 
-bool code_pages::commit_code(void* reservation, const void* image, std::uint64_t bytes) {
-  if (reservation == nullptr || image == nullptr || bytes == 0) {
+bool code_pages::commit_code(backend::executable_allocation& reservation, const void* image,
+                             std::uint64_t bytes) {
+  if (reservation.data() == nullptr || image == nullptr || bytes == 0) {
     return false;
   }
   // Ownership + span invariant: the image must fit the reservation exactly
   // as it was sized. A larger image means the layout grew after the
   // reservation — reject loudly instead of writing past the span (the
   // guard page would catch it as a crash; this turns it into a message).
-  const auto begin = reinterpret_cast<std::uintptr_t>(reservation);
-  const auto* arena = [&]() -> const arena_range* {
-    for (const auto& a : arenas_) {
-      if (a.begin == begin) {
-        return &a;
-      }
-    }
-    return nullptr;
-  }();
+  const auto begin = reinterpret_cast<std::uintptr_t>(reservation.data());
+  const auto* arena = state_->find(begin);
   if (arena == nullptr) {
     throw std::runtime_error("commit_code: not a reservation made by this substituter");
   }
-  if (bytes > arena->end - arena->begin) {
-    throw std::runtime_error(
-        "code image (" + std::to_string(bytes) + " bytes) exceeds its reservation (" +
-        std::to_string(arena->end - arena->begin) + " bytes) — refusing to commit");
+  if (bytes > reservation.size()) {
+    throw std::runtime_error("code image (" + std::to_string(bytes) +
+                             " bytes) exceeds its reservation (" +
+                             std::to_string(reservation.size()) + " bytes) — refusing to commit");
   }
-  std::memcpy(reservation, image, bytes);
-  if (mprotect(reservation, arena->end - arena->begin, PROT_READ | PROT_EXEC) != 0) {
+  std::memcpy(reservation.data(), image, bytes);
+  if (mprotect(reservation.data(), arena->end - arena->begin, PROT_READ | PROT_EXEC) != 0) {
     throw std::runtime_error(std::string("mprotect(PROT_EXEC) failed: ") + std::strerror(errno));
   }
-  __builtin___clear_cache(static_cast<char*>(reservation), static_cast<char*>(reservation) + bytes);
+  __builtin___clear_cache(static_cast<char*>(reservation.data()),
+                          static_cast<char*>(reservation.data()) + bytes);
   return true;
 }
 
@@ -179,12 +274,16 @@ bool code_pages::patch_entry(std::uintptr_t entry, void* target) {
   return true;
 }
 
-bool code_pages::rewrite_reservation(void* reservation, std::uint64_t offset, const void* bytes,
-                                     std::uint64_t size) {
-  const auto base = reinterpret_cast<std::uintptr_t>(reservation);
+bool code_pages::rewrite_reservation(backend::executable_allocation& reservation,
+                                     std::uint64_t offset, const void* bytes, std::uint64_t size) {
+  if (reservation.data() == nullptr || bytes == nullptr || size == 0 ||
+      offset > reservation.size() || size > reservation.size() - offset) {
+    return false;
+  }
+  const auto base = reinterpret_cast<std::uintptr_t>(reservation.data());
   const auto at = base + offset;
   const auto end = at + size;
-  for (const auto& arena : arenas_) {
+  for (const auto& arena : state_->arenas) {
     if (base < arena.begin || base >= arena.end || end > arena.end) {
       continue;
     }
