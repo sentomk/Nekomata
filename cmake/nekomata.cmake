@@ -129,11 +129,12 @@ function(nekomata_add_reload_group name)
   set(abi_id "elf-${CMAKE_SYSTEM_PROCESSOR}-patch-v1")
   set(generation_root "${CMAKE_BINARY_DIR}/nekomata")
 
-  # Build member keys and publication arguments.
+  # Build member keys and the request-file arguments.
   # Iterate every unit's sources in declaration order to build the ordered
   # member list the descriptor and manifest require.
   set(member_keys "")
-  set(member_args "")
+  set(request_member_arguments "")
+  set(descriptor_member_arguments "")
   set(publication_objects "")
   set(publication_depends "")
   foreach(unit IN LISTS member_units)
@@ -149,26 +150,59 @@ function(nekomata_add_reload_group name)
         message(FATAL_ERROR "nekomata_add_reload_group(${name}): member key '${member_key}' "
           "must not contain backslashes or quotes")
       endif()
+      if(source MATCHES "[\r\n]")
+        message(FATAL_ERROR "nekomata_add_reload_group(${name}): source paths must not "
+          "contain newlines")
+      endif()
       list(APPEND member_keys "${member_key}")
-      list(APPEND member_args --member "${member_key}" "${source}"
-        "-O0 hot contract $<CONFIG>")
+      string(APPEND descriptor_member_arguments
+        "--member\n${member_key}\n")
+      string(APPEND request_member_arguments
+        "--member\n${member_key}\n${source}\n-O0 hot contract $<CONFIG>\n")
     endforeach()
     list(APPEND publication_objects "$<TARGET_OBJECTS:${unit}>")
     list(APPEND publication_depends "${unit}")
   endforeach()
 
+  foreach(request_value IN ITEMS
+      "${generation_root}" "${publication_key}" "${group_id}" "${compat_id}" "${abi_id}")
+    if(request_value MATCHES "[\r\n]")
+      message(FATAL_ERROR "nekomata_add_reload_group(${name}): request fields must not "
+        "contain newlines")
+    endif()
+  endforeach()
+
+  set(request_directory "${CMAKE_BINARY_DIR}/nekomata-generators/${name}")
+  file(MAKE_DIRECTORY "${request_directory}")
+  set(request_file "${request_directory}/publish_$<CONFIG>.request")
+  string(CONCAT request_content
+    "nekomata-publisher-request 1\n"
+    "--root\n${generation_root}\n"
+    "--key\n${publication_key}\n"
+    "--group\n${group_id}\n"
+    "--compat\n${compat_id}\n"
+    "--abi\n${abi_id}\n")
+  string(APPEND request_content
+    "${request_member_arguments}--objects\n$<JOIN:${publication_objects},\n>\n")
+  file(GENERATE OUTPUT "${request_file}" CONTENT "${request_content}")
+
   # Generate the embedded descriptor translation unit.
   set(descriptor_tu "${CMAKE_BINARY_DIR}/nekomata-generators/${name}/descriptor_$<CONFIG>.cpp")
-  set(descriptor_args --group "${group_id}" --key "${publication_key}"
-    --compat "${compat_id}" --abi "${abi_id}" --root "${generation_root}")
-  foreach(member_key IN LISTS member_keys)
-    list(APPEND descriptor_args --member "${member_key}")
-  endforeach()
+  set(descriptor_request "${request_directory}/descriptor_$<CONFIG>.request")
+  string(CONCAT descriptor_request_content
+    "nekomata-publisher-request 1\n"
+    "--output\n${descriptor_tu}\n"
+    "--group\n${group_id}\n"
+    "--key\n${publication_key}\n"
+    "--compat\n${compat_id}\n"
+    "--abi\n${abi_id}\n"
+    "--root\n${generation_root}\n")
+  string(APPEND descriptor_request_content "${descriptor_member_arguments}")
+  file(GENERATE OUTPUT "${descriptor_request}" CONTENT "${descriptor_request_content}")
   add_custom_command(
     OUTPUT "${descriptor_tu}"
-    COMMAND ${neko_publisher_executable} descriptor --output "${descriptor_tu}"
-      ${descriptor_args}
-    DEPENDS ${neko_publisher_executable}
+    COMMAND ${neko_publisher_executable} descriptor --request "${descriptor_request}"
+    DEPENDS ${neko_publisher_executable} "${descriptor_request}"
     VERBATIM)
   add_library(${name}_neko_descriptor OBJECT "${descriptor_tu}")
   set_target_properties(${name}_neko_descriptor PROPERTIES POSITION_INDEPENDENT_CODE OFF)
@@ -183,18 +217,11 @@ function(nekomata_add_reload_group name)
   set(stamp "${generation_root}/$<CONFIG>/${name}.reload.stamp")
   add_custom_command(
     OUTPUT "${stamp}"
-    COMMAND ${neko_publisher_executable}
-      --root "${generation_root}"
-      --key "${publication_key}"
-      --group "${group_id}"
-      --compat "${compat_id}"
-      --abi "${abi_id}"
-      ${member_args}
-      --objects ${publication_objects}
+    COMMAND ${neko_publisher_executable} --request "${request_file}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${generation_root}/$<CONFIG>"
     COMMAND "${CMAKE_COMMAND}" -E touch "${stamp}"
-    DEPENDS ${neko_publisher_executable} ${publication_objects}
-    COMMAND_EXPAND_LISTS VERBATIM)
+    DEPENDS ${neko_publisher_executable} "${request_file}" ${publication_objects}
+    VERBATIM)
   add_custom_target(${name}_reload DEPENDS "${stamp}")
   # File-level dependencies decide staleness; the target-level edge is what
   # makes the Unix Makefiles generator rebuild the objects at all.

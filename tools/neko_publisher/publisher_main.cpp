@@ -9,6 +9,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -21,16 +22,80 @@
 namespace {
 
 int usage() {
-  std::cerr << "usage: neko_publisher --root DIR --key KEY --group ID --compat ID --abi ID"
+  std::cerr << "usage: neko_publisher --request FILE\n"
+            << "   or: neko_publisher --root DIR --key KEY --group ID --compat ID --abi ID"
             << " [--changed INPUT]... --member KEY SOURCE-IDENTITY BUILD-INFORMATION..."
-            << " --objects OBJECT...\n";
+            << " --objects OBJECT...\n"
+            << "   or: neko_publisher descriptor [arguments]\n";
   return 2;
+}
+
+std::vector<std::string> load_request_arguments(const std::filesystem::path& path) {
+  constexpr std::uintmax_t max_request_bytes = 64ull * 1024 * 1024;
+  std::error_code size_error;
+  const auto size = std::filesystem::file_size(path, size_error);
+  if (size_error) {
+    throw std::runtime_error("cannot read publish request '" + path.string() + "'");
+  }
+  if (size > max_request_bytes) {
+    throw std::runtime_error("publish request '" + path.string() + "' exceeds 64 MiB");
+  }
+
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    throw std::runtime_error("cannot read publish request '" + path.string() + "'");
+  }
+
+  std::string line;
+  if (!std::getline(input, line) || line != "nekomata-publisher-request 1") {
+    throw std::runtime_error("invalid publish request '" + path.string() +
+                             "': expected nekomata-publisher-request 1");
+  }
+
+  std::vector<std::string> arguments;
+  std::size_t line_number = 1;
+  while (std::getline(input, line)) {
+    ++line_number;
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
+    if (line.empty()) {
+      throw std::runtime_error("invalid publish request '" + path.string() + "' at line " +
+                               std::to_string(line_number) + ": empty argument");
+    }
+    arguments.push_back(std::move(line));
+  }
+  if (!input.eof()) {
+    throw std::runtime_error("cannot read publish request '" + path.string() + "'");
+  }
+  return arguments;
 }
 
 // Writes one descriptor TU: the framed `neko-group-v1` payload as a numeric
 // byte array in the `neko_groups` section. Numeric emission keeps every
 // escaping question out of the generated source.
 int run_descriptor(int argc, char** argv) {
+  std::vector<std::string> request_arguments;
+  std::vector<char*> request_argv;
+  if (argc == 4 && std::string{argv[2]} == "--request") {
+    try {
+      request_arguments = load_request_arguments(argv[3]);
+    } catch (const std::exception& error) {
+      std::cerr << "neko_publisher: " << error.what() << '\n';
+      return 1;
+    }
+    request_argv.reserve(request_arguments.size() + 2);
+    request_argv.push_back(argv[0]);
+    request_argv.push_back(argv[1]);
+    for (auto& argument : request_arguments) {
+      request_argv.push_back(argument.data());
+    }
+    argc = static_cast<int>(request_argv.size());
+    argv = request_argv.data();
+  } else if (argc > 2 && std::string{argv[2]} == "--request") {
+    return usage();
+  }
+
   std::filesystem::path output;
   neko::detail::group_descriptor descriptor;
   descriptor.baseline_sequence = 0;
@@ -129,6 +194,27 @@ int main(int argc, char** argv) {
   if (argc > 1 && std::string{argv[1]} == "descriptor") {
     return run_descriptor(argc, argv);
   }
+
+  std::vector<std::string> request_arguments;
+  std::vector<char*> request_argv;
+  if (argc == 3 && std::string{argv[1]} == "--request") {
+    try {
+      request_arguments = load_request_arguments(argv[2]);
+    } catch (const std::exception& error) {
+      std::cerr << "neko_publisher: " << error.what() << '\n';
+      return 1;
+    }
+    request_argv.reserve(request_arguments.size() + 1);
+    request_argv.push_back(argv[0]);
+    for (auto& argument : request_arguments) {
+      request_argv.push_back(argument.data());
+    }
+    argc = static_cast<int>(request_argv.size());
+    argv = request_argv.data();
+  } else if (argc > 1 && std::string{argv[1]} == "--request") {
+    return usage();
+  }
+
   neko::detail::publish_request request;
   std::vector<neko::detail::publish_member> members;
   std::vector<std::filesystem::path> objects;
