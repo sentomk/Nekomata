@@ -38,7 +38,7 @@ publish(2)
 string(REPEAT "x" 2200000 oversized_argument)
 set(request_file "${root}/publish.request")
 file(WRITE "${request_file}"
-  "nekomata-publisher-request 1\r\n"
+  "nekomata-publisher-request 1\n"
   "--root\n${root}\n"
   "--key\nrequest-e2e\n"
   "--group\n//cli:request\n"
