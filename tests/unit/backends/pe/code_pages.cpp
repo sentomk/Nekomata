@@ -234,6 +234,9 @@ TEST_CASE("precheck accepts the surveyed MSVC /Od prologue families") {
   const std::uint8_t frames[][8] = {
       {0x48, 0x83, 0xEC, 0x28},                   // sub rsp, 28h
       {0x48, 0x81, 0xEC, 0x38, 0x02, 0x00, 0x00}, // sub rsp, 238h
+      // clang-cl with frame pointers explicitly enabled.
+      {0x55, 0x48, 0x89, 0xE5, 0x48}, // push rbp; mov rbp,rsp; (sub rsp ...)
+      {0xF3, 0x0F, 0x1E, 0xFA, 0x55}, // endbr64; push rbp
   };
   for (const auto& prologue : frames) {
     auto fixture = pages.reserve_writable_near(module_hint(), sizeof(prologue));
@@ -252,8 +255,6 @@ TEST_CASE("precheck refuses unknown prologues, foreign spills, and thunks") {
     std::vector<std::uint8_t> bytes;
   };
   const std::vector<case_t> refused = {
-      // ELF /Od prologue: push rbp; mov rbp,rsp — not an MSVC entry.
-      {{0x55, 0x48, 0x89, 0xE5, 0x48}},
       // Callee-saved spill: rbx is not one of the four register arguments.
       {{0x48, 0x89, 0x5C, 0x24, 0x08}},
       // An indirect tail jump.

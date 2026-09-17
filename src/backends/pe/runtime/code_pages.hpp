@@ -19,19 +19,25 @@
 // reload session. commit_code additionally verifies the image fits its
 // reservation, so overflow attempts are rejected loudly before any write.
 //
-// Entry patching safety at /Od (surveyed on MSVC 19.x, guarded at runtime):
+// Entry patching safety at /Od (surveyed on MSVC 19.x and clang-cl 19,
+// guarded at runtime):
 //   * a shadow-space argument spill — `mov [rsp+08h..20h], reg` for one of
 //     ecx/edx/r8d/r9d or rcx/rdx/r8/r9 — 4 or 5 bytes; the shadow store is
 //     caller-owned scratch and the fresh code performs its own spill;
-//   * or `sub rsp, imm8/imm32` for functions with no register arguments;
+//   * or `sub rsp, imm8/imm32` — the default /Od entry of both compilers
+//     when no register argument is spilled first;
+//   * or `push rbp; mov rbp,rsp` (optionally behind an endbr64) — clang-cl
+//     entries with frame pointers explicitly enabled; overwriting the first
+//     5 bytes splits `sub rsp, N`'s encoding, which is fine because nothing
+//     branches into the first 8 bytes of an /Od frame function (loop labels
+//     appear after the prologue);
 //   * or an entry WE patched before (E9 rel32 whose target lies inside one
 //     of our own committed slots) — re-patching a previous redirect is how
 //     repeated reloads of the same function work.
 // The 5-byte write may overrun the first instruction by one byte; that byte
-// belongs to the dead old body, and nothing branches into the first bytes of
-// an /Od frame function. An ILT thunk also starts with E9, but its target is
-// module code outside our slots, so incremental-link thunks are refused
-// rather than confused with our redirects.
+// belongs to the dead old body. An ILT thunk also starts with E9, but its
+// target is module code outside our slots, so incremental-link thunks are
+// refused rather than confused with our redirects.
 // All cases require the function body to be at least 5 bytes, checked by the
 // caller (loader).
 

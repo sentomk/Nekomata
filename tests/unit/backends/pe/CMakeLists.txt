@@ -1,6 +1,10 @@
 # PE backend unit suites: allocation and entry-patch policy against real
 # VirtualAlloc memory; no object fixtures yet (the COFF reader is planned).
 
+# clang-cl delivers hardware exceptions into __except only under /EHa
+# (MSVC accepts them under /EHsc too); the guard test observes the fault.
+set_source_files_properties(code_pages.cpp PROPERTIES COMPILE_OPTIONS "/EHa")
+
 set(neko_unit_include_dirs
   "${PROJECT_SOURCE_DIR}/src/backends/pe/runtime")
 

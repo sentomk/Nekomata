@@ -189,6 +189,16 @@ bool sub_rsp_prologue(const std::uint8_t* code) {
          (code[0] == 0x48 && code[1] == 0x81 && code[2] == 0xEC);   // sub rsp, imm32
 }
 
+/// `push rbp; mov rbp,rsp`, optionally behind an endbr64. clang-cl omits
+/// frame pointers by default (its /Od entries start with `sub rsp` above);
+/// users enabling them via /Oy- or -fno-omit-frame-pointer get this family.
+bool frame_pointer_prologue(const std::uint8_t* code) {
+  const bool push_rbp = code[0] == 0x55 && code[1] == 0x48 && code[2] == 0x89 && code[3] == 0xE5;
+  const bool endbr_push =
+      code[0] == 0xF3 && code[1] == 0x0F && code[2] == 0x1E && code[3] == 0xFA && code[4] == 0x55;
+  return push_rbp || endbr_push;
+}
+
 } // namespace
 
 struct code_pages::allocation_state {
@@ -480,7 +490,8 @@ bool code_pages::commit_code(backend::executable_allocation& reservation, const 
 
 bool code_pages::patchable_entry(std::uintptr_t entry, void* target) const {
   const auto* code = reinterpret_cast<const std::uint8_t*>(entry);
-  bool patchable = arg_spill_prologue(code) || sub_rsp_prologue(code);
+  bool patchable =
+      arg_spill_prologue(code) || sub_rsp_prologue(code) || frame_pointer_prologue(code);
   if (!patchable && code[0] == 0xE9) {
     // Possibly one of OUR previous redirects: an E9 whose target lands
     // inside a slot we committed can only have been written by us (an /Od
