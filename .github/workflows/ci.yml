@@ -88,12 +88,12 @@ jobs:
       - name: Test
         run: bash scripts/test.sh debug -L tui
 
-  # Windows has no backend yet (pe/pdb are stubs), so this job covers what
-  # does run there: the kernel (log, session, harness, public_api) and
-  # neko::tui with the Win32 terminal backend. This is the only Windows
-  # coverage in CI — it would have caught the `log.cpp` unistd.h slip.
+  # This is the only Windows coverage in CI: the kernel suites, the PE
+  # backend's in-process pieces (executable memory and entry patching so
+  # far), and neko::tui with the Win32 terminal backend — it would have
+  # caught the `log.cpp` unistd.h slip.
   windows:
-    name: windows / kernel + tui
+    name: windows / kernel + pe + tui
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -105,6 +105,32 @@ jobs:
         run: >
           bash scripts/configure.sh debug
           -DNEKOMATA_TUI=ON
+          -DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF
+
+      - name: Build
+        run: bash scripts/build.sh debug
+
+      - name: Test
+        run: bash scripts/test.sh debug
+
+  # The PE backend supports both Windows driver families: the same COFF
+  # objects, decorations, and ABI come out of clang-cl, so the tree must
+  # build and pass under it too.
+  windows-clang:
+    name: windows / clang-cl / kernel + pe
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable the MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        env:
+          CC: clang-cl
+          CXX: clang-cl
+        run: >
+          bash scripts/configure.sh debug
           -DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF
 
       - name: Build
@@ -183,4 +209,5 @@ jobs:
           ./build/fuzz/tests/fuzz/fuzz_parse_object tests/fuzz/corpus \
             -max_total_time=240 -rss_limit_mb=2560 -print_final_stats=1
 
-  # The Windows PE/PDB backend and MSVC build matrix are planned work.
+  # Growing the PE backend (COFF loader, DIA symbols, live-reload e2e) and
+  # the MSVC build matrix is planned work.
