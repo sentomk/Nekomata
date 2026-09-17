@@ -47,7 +47,14 @@ std::vector<std::string> load_request_arguments(const std::filesystem::path& pat
   }
 
   std::string line;
-  if (!std::getline(input, line) || line != "nekomata-publisher-request 1") {
+  if (!std::getline(input, line)) {
+    throw std::runtime_error("invalid publish request '" + path.string() +
+                             "': expected nekomata-publisher-request 1");
+  }
+  if (!line.empty() && line.back() == '\r') {
+    line.pop_back();
+  }
+  if (line != "nekomata-publisher-request 1") {
     throw std::runtime_error("invalid publish request '" + path.string() +
                              "': expected nekomata-publisher-request 1");
   }
