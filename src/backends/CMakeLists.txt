@@ -9,7 +9,10 @@
 # - runtime agent: mmap/mprotect on Linux; VirtualProtect on Windows
 #
 # The kernel (include/neko) must stay buildable on every platform so the
-# orchestration logic is testable everywhere; backends are gated below.
+# orchestration logic is testable everywhere. Backend runtimes stay gated
+# below; the one exception is the COFF reader, whose offline byte parsing is
+# platform-neutral — it builds everywhere so its suites run on hosts whose
+# compilers can cross-produce fixtures.
 
 if(NEKOMATA_TARGET_LINUX)
   add_subdirectory(elf)
@@ -27,8 +30,7 @@ if(NEKOMATA_TARGET_LINUX)
     nekomata_apply_sanitizers(neko_function_index)
     nekomata_apply_clang_tidy(neko_function_index)
   endif()
-elseif(NEKOMATA_TARGET_WINDOWS)
-  add_subdirectory(pe)
-else()
-  message(STATUS "nekomata: no backends for this platform; building kernel only")
 endif()
+
+# The Windows runtime half gates itself inside pe/.
+add_subdirectory(pe)
