@@ -49,6 +49,15 @@ struct coff_symbol_record {
 #pragma pack(pop)
 static_assert(sizeof(coff_symbol_record) == 18);
 
+#pragma pack(push, 1)
+struct coff_relocation_record {
+  std::uint32_t offset; // site offset within the owning section
+  std::uint32_t symbol_index;
+  std::uint16_t type; // IMAGE_REL_AMD64_*
+};
+#pragma pack(pop)
+static_assert(sizeof(coff_relocation_record) == 10);
+
 constexpr std::uint16_t machine_amd64 = 0x8664;
 
 constexpr std::uint32_t flag_cnt_code = 0x00000020;
@@ -158,6 +167,53 @@ std::string field_name(const char (&field)[8], const std::uint8_t* data, std::si
 constexpr std::size_t aux_association_offset = 12;
 constexpr std::size_t aux_selection_offset = 14;
 
+// IMAGE_REL_AMD64_* values the reader decodes; anything outside this set is
+// not an encoding either driver emits for x86-64 objects.
+constexpr std::uint16_t reloc_addr64 = 1;
+constexpr std::uint16_t reloc_addr32 = 2;
+constexpr std::uint16_t reloc_addr32nb = 3;
+constexpr std::uint16_t reloc_rel32 = 4;
+constexpr std::uint16_t reloc_rel32_last = 9;
+constexpr std::uint16_t reloc_section = 10;
+constexpr std::uint16_t reloc_secrel = 11;
+constexpr std::uint16_t reloc_known_last = 16;
+
+relocation decode_relocation(const coff_relocation_record& raw, std::uint16_t owner) {
+  relocation out;
+  out.target_section = owner;
+  out.offset = raw.offset;
+  out.symbol_index = raw.symbol_index;
+  switch (raw.type) {
+  case reloc_addr64:
+    out.kind = relocation_kind::absolute_64;
+    break;
+  case reloc_addr32:
+    out.kind = relocation_kind::absolute_32;
+    break;
+  case reloc_addr32nb:
+    out.kind = relocation_kind::image_relative_32;
+    break;
+  case reloc_section:
+    out.kind = relocation_kind::section_index_16;
+    break;
+  case reloc_secrel:
+    out.kind = relocation_kind::section_relative_32;
+    break;
+  default:
+    break;
+  }
+  if (raw.type >= reloc_rel32 && raw.type <= reloc_rel32_last) {
+    out.kind = relocation_kind::relative_32;
+    out.rel32_bias = static_cast<std::uint8_t>(raw.type - reloc_rel32);
+  }
+  return out;
+}
+
+std::uint32_t stored_u32(const std::uint8_t* at) {
+  return static_cast<std::uint32_t>(at[0]) | (static_cast<std::uint32_t>(at[1]) << 8) |
+         (static_cast<std::uint32_t>(at[2]) << 16) | (static_cast<std::uint32_t>(at[3]) << 24);
+}
+
 } // namespace
 
 object_file parse_object(const std::uint8_t* data, std::size_t size) {
@@ -259,6 +315,101 @@ object_file parse_object(const std::uint8_t* data, std::size_t size) {
         aux_entry.auxiliary = true;
         obj.symbols.push_back(std::move(aux_entry));
       }
+    }
+  }
+
+  // Relocation records follow each section's raw data; ten bytes per site.
+  // ABSOLUTE rows are alignment padding and vanish.
+  for (std::uint16_t i = 0; i < header->section_count; ++i) {
+    const auto* raw = reinterpret_cast<const coff_section_header*>(
+        at(data, size, table_offset + static_cast<std::uint64_t>(i) * sizeof(coff_section_header),
+           sizeof(coff_section_header), "section header"));
+    if (raw->relocation_count == 0) {
+      continue;
+    }
+    const auto* records = reinterpret_cast<const coff_relocation_record*>(
+        at(data, size, raw->relocation_offset,
+           static_cast<std::uint64_t>(raw->relocation_count) * sizeof(coff_relocation_record),
+           "relocation table"));
+    for (std::uint16_t r = 0; r < raw->relocation_count; ++r) {
+      require(records[r].symbol_index < obj.symbols.size(),
+              "relocation symbol index out of bounds");
+      if (records[r].type != 0 && records[r].type > reloc_known_last) {
+        throw std::runtime_error("not a supported object file: unknown relocation type " +
+                                 std::to_string(records[r].type));
+      }
+      if (records[r].type != 0) {
+        obj.relocations.push_back(decode_relocation(records[r], i));
+      }
+    }
+  }
+
+  // .pdata sections carry 12-byte RUNTIME_FUNCTION entries whose three
+  // ADDR32NB relocations (at +0/+4/+8) name the sections holding the
+  // function bounds and the unwind info; the stored fields are the addends.
+  for (std::uint16_t i = 0; i < header->section_count; ++i) {
+    const auto* raw = reinterpret_cast<const coff_section_header*>(
+        at(data, size, table_offset + static_cast<std::uint64_t>(i) * sizeof(coff_section_header),
+           sizeof(coff_section_header), "section header"));
+    if (obj.sections[i].name != ".pdata") {
+      continue;
+    }
+    require(raw->raw_data_size % 12 == 0, ".pdata section size is not a multiple of 12");
+
+    std::vector<const relocation*> owned;
+    for (const auto& rel : obj.relocations) {
+      if (rel.target_section == i) {
+        owned.push_back(&rel);
+      }
+    }
+    std::sort(owned.begin(), owned.end(), [](const relocation* left, const relocation* right) {
+      return left->offset < right->offset;
+    });
+    require(owned.size() == static_cast<std::uint64_t>(raw->raw_data_size) / 12 * 3,
+            ".pdata entry is missing its ADDR32NB relocations");
+
+    const std::uint8_t* bytes = raw->raw_data_size > 0 ? at(data, size, raw->raw_data_offset,
+                                                            raw->raw_data_size, ".pdata contents")
+                                                       : nullptr;
+    for (std::uint32_t entry = 0; entry < raw->raw_data_size / 12; ++entry) {
+      const relocation* const fields[3] = {owned[entry * 3], owned[entry * 3 + 1],
+                                           owned[entry * 3 + 2]};
+      for (const relocation* field : fields) {
+        require(field->kind == relocation_kind::image_relative_32,
+                ".pdata relocation is not ADDR32NB");
+      }
+      unwind_entry out;
+      out.pdata_section = i;
+      for (int field = 0; field < 3; ++field) {
+        const symbol& target = obj.symbols[fields[field]->symbol_index];
+        require(target.section_number >= 1, ".pdata relocation target is not defined in a section");
+        const std::uint16_t section = static_cast<std::uint16_t>(target.section_number - 1);
+        if (field < 2) {
+          out.text_section = section;
+        } else {
+          out.xdata_section = section;
+        }
+      }
+      require(fields[0]->offset == entry * 12 && fields[1]->offset == entry * 12 + 4 &&
+                  fields[2]->offset == entry * 12 + 8,
+              ".pdata relocations do not line up with the entry fields");
+      require(obj.sections[out.xdata_section].name == ".xdata",
+              ".pdata unwind target is not an .xdata section");
+      require(obj.sections[out.text_section].cls == section_class::text,
+              ".pdata bounds do not target a text section");
+      const symbol& end_target = obj.symbols[fields[1]->symbol_index];
+      require(static_cast<std::uint16_t>(end_target.section_number - 1) == out.text_section,
+              ".pdata bounds straddle two sections");
+
+      out.begin_offset = stored_u32(bytes + entry * 12);
+      out.end_offset = stored_u32(bytes + entry * 12 + 4);
+      out.unwind_offset = stored_u32(bytes + entry * 12 + 8);
+      require(out.begin_offset <= out.end_offset, ".pdata bounds are not ordered");
+      require(out.end_offset <= obj.sections[out.text_section].size,
+              ".pdata bounds leave their text section");
+      require(out.unwind_offset < obj.sections[out.xdata_section].size,
+              ".pdata unwind offset leaves its .xdata section");
+      obj.unwind_table.push_back(out);
     }
   }
 

@@ -1,12 +1,13 @@
 // object_file — minimal COFF x86-64 object (.obj) reader for the PE backend.
 //
 // Just enough for hot reload: section classification, alignment, the raw
-// bytes of the sections the loader places in its arena, and the symbol
-// table. Deliberately not a general COFF parser — it rejects everything
-// that is not an x86-64 object from a supported driver family (MSVC and
-// clang-cl), and ignores what it does not need. Relocations arrive with
-// their own commit; debug streams and unwind tables are classified as
-// `other`.
+// bytes of the sections the loader places in its arena, the symbol table,
+// decoded relocations, and the unwind-table association. Deliberately not a
+// general COFF parser — it rejects everything that is not an x86-64 object
+// from a supported driver family (MSVC and clang-cl), and ignores what it
+// does not need. Debug streams stay classified as `other`; unwind sections
+// never enter the arena but their association is decoded into
+// `unwind_table`.
 //
 // Surveyed shapes (2026-09-18, both drivers, /Od with and without /Gy): the
 // section index is the identity — duplicate names such as `.text` or
@@ -100,9 +101,55 @@ struct symbol {
   }
 };
 
+/// Decoded IMAGE_REL_AMD64_* categories. The stored field at each site is
+/// the addend — the target's offset within its defining section — which the
+/// loader combines with the resolved symbol. Encodings that only occur in
+/// streams the loader never applies are decoded as `unsupported` and their
+/// rejection is loader policy.
+enum class relocation_kind : std::uint8_t {
+  absolute_64,         // ADDR64 — the target's 64-bit address
+  absolute_32,         // ADDR32 — the target's 32-bit zero-extended address
+  image_relative_32,   // ADDR32NB — image-base-relative; in an object this
+                       // names the symbol's section, the addend the offset
+  relative_32,         // REL32..REL32_5 with the bias below
+  section_relative_32, // SECREL — the target's offset within its section
+  section_index_16,    // SECTION — one-based index of the target's section
+  unsupported,         // SECREL7, TOKEN, SREL32, PAIR, SSPAN32
+};
+
+struct relocation {
+  /// Zero-based index of the section holding the site (`sections[…]`).
+  std::uint16_t target_section = 0;
+  /// Offset of the site within that section.
+  std::uint32_t offset = 0;
+  std::uint32_t symbol_index = 0;
+  relocation_kind kind = relocation_kind::unsupported;
+  /// REL32_N only: bytes between the site's end and the instruction's end;
+  /// the applied displacement is target - (site + 4 + bias).
+  std::uint8_t rel32_bias = 0;
+};
+
+/// One RUNTIME_FUNCTION from a `.pdata` section. Both drivers encode it as
+/// three ADDR32NB relocations (begin, end, unwind) whose symbols name the
+/// target sections — MSVC targets function-scope labels with one entry per
+/// companion section, clang groups entries against plain section symbols —
+/// so the association rides on the section, never on a name convention.
+struct unwind_entry {
+  /// Stored addends: the function bounds within its text section, and the
+  /// unwind info within its `.xdata` section.
+  std::uint32_t begin_offset = 0;
+  std::uint32_t end_offset = 0;
+  std::uint32_t unwind_offset = 0;
+  std::uint16_t text_section = 0;  // zero-based; `section_class::text`
+  std::uint16_t xdata_section = 0; // zero-based; named ".xdata"
+  std::uint16_t pdata_section = 0; // zero-based; where this entry lives
+};
+
 struct object_file {
   std::vector<section> sections;
   std::vector<symbol> symbols;
+  std::vector<relocation> relocations;
+  std::vector<unwind_entry> unwind_table;
 };
 
 /// Parse an x86-64 COFF object. Throws std::runtime_error with a

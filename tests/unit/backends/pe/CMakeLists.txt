@@ -58,4 +58,30 @@ if(WIN32 OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     neko_pe_object_basic neko_pe_object_shapes)
   add_dependencies(neko_unit_backends_pe_object_symbols
     neko_pe_object_basic neko_pe_object_shapes)
+
+  add_library(neko_pe_object_relocs OBJECT fixtures/relocs.c)
+  target_compile_options(neko_pe_object_relocs PRIVATE ${neko_coff_cross})
+  nekomata_apply_warnings(neko_pe_object_relocs)
+
+  # Debug streams carry SECREL/SECTION relocations; CodeView on MSVC (/Z7)
+  # and clang (-gcodeview through the cross target).
+  add_library(neko_pe_object_debug OBJECT fixtures/shapes.cpp)
+  if(MSVC)
+    target_compile_options(neko_pe_object_debug PRIVATE /EHsc /Z7)
+  else()
+    target_compile_options(neko_pe_object_debug PRIVATE
+      ${neko_coff_cross} -nostdinc++ -gcodeview)
+  endif()
+  nekomata_apply_warnings(neko_pe_object_debug)
+
+  nekomata_add_unit_test(
+    NAME unit.backends.pe.object_relocations
+    SOURCES object_relocations.cpp
+    PRIVATE_INCLUDES "${PROJECT_SOURCE_DIR}/src/backends/pe/format"
+    LIBRARIES neko_pe_file
+    COMMAND_EXPAND_LISTS
+    TEST_ARGS $<TARGET_OBJECTS:neko_pe_object_relocs> $<TARGET_OBJECTS:neko_pe_object_shapes>
+               $<TARGET_OBJECTS:neko_pe_object_debug>)
+  add_dependencies(neko_unit_backends_pe_object_relocations
+    neko_pe_object_relocs neko_pe_object_shapes neko_pe_object_debug)
 endif()
