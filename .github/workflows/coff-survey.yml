@@ -1,0 +1,60 @@
+name: COFF survey
+
+# Throwaway workflow on a throwaway branch: samples the COFF shapes real
+# MSVC and clang-cl /Od objects have, for the pe/format reader design.
+# Never merge; delete with the branch.
+
+on:
+  push:
+    branches: [pe-coff-survey]
+  workflow_dispatch:
+
+jobs:
+  shapes:
+    name: ${{ matrix.driver }} / ${{ matrix.flags }}
+    strategy:
+      fail-fast: false
+      matrix:
+        driver: [msvc, clang-cl]
+        flags: [od, od-gy]
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable the MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Compile fixtures
+        shell: bash
+        run: |
+          cell="${{ matrix.driver }}-${{ matrix.flags }}"
+          mkdir -p "out/$cell"
+          cc=cl
+          [[ "${{ matrix.driver }}" == clang-cl ]] && cc=clang-cl
+          extra=""
+          [[ "${{ matrix.flags }}" == od-gy ]] && extra="/Gy"
+          for src in basic.c shapes.cpp vtable.cpp; do
+            name="${src%.*}"
+            eh=""
+            [[ "$src" == *.cpp ]] && eh="/EHsc"
+            "$cc" /Od $eh $extra /c "coff_survey/$src" "/Fo:out/$cell/$name.obj"
+          done
+
+      - name: Dump structures
+        shell: bash
+        run: |
+          cell="${{ matrix.driver }}-${{ matrix.flags }}"
+          cd "out/$cell"
+          for f in *.obj; do
+            if command -v llvm-readobj >/dev/null 2>&1; then
+              llvm-readobj --coff-header --sections --symbols --relocations "$f" > "$f.txt"
+            else
+              dumpbin /ALL "$f" > "$f.txt"
+            fi
+          done
+          ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coff-shapes-${{ matrix.driver }}-${{ matrix.flags }}
+          path: out/
