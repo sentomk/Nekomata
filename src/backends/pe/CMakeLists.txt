@@ -67,19 +67,25 @@ if(NEKOMATA_TARGET_WINDOWS)
   if(MSVC AND NOT neko_dia_root STREQUAL "")
     # Prefer the product copy of msdia140; the DIA SDK folder is an optional
     # component the toolset host may not have.
-    set(neko_msdia_candidate "L\"\"")
+    set(NEKO_MSDIA_CANDIDATE "L\"\"")
     foreach(neko_msdia_path IN ITEMS
         "${neko_dia_root}/Common7/IDE/msdia140.dll"
         "${neko_dia_root}/DIA SDK/bin/amd64/msdia140.dll")
       if(EXISTS "${neko_msdia_path}")
         string(REPLACE "\\" "/" neko_msdia_path "${neko_msdia_path}")
-        set(neko_msdia_candidate "L\"${neko_msdia_path}\"")
+        set(NEKO_MSDIA_CANDIDATE "L\"${neko_msdia_path}\"")
         break()
       endif()
     endforeach()
 
     configure_file(debug/msdia_candidate.hpp.in
       "${PROJECT_BINARY_DIR}/generated/pe/msdia_candidate.hpp" @ONLY)
+    # A silent non-substitution once shipped a literal '@' to the compiler;
+    # never let that reach a build again.
+    file(READ "${PROJECT_BINARY_DIR}/generated/pe/msdia_candidate.hpp" neko_msdia_generated)
+    if(neko_msdia_generated MATCHES "@")
+      message(FATAL_ERROR "msdia_candidate.hpp.in substitution failed")
+    endif()
 
     add_library(neko_backend_pdb STATIC debug/process_symbols.cpp)
     add_library(nekomata::backends::pdb ALIAS neko_backend_pdb)

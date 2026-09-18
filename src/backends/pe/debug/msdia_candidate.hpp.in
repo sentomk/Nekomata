@@ -2,4 +2,6 @@
 // this library. Do not edit or install; empty when no candidate was found.
 #pragma once
 
-#define NEKO_MSDIA_CANDIDATE @NEKO_MSDIA_CANDIDATE @
+// clang-format off: the @token@ belongs to configure_file, not C.
+#define NEKO_MSDIA_CANDIDATE @NEKO_MSDIA_CANDIDATE@
+// clang-format on
