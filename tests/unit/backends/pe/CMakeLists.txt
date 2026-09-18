@@ -46,6 +46,16 @@ if(WIN32 OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     LIBRARIES neko_pe_file
     COMMAND_EXPAND_LISTS
     TEST_ARGS $<TARGET_OBJECTS:neko_pe_object_basic> $<TARGET_OBJECTS:neko_pe_object_shapes>)
+
+  nekomata_add_unit_test(
+    NAME unit.backends.pe.object_symbols
+    SOURCES object_symbols.cpp
+    PRIVATE_INCLUDES "${PROJECT_SOURCE_DIR}/src/backends/pe/format"
+    LIBRARIES neko_pe_file
+    COMMAND_EXPAND_LISTS
+    TEST_ARGS $<TARGET_OBJECTS:neko_pe_object_basic> $<TARGET_OBJECTS:neko_pe_object_shapes>)
   add_dependencies(neko_unit_backends_pe_object_sections
+    neko_pe_object_basic neko_pe_object_shapes)
+  add_dependencies(neko_unit_backends_pe_object_symbols
     neko_pe_object_basic neko_pe_object_shapes)
 endif()
