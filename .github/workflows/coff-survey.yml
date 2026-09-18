@@ -26,6 +26,10 @@ jobs:
 
       - name: Compile fixtures
         shell: bash
+        env:
+          # Git Bash rewrites /Od-style flags into POSIX paths; keep them literal.
+          MSYS2_ARG_CONV_EXCL: "*"
+          MSYS_NO_PATHCONV: "1"
         run: |
           cell="${{ matrix.driver }}-${{ matrix.flags }}"
           mkdir -p "out/$cell"
