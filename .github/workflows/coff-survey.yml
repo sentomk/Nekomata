@@ -51,7 +51,7 @@ jobs:
           cd "out/$cell"
           for f in *.obj; do
             if command -v llvm-readobj >/dev/null 2>&1; then
-              llvm-readobj --coff-header --sections --symbols --relocations "$f" > "$f.txt"
+              llvm-readobj --file-headers --sections --symbols --relocations "$f" > "$f.txt"
             else
               dumpbin /ALL "$f" > "$f.txt"
             fi
