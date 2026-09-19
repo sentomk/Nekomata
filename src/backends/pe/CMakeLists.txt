@@ -9,7 +9,9 @@
 #                a hand-rolled parser, with an interface boundary left open
 #                for a future self-contained one
 
-add_library(neko_pe_file STATIC format/object_file.cpp)
+add_library(neko_pe_file STATIC
+  format/object_file.cpp
+  format/image_layout.cpp)
 nekomata_apply_warnings(neko_pe_file)
 nekomata_apply_sanitizers(neko_pe_file)
 nekomata_apply_clang_tidy(neko_pe_file)
