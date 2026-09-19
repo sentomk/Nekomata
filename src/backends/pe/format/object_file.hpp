@@ -59,7 +59,8 @@ struct section {
   /// under-aligned constant faults the first aligned SIMD load.
   std::uint64_t align = 1;
   /// Raw bytes for initialized loadable sections; empty for uninitialized
-  /// storage and for `other` sections.
+  /// storage and for `other` sections, except the unwind companions
+  /// (.pdata/.xdata), which stay `other` but carry bytes for the image tail.
   std::vector<std::uint8_t> bytes;
   /// IMAGE_SCN_LNK_COMDAT: the section folds with its duplicates from other
   /// objects.

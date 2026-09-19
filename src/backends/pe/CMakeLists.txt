@@ -17,13 +17,15 @@ nekomata_apply_sanitizers(neko_pe_file)
 nekomata_apply_clang_tidy(neko_pe_file)
 
 if(NEKOMATA_TARGET_WINDOWS)
-  add_library(neko_backend_pe STATIC runtime/code_pages.cpp)
+  add_library(neko_backend_pe STATIC
+    runtime/code_pages.cpp
+    runtime/loader.cpp)
   add_library(nekomata::backends::pe ALIAS neko_backend_pe)
 
   target_include_directories(neko_backend_pe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(neko_backend_pe
     PUBLIC neko_runtime
-    PRIVATE neko_base_c)
+    PRIVATE neko_base_c neko_pe_file)
 
   nekomata_apply_warnings(neko_backend_pe)
   nekomata_apply_sanitizers(neko_backend_pe)

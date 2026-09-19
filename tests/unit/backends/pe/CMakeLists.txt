@@ -96,3 +96,21 @@ if(WIN32 OR CMAKE_C_COMPILER_ID MATCHES "Clang")
   add_dependencies(neko_unit_backends_pe_image_layout
     neko_pe_object_relocs neko_pe_object_shapes neko_pe_object_debug)
 endif()
+
+# The loader suite loads the exec fixture and runs it; the relocs fixture
+# feeds the mutable-initializer rejection. Both need targets from the
+# fixture block above, so this stays at the file's end.
+if(NEKOMATA_TARGET_WINDOWS AND TARGET neko_pe_object_relocs)
+  add_library(neko_pe_object_exec OBJECT fixtures/exec.c)
+  target_compile_options(neko_pe_object_exec PRIVATE ${neko_coff_cross})
+  nekomata_apply_warnings(neko_pe_object_exec)
+
+  nekomata_add_unit_test(
+    NAME unit.backends.pe.loader
+    SOURCES loader.cpp
+    PRIVATE_INCLUDES "${PROJECT_SOURCE_DIR}/src/backends/pe"
+    LIBRARIES neko_backend_pe
+    COMMAND_EXPAND_LISTS
+    TEST_ARGS $<TARGET_OBJECTS:neko_pe_object_exec> $<TARGET_OBJECTS:neko_pe_object_relocs>)
+  add_dependencies(neko_unit_backends_pe_loader neko_pe_object_exec neko_pe_object_relocs)
+endif()

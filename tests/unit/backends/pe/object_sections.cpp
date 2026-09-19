@@ -82,13 +82,16 @@ TEST_CASE("compiler-produced objects classify loadable sections") {
       } else if (sec.cls == neko::pe::section_class::rodata) {
         CHECK(sec.bytes.size() > 0);
       } else {
-        CHECK(sec.bytes.empty());
         CHECK(!sec.name.empty());
       }
       // Unwind tables carry image-relative entries that cannot enter the
-      // arena; both drivers emit them even at /Od without exceptions.
+      // arena as code or data; both drivers emit them even at /Od without
+      // exceptions. They keep their bytes for the image tail.
       if (sec.name == ".pdata" || sec.name == ".xdata") {
         CHECK(sec.cls == neko::pe::section_class::other);
+        CHECK(sec.bytes.size() == sec.size);
+      } else if (sec.cls == neko::pe::section_class::other) {
+        CHECK(sec.bytes.empty());
       }
     }
     CHECK(saw_text);

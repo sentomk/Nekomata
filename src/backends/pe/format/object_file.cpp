@@ -84,7 +84,11 @@ const std::uint8_t* at(const std::uint8_t* base, std::size_t size, std::uint64_t
 bool never_loaded(const std::string& name) {
   // Unwind tables and CodeView streams carry image-relative data that cannot
   // move into the arena; flags alone cannot tell them from read-only data.
-  return name == ".pdata" || name == ".xdata" || name.starts_with(".debug$");
+  // .rtc$ descriptors are the runtime checks' link-time machinery — the
+  // live process consumed them at startup, and fresh copies would only
+  // carry dangling relocations.
+  return name == ".pdata" || name == ".xdata" || name.starts_with(".debug$") ||
+         name.starts_with(".rtc$");
 }
 
 section_class classify(const std::string& name, std::uint32_t flags) {
@@ -253,7 +257,13 @@ object_file parse_object(const std::uint8_t* data, std::size_t size) {
     const bool uninitialized = (raw->characteristics & flag_cnt_uninitialized) != 0;
     sec.size = raw->raw_data_size > raw->virtual_size ? raw->raw_data_size : raw->virtual_size;
     sec.align = std::uint64_t{1} << ((raw->characteristics >> align_shift) & 0xf);
-    if (!uninitialized && sec.cls != section_class::other && raw->raw_data_size > 0) {
+    // Unwind companions stay classified `other` — they never enter the
+    // arena as code or data — but the loader copies them into the image
+    // tail, so their bytes ride along. Every other `other` section (debug
+    // streams, directives) stays empty.
+    const bool unwind_companion = sec.name == ".pdata" || sec.name == ".xdata";
+    if (!uninitialized && (unwind_companion || sec.cls != section_class::other) &&
+        raw->raw_data_size > 0) {
       const std::uint8_t* start =
           at(data, size, raw->raw_data_offset, raw->raw_data_size, sec.name.c_str());
       sec.bytes.assign(start, start + raw->raw_data_size);
