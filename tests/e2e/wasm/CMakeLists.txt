@@ -34,19 +34,30 @@ foreach(generation IN ITEMS a b incompatible incomplete)
     DEPENDS generation.cpp contract.hpp
       "${wasm_backend}/module_descriptor.hpp" "${wasm_backend}/candidate.hpp" VERBATIM)
 endforeach()
+foreach(runner IN ITEMS runner lifecycle)
+  add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${runner}.js" "${CMAKE_CURRENT_BINARY_DIR}/${runner}.wasm"
+    COMMAND "${NEKOMATA_EMXX}" ${wasm_flags} -sMAIN_MODULE=1 -sENVIRONMENT=web
+      -sALLOW_MEMORY_GROWTH=1 "${CMAKE_CURRENT_SOURCE_DIR}/${runner}.cpp"
+      "${wasm_backend}/candidate.cpp" "${wasm_backend}/emscripten_loader.cpp"
+      -o "${CMAKE_CURRENT_BINARY_DIR}/${runner}.js"
+    DEPENDS "${runner}.cpp" contract.hpp
+      "${wasm_backend}/candidate.cpp" "${wasm_backend}/candidate.hpp"
+      "${wasm_backend}/emscripten_loader.cpp" "${wasm_backend}/emscripten_loader.hpp"
+      "${wasm_backend}/module_descriptor.hpp" VERBATIM)
+endforeach()
 add_custom_command(
-  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/runner.js" "${CMAKE_CURRENT_BINARY_DIR}/runner.wasm"
-  COMMAND "${NEKOMATA_EMXX}" ${wasm_flags} -sMAIN_MODULE=1 -sENVIRONMENT=web
-    -sALLOW_MEMORY_GROWTH=1 "${CMAKE_CURRENT_SOURCE_DIR}/runner.cpp"
-    "${wasm_backend}/candidate.cpp" "${wasm_backend}/emscripten_loader.cpp"
-    -o "${CMAKE_CURRENT_BINARY_DIR}/runner.js"
-  DEPENDS runner.cpp contract.hpp
-    "${wasm_backend}/candidate.cpp" "${wasm_backend}/candidate.hpp"
-    "${wasm_backend}/emscripten_loader.cpp" "${wasm_backend}/emscripten_loader.hpp"
-    "${wasm_backend}/module_descriptor.hpp" VERBATIM)
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/late.wasm" "${CMAKE_CURRENT_BINARY_DIR}/abandoned.wasm"
+  COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_CURRENT_BINARY_DIR}/a.wasm"
+    "${CMAKE_CURRENT_BINARY_DIR}/late.wasm"
+  COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_CURRENT_BINARY_DIR}/a.wasm"
+    "${CMAKE_CURRENT_BINARY_DIR}/abandoned.wasm"
+  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/a.wasm" VERBATIM)
 configure_file(index.html index.html COPYONLY)
 add_custom_target(neko_wasm_fixtures ALL DEPENDS
   "${CMAKE_CURRENT_BINARY_DIR}/runner.js" "${CMAKE_CURRENT_BINARY_DIR}/runner.wasm"
+  "${CMAKE_CURRENT_BINARY_DIR}/lifecycle.js" "${CMAKE_CURRENT_BINARY_DIR}/lifecycle.wasm"
+  "${CMAKE_CURRENT_BINARY_DIR}/late.wasm" "${CMAKE_CURRENT_BINARY_DIR}/abandoned.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/a.wasm" "${CMAKE_CURRENT_BINARY_DIR}/b.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/incompatible.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/incomplete.wasm")
@@ -54,3 +65,7 @@ add_test(NAME neko.e2e.wasm.generations
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_browser.py"
     --browser "${NEKOMATA_WASM_BROWSER}" --root "${CMAKE_CURRENT_BINARY_DIR}")
 set_tests_properties(neko.e2e.wasm.generations PROPERTIES TIMEOUT 60 LABELS "e2e;wasm")
+add_test(NAME neko.e2e.wasm.candidate_lifetime
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_browser.py"
+    --browser "${NEKOMATA_WASM_BROWSER}" --root "${CMAKE_CURRENT_BINARY_DIR}" --runner lifecycle)
+set_tests_properties(neko.e2e.wasm.candidate_lifetime PROPERTIES TIMEOUT 60 LABELS "e2e;wasm")

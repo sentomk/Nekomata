@@ -15,9 +15,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--browser", required=True)
     parser.add_argument("--root", required=True, type=pathlib.Path)
+    parser.add_argument("--runner", choices=("runner", "lifecycle"), default="runner")
     args = parser.parse_args()
     completed = threading.Event()
     a_frame = threading.Event()
+    lifecycle_frame = threading.Event()
     results = []
 
     class fixture_handler(http.server.SimpleHTTPRequestHandler):
@@ -25,6 +27,10 @@ def main():
             pass
 
         def do_GET(self):
+            if self.path in ("/late.wasm", "/abandoned.wasm"):
+                if not lifecycle_frame.wait(timeout=10):
+                    self.send_error(504, "lifecycle frame did not run")
+                    return
             if self.path == "/b.wasm":
                 # Release B only after a real A frame, independent of machine speed.
                 if not a_frame.wait(timeout=10):
@@ -33,6 +39,11 @@ def main():
             super().do_GET()
 
         def do_POST(self):
+            if self.path == "/lifecycle-frame":
+                lifecycle_frame.set()
+                self.send_response(204)
+                self.end_headers()
+                return
             if self.path == "/a-frame":
                 a_frame.set()
                 self.send_response(204)
@@ -66,7 +77,7 @@ def main():
                     args.browser, "--headless", "--disable-gpu", "--no-first-run",
                     "--no-default-browser-check", "--disable-background-networking",
                     f"--user-data-dir={profile}",
-                    f"http://127.0.0.1:{server.server_port}/index.html",
+                    f"http://127.0.0.1:{server.server_port}/index.html?runner={args.runner}",
                 ], stdout=browser_log, stderr=browser_log)
                 try:
                     deadline = time.monotonic() + 40
@@ -86,6 +97,7 @@ def main():
                         browser.wait()
     finally:
         a_frame.set()
+        lifecycle_frame.set()
         server.shutdown()
         server.server_close()
         thread.join()

@@ -17,4 +17,10 @@
     onAbort: (reason) => window.report_result({ok: false, message: String(reason)})
   };
 </script>
-<body><script src="runner.js"></script></body>
+<body><script>
+  const runner = new URLSearchParams(location.search).get("runner") || "runner";
+  if (!["runner", "lifecycle"].includes(runner)) throw new Error("unknown test runner");
+  const script = document.createElement("script");
+  script.src = runner + ".js";
+  document.body.appendChild(script);
+</script></body>

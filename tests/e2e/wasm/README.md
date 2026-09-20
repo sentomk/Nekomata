@@ -52,3 +52,10 @@ immutable test artifacts and receives the browser's assertion result.
 The `wasm` CI job installs Emscripten 6.0.9 and runs these tests in the Ubuntu
 runner's Chrome. Candidate ownership and validation tests also run in the
 ordinary native and sanitizer jobs. CI uploads CTest diagnostics on failure.
+
+`candidate_lifetime` drives actual late loader callbacks after cancellation,
+candidate destruction and loader destruction, then checks synchronous cached
+completion and ready-candidate cancellation. Finally it destroys every C++
+owner of a committed module and calls a saved entry to verify page residency.
+The server holds the first response until a browser frame releases it, so the
+cancelled request cannot complete early by accident.
