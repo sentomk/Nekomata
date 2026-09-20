@@ -206,8 +206,12 @@ This CMake registration is test infrastructure, not application build integratio
 The next layers must supply complete generation identity and immutable
 artifacts, integrity and compatibility checks before instantiation where
 possible, delivery ordering and supersession policy, and observable acceptance
-or rejection results. Their transport and metadata format are not selected by
-the candidate implementation.
+or rejection results. The metadata format is now selected — the
+`nekomata-wasm-v1` manifest (`src/protocol/wasm_offer.hpp`): one immutable
+artifact below `modules/` with its SHA-256, the ordered entry set, the
+declared `abi_id`, and the sequence that orders supersession. Its transport
+remains unselected; the manifest codec touches neither network nor
+filesystem.
 
 Session integration must connect preparation and safe-point activation to the
 library's reload model without making the browser loader responsible for

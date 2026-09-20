@@ -12,7 +12,8 @@ add_subdirectory(base)
 add_library(neko_protocol STATIC
   protocol/group_descriptor.cpp
   protocol/generation_offer.cpp
-  protocol/descriptor_section.cpp)
+  protocol/descriptor_section.cpp
+  protocol/wasm_offer.cpp)
 target_include_directories(neko_protocol PRIVATE "${PROJECT_SOURCE_DIR}/src")
 nekomata_apply_warnings(neko_protocol)
 nekomata_apply_sanitizers(neko_protocol)
