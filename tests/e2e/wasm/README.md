@@ -1,7 +1,8 @@
 # Browser generation fixtures
 
-These are test fixtures for Emscripten runtime linking, not a demo or a
-supported Nekomata WASM backend. The descriptor is a private test contract.
+These browser tests exercise `src/backends/wasm` candidate preparation and
+activation. They are not a demo or a public Nekomata WASM backend. The module
+descriptor is private; application state and entry signatures are test-specific.
 All persistent state belongs to the main module; side modules have no
 side-effecting constructors. Modules remain loaded until the page closes.
 
@@ -21,8 +22,8 @@ runner serves the build directory on loopback and starts headless Chromium
 with a temporary profile. A browser assertion, crash or timeout fails CTest.
 It does not reuse an existing browser profile or disable the browser sandbox.
 
-The suite checks that two concurrently loaded modules with the same export
-name resolve to their own descriptors and callable code via distinct handles.
+The suite checks that two concurrently loaded modules with the same descriptor
+export resolve to their own callable code through the backend's loader.
 This is browser execution evidence, not native host execution of WASM.
 
 The main module owns a world with a tick count, position and velocity. The
@@ -36,7 +37,7 @@ and update entries must come from the same generation.
 
 After activation the suite offers an incompatible interface version, a null
 update entry and a missing artifact, in that order. Each must produce its
-expected rejection classification without changing the active descriptor.
+expected backend rejection classification without changing the active module.
 The world must continue advancing under B for at least three frames after
 each rejection. This validates cooperative fixture activation, not arbitrary
 module initialization rollback, thread safety or production ABI validation.
@@ -47,3 +48,7 @@ No `neko::reload_session` or public WASM backend is introduced here. Remote
 generation streams, artifact digests, pre-instantiation ABI metadata and old
 module reclamation are subsequent work. The loopback server only supplies
 immutable test artifacts and receives the browser's assertion result.
+
+The `wasm` CI job installs Emscripten 6.0.9 and runs these tests in the Ubuntu
+runner's Chrome. Candidate ownership and validation tests also run in the
+ordinary native and sanitizer jobs. CI uploads CTest diagnostics on failure.

@@ -1,42 +1,41 @@
 #include "contract.hpp"
 
-#include <dlfcn.h>
+#include <backends/wasm/emscripten_loader.hpp>
 #include <emscripten.h>
 #include <emscripten/html5.h>
 
 #include <cstdlib>
+#include <memory>
 
 namespace {
+using namespace neko::wasm;
 
 world_state world{0, 100.0f, 1.0f, 0};
 world_state* const original_world = &world;
-const generation_descriptor* generation_a = nullptr;
-const generation_descriptor* active = nullptr;
-const generation_descriptor* candidate = nullptr;
+emscripten_loader loader;
+active_module active;
+std::unique_ptr<candidate> pending;
+std::shared_ptr<const prepared_module> generation_a;
+std::shared_ptr<const prepared_module> generation_b;
 std::uint32_t ticks_during_load = 0;
 std::uint32_t ticks_while_ready = 0;
 std::uint32_t ticks_after_commit = 0;
 std::uint32_t rejection_index = 0;
 std::uint32_t rejection_tick = 0;
-bool rejection_pending = false;
 bool rejection_reported = false;
-
-enum class rejection_code { none, incompatible, missing_entry, load_failed };
 
 struct rejection_case {
   const char* path;
-  rejection_code expected;
+  candidate_error expected;
 };
-
 constexpr rejection_case rejection_cases[] = {
-    {"incompatible.wasm", rejection_code::incompatible},
-    {"incomplete.wasm", rejection_code::missing_entry},
-    {"absent.wasm", rejection_code::load_failed},
+    {"incompatible.wasm", candidate_error::incompatible},
+    {"incomplete.wasm", candidate_error::invalid_descriptor},
+    {"absent.wasm", candidate_error::load_failed},
 };
 
 EM_JS(void, report, (int ok, const char* message),
       { window.report_result({ok : !!ok, message : UTF8ToString(message)}); });
-
 EM_JS(void, release_download, (), { fetch("/a-frame", {method : "POST"}); });
 
 void require(bool condition, const char* message) {
@@ -46,136 +45,94 @@ void require(bool condition, const char* message) {
   }
 }
 
-const generation_descriptor* descriptor_from(void* handle, rejection_code& code) {
-  code = rejection_code::none;
-  auto entry = reinterpret_cast<descriptor_fn>(dlsym(handle, "get_generation_descriptor"));
-  if (entry == nullptr) {
-    code = rejection_code::missing_entry;
-    return nullptr;
-  }
-  const auto* descriptor = entry();
-  if (descriptor == nullptr) {
-    code = rejection_code::missing_entry;
-    return nullptr;
-  }
-  // Inspect the version prefix before accessing the version-specific entries.
-  if (descriptor->interface_version != 1) {
-    code = rejection_code::incompatible;
-    return nullptr;
-  }
-  if (descriptor->identify == nullptr || descriptor->update_world == nullptr) {
-    code = rejection_code::missing_entry;
-    return nullptr;
-  }
-  return descriptor;
+std::uint32_t identify(const prepared_module& module) {
+  return reinterpret_cast<identify_fn>(module.entry("identify"))();
 }
 
-const generation_descriptor* require_descriptor(void* handle) {
-  rejection_code code;
-  const auto* descriptor = descriptor_from(handle, code);
-  require(code == rejection_code::none && descriptor != nullptr, "valid descriptor rejected");
-  return descriptor;
-}
-
-void load_failed(void*) {
-  report(0, dlerror());
-}
-
-void record_rejection(rejection_code code) {
-  require(rejection_pending && !rejection_reported, "unexpected rejection callback");
-  require(code == rejection_cases[rejection_index].expected, "wrong rejection reason");
-  require(active->generation_id == 2 && candidate == nullptr,
-          "rejection changed active generation");
-  rejection_tick = world.tick_count;
-  rejection_reported = true;
-}
-
-void rejected_load(void*, void*) {
-  require(false, "missing artifact unexpectedly loaded");
-}
-
-void expected_load_failure(void*) {
-  require(dlerror() != nullptr, "failed load did not provide a diagnostic");
-  record_rejection(rejection_code::load_failed);
-}
-
-void loaded_invalid(void*, void* handle) {
-  const auto before = world;
-  const auto* previous_active = active;
-  rejection_code code;
-  const auto* proposed = descriptor_from(handle, code);
-  require(proposed == nullptr, "invalid descriptor accepted");
-  require(world == before && active == previous_active, "rejection mutated live state");
-  record_rejection(code);
-}
-
-void start_rejection_case() {
-  rejection_pending = true;
-  rejection_reported = false;
-  const auto& test = rejection_cases[rejection_index];
-  if (test.expected == rejection_code::load_failed) {
-    emscripten_dlopen(test.path, RTLD_NOW | RTLD_LOCAL, nullptr, rejected_load,
-                      expected_load_failure);
-  } else {
-    emscripten_dlopen(test.path, RTLD_NOW | RTLD_LOCAL, nullptr, loaded_invalid, load_failed);
-  }
-}
-
-void loaded_b(void*, void* handle) {
-  const auto before = world;
-  candidate = require_descriptor(handle);
-  require(candidate != generation_a, "handles resolved the same descriptor");
-  require(candidate->generation_id == 2 && candidate->identify() == 2, "B identity");
-  require(generation_a->identify() == 1, "A changed after loading B");
-  require(candidate->update_world != generation_a->update_world, "same update function");
-  require(active == generation_a && world == before, "preparation changed active state");
-  require(ticks_during_load > 0, "A did not run during B download");
+void prepare(const char* path) {
+  pending = std::make_unique<candidate>(loader, path, flock_contract());
 }
 
 bool frame(double, void*) {
-  if (candidate != nullptr && ticks_while_ready == 3) {
-    const auto before = world;
-    require(active == generation_a, "candidate became active before commit");
-    active = candidate;
-    candidate = nullptr;
-    require(&world == original_world && world == before, "commit changed world state");
-    require(world.last_generation == 1, "candidate executed during commit");
+  if (!generation_a) {
+    require(pending->status() != candidate_status::rejected, "A rejected");
+    if (pending->status() != candidate_status::ready) {
+      require(!active.activate(*pending), "activated unfinished A");
+      return true;
+    }
+    require(active.activate(*pending), "A activation failed");
+    generation_a = active.current();
+    require(identify(*generation_a) == 1, "A identity");
+    prepare("b.wasm");
+    return true;
+  }
+
+  if (!generation_b) {
+    require(pending->status() != candidate_status::rejected, "B rejected");
+    require(active.current() == generation_a, "preparation changed active module");
+    require(identify(*generation_a) == 1, "loading B changed A's entry");
+    if (pending->status() == candidate_status::ready && ticks_while_ready == 3) {
+      const auto before = world;
+      require(active.activate(*pending), "B activation failed");
+      require(pending->status() == candidate_status::activated, "candidate not consumed");
+      require(!active.activate(*pending), "candidate activated twice");
+      generation_b = active.current();
+      require(generation_b != generation_a && identify(*generation_b) == 2, "B identity");
+      require(generation_b->entry("update_world") != generation_a->entry("update_world"),
+              "same update function");
+      require(&world == original_world && world == before, "commit changed world state");
+      require(world.last_generation == 1, "candidate executed during commit");
+      pending.reset();
+    }
+  } else if (pending && !rejection_reported) {
+    require(pending->status() != candidate_status::ready, "invalid candidate became ready");
+    if (pending->status() == candidate_status::rejected) {
+      const auto before = world;
+      require(pending->error() == rejection_cases[rejection_index].expected,
+              "wrong rejection reason");
+      require(!pending->message().empty(), "missing rejection diagnostic");
+      require(!active.activate(*pending), "rejected candidate activated");
+      require(active.current() == generation_b && world == before,
+              "rejection changed active state");
+      rejection_reported = true;
+      rejection_tick = world.tick_count;
+    }
   }
 
   const auto before = world;
-  const auto* frame_generation = active;
-  frame_generation->update_world(&world);
+  const auto frame_generation = active.current();
+  reinterpret_cast<update_fn>(frame_generation->entry("update_world"))(&world);
   require(&world == original_world, "world address changed");
   require(world.tick_count == before.tick_count + 1, "tick count reset or skipped");
-  require(world.last_generation == frame_generation->identify(), "mixed generation entries");
+  require(world.last_generation == identify(*frame_generation), "mixed generation entries");
   if (frame_generation == generation_a) {
     require(world.velocity == before.velocity &&
                 world.position == before.position + before.velocity,
             "A behavior changed before activation");
-    if (candidate == nullptr) {
+    if (pending->status() == candidate_status::loading) {
       ++ticks_during_load;
       if (ticks_during_load == 1) {
         release_download();
       }
     } else {
+      require(ticks_during_load > 0, "A did not run during B download");
       ++ticks_while_ready;
     }
   } else {
     require(world.velocity == -1.0f && world.position == before.position - 1.0f,
             "B did not execute its new branch on the existing world");
     ++ticks_after_commit;
-    if (ticks_after_commit >= 3 && !rejection_pending) {
-      require(ticks_while_ready == 3, "ready candidate did not wait for the safe point");
-      require(generation_a->identify() == 1, "old code no longer callable");
-      start_rejection_case();
+    if (ticks_after_commit >= 3 && !pending) {
+      require(ticks_while_ready == 3, "candidate did not wait for the safe point");
+      prepare(rejection_cases[rejection_index].path);
     }
     if (rejection_reported && world.tick_count >= rejection_tick + 3) {
-      ++rejection_index;
-      rejection_pending = false;
+      pending.reset();
       rejection_reported = false;
+      ++rejection_index;
       if (rejection_index == 3) {
-        report(1, "state-preserving A to B commit; incompatible, incomplete and absent candidates "
-                  "rejected; B continued for three frames after each rejection");
+        require(identify(*generation_a) == 1, "old code no longer callable");
+        report(1, "backend candidates preserved state across activation and three rejection cases");
         return false;
       }
     }
@@ -183,18 +140,10 @@ bool frame(double, void*) {
   return true;
 }
 
-void loaded_a(void*, void* handle) {
-  generation_a = require_descriptor(handle);
-  require(generation_a->generation_id == 1, "A descriptor identity");
-  require(generation_a->identify() == 1, "A function identity");
-  active = generation_a;
-  emscripten_request_animation_frame_loop(frame, nullptr);
-  emscripten_dlopen("b.wasm", RTLD_NOW | RTLD_LOCAL, nullptr, loaded_b, load_failed);
-}
-
 } // namespace
 
 int main() {
-  emscripten_dlopen("a.wasm", RTLD_NOW | RTLD_LOCAL, nullptr, loaded_a, load_failed);
+  prepare("a.wasm");
+  emscripten_request_animation_frame_loop(frame, nullptr);
   emscripten_exit_with_live_runtime();
 }

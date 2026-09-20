@@ -43,6 +43,44 @@ jobs:
       - name: Test
         run: bash scripts/test.sh ${{ matrix.preset }}
 
+  wasm:
+    name: wasm / Emscripten 6.0.9 / Chrome
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout the pinned Emscripten SDK
+        uses: actions/checkout@v4
+        with:
+          repository: emscripten-core/emsdk
+          ref: 5eb0bde7585670252e8ba05e9d361627bffd08b5 # 6.0.9
+          path: .tools/emsdk
+
+      - name: Install and activate Emscripten
+        run: |
+          .tools/emsdk/emsdk install 6.0.9
+          .tools/emsdk/emsdk activate 6.0.9
+
+      - name: Build and test WASM candidates in Chrome
+        run: |
+          source .tools/emsdk/emsdk_env.sh
+          em++ --version
+          google-chrome --version
+          bash scripts/configure.sh debug \
+            -DNEKOMATA_TEST_WASM=ON \
+            -DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF \
+            -DNEKOMATA_WASM_BROWSER="$(command -v google-chrome)"
+          bash scripts/build.sh debug --target neko_wasm_fixtures neko_unit_backends_wasm_candidate
+          bash scripts/test.sh debug -R '^neko\.(unit\.backends|e2e)\.wasm\.' --no-tests=error
+
+      - name: Preserve test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-test-log
+          path: build/debug/Testing/Temporary/LastTest.log
+
   # The kernel is platform-neutral; building it on macOS keeps it honest.
   # Backend directories are skipped by design on this platform.
   kernel-portability:

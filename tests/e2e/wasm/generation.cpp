@@ -18,11 +18,17 @@ std::uint32_t identify() {
   world->last_generation = GENERATION_ID;
 }
 
-const generation_descriptor descriptor{INTERFACE_VERSION, GENERATION_ID, identify,
-                                       MISSING_UPDATE ? nullptr : update_world};
+const neko::wasm::module_entry entries[] = {
+    {"identify", reinterpret_cast<neko::wasm::module_function>(identify)},
+    {"update_world",
+     MISSING_UPDATE ? nullptr : reinterpret_cast<neko::wasm::module_function>(update_world)},
+};
+
+const neko::wasm::module_descriptor descriptor{
+    {INTERFACE_VERSION, sizeof(neko::wasm::module_descriptor)}, "flock-test-v1", 2, entries};
 
 } // namespace
 
-extern "C" const generation_descriptor* get_generation_descriptor() {
-  return &descriptor;
+extern "C" const neko::wasm::module_header* neko_wasm_descriptor() {
+  return &descriptor.header;
 }

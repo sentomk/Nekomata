@@ -11,7 +11,8 @@ if(NOT NEKOMATA_WASM_BROWSER)
 endif()
 
 set(wasm_flags -std=c++20 -O0 -g -Wall -Wextra -Werror
-  -fno-exceptions -fno-rtti -sASSERTIONS=2)
+  -fno-exceptions -fno-rtti -sASSERTIONS=2 "-I${PROJECT_SOURCE_DIR}/src")
+set(wasm_backend "${PROJECT_SOURCE_DIR}/src/backends/wasm")
 foreach(generation IN ITEMS a b incompatible incomplete)
   set(generation_defines -DINTERFACE_VERSION=1 -DMISSING_UPDATE=0)
   if(generation STREQUAL "a")
@@ -30,14 +31,19 @@ foreach(generation IN ITEMS a b incompatible incomplete)
       "-DGENERATION_ID=${generation_id}" ${generation_defines}
       "${CMAKE_CURRENT_SOURCE_DIR}/generation.cpp"
       -o "${CMAKE_CURRENT_BINARY_DIR}/${generation}.wasm"
-    DEPENDS generation.cpp contract.hpp VERBATIM)
+    DEPENDS generation.cpp contract.hpp
+      "${wasm_backend}/module_descriptor.hpp" "${wasm_backend}/candidate.hpp" VERBATIM)
 endforeach()
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/runner.js" "${CMAKE_CURRENT_BINARY_DIR}/runner.wasm"
   COMMAND "${NEKOMATA_EMXX}" ${wasm_flags} -sMAIN_MODULE=1 -sENVIRONMENT=web
     -sALLOW_MEMORY_GROWTH=1 "${CMAKE_CURRENT_SOURCE_DIR}/runner.cpp"
+    "${wasm_backend}/candidate.cpp" "${wasm_backend}/emscripten_loader.cpp"
     -o "${CMAKE_CURRENT_BINARY_DIR}/runner.js"
-  DEPENDS runner.cpp contract.hpp VERBATIM)
+  DEPENDS runner.cpp contract.hpp
+    "${wasm_backend}/candidate.cpp" "${wasm_backend}/candidate.hpp"
+    "${wasm_backend}/emscripten_loader.cpp" "${wasm_backend}/emscripten_loader.hpp"
+    "${wasm_backend}/module_descriptor.hpp" VERBATIM)
 configure_file(index.html index.html COPYONLY)
 add_custom_target(neko_wasm_fixtures ALL DEPENDS
   "${CMAKE_CURRENT_BINARY_DIR}/runner.js" "${CMAKE_CURRENT_BINARY_DIR}/runner.wasm"

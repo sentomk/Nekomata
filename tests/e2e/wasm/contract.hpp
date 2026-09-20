@@ -1,8 +1,9 @@
 #pragma once
 
+#include <backends/wasm/candidate.hpp>
 #include <cstdint>
 
-// A test-only interface; this is not the future neko WASM ABI.
+// Application state and signatures are test-specific, independent of the loader.
 struct world_state {
   std::uint32_t tick_count;
   float position;
@@ -12,11 +13,9 @@ struct world_state {
   bool operator==(const world_state&) const = default;
 };
 
-struct generation_descriptor {
-  std::uint32_t interface_version;
-  std::uint32_t generation_id;
-  std::uint32_t (*identify)();
-  void (*update_world)(world_state*);
-};
+using identify_fn = std::uint32_t (*)();
+using update_fn = void (*)(world_state*);
 
-using descriptor_fn = const generation_descriptor* (*)();
+inline neko::wasm::module_contract flock_contract() {
+  return {"flock-test-v1", {"identify", "update_world"}};
+}
