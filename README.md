@@ -209,6 +209,10 @@ are designs, not claims that the integrations already ship. The planned work —
 including what is deliberately out of scope — is in
 [docs/roadmap.md](docs/roadmap.md).
 
+The [browser WASM design](docs/wasm-reload-design.md) documents the implemented
+private candidate lifecycle, its failure boundaries and CI coverage, and the
+remaining work toward remote generation delivery.
+
 ## License
 
 Nekomata is licensed under the [MIT License](LICENSE).
