@@ -172,6 +172,7 @@ helpers and doctest.
 | `tests/e2e/reload/cross_tu/` | cross-object calls inside one generation, including brand-new symbols |
 | `tests/e2e/reload/soak/` | multi-generation reload soak: state continuity and executable-slot accounting |
 | `tests/e2e/adapters/cmake/` | the CMake adapter end to end, per generator and group form |
+| `tests/e2e/wasm/` | opt-in emcc/browser fixtures: distinct modules, frame-boundary activation, state continuity and rejection recovery |
 | `tests/tooling/` | harness fault injection, CLI contracts, envsetup, sanitizer canary |
 | `tests/fuzz/` | libFuzzer on the ELF parser; corpus doubles as regression inputs |
 

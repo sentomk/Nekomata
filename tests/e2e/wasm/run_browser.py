@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--root", required=True, type=pathlib.Path)
     args = parser.parse_args()
     completed = threading.Event()
+    a_frame = threading.Event()
     results = []
 
     class fixture_handler(http.server.SimpleHTTPRequestHandler):
@@ -25,11 +26,18 @@ def main():
 
         def do_GET(self):
             if self.path == "/b.wasm":
-                # Leave an observable async preparation window for animation frames.
-                time.sleep(0.3)
+                # Release B only after a real A frame, independent of machine speed.
+                if not a_frame.wait(timeout=10):
+                    self.send_error(504, "A did not advance while B was pending")
+                    return
             super().do_GET()
 
         def do_POST(self):
+            if self.path == "/a-frame":
+                a_frame.set()
+                self.send_response(204)
+                self.end_headers()
+                return
             if self.path != "/result":
                 self.send_error(404)
                 return
@@ -77,6 +85,7 @@ def main():
                         browser.kill()
                         browser.wait()
     finally:
+        a_frame.set()
         server.shutdown()
         server.server_close()
         thread.join()

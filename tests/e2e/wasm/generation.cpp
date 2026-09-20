@@ -6,7 +6,7 @@ std::uint32_t identify() {
   return GENERATION_ID;
 }
 
-void update_world(world_state* world) {
+[[maybe_unused]] void update_world(world_state* world) {
 #if GENERATION_ID == 2
   // Only generation B contains this branch; this is a code change, not an input.
   if (world->position > 10.0f) {
@@ -18,7 +18,8 @@ void update_world(world_state* world) {
   world->last_generation = GENERATION_ID;
 }
 
-const generation_descriptor descriptor{1, GENERATION_ID, identify, update_world};
+const generation_descriptor descriptor{INTERFACE_VERSION, GENERATION_ID, identify,
+                                       MISSING_UPDATE ? nullptr : update_world};
 
 } // namespace
 
