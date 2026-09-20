@@ -24,3 +24,11 @@ It does not reuse an existing browser profile or disable the browser sandbox.
 The suite checks that two concurrently loaded modules with the same export
 name resolve to their own descriptors and callable code via distinct handles.
 This is browser execution evidence, not native host execution of WASM.
+
+The main module owns a world with a tick count, position and velocity. The
+server delays B's response so A must advance while the download is pending.
+B then stays ready for three A frames. At the next frame boundary the runner
+switches the entire descriptor, checking exact field equality and address
+identity before running the next tick. Only B contains the bounce branch;
+the next three ticks must execute it on the existing world. Both the identity
+and update entries must come from the same generation.

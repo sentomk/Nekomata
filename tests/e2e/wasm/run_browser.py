@@ -23,6 +23,12 @@ def main():
         def log_message(self, *_args):
             pass
 
+        def do_GET(self):
+            if self.path == "/b.wasm":
+                # Leave an observable async preparation window for animation frames.
+                time.sleep(0.3)
+            super().do_GET()
+
         def do_POST(self):
             if self.path != "/result":
                 self.send_error(404)
