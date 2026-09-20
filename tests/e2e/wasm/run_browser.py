@@ -5,10 +5,29 @@ import functools
 import http.server
 import json
 import pathlib
+import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
+
+
+def release_profile(path):
+    """Remove the browser profile, tolerating Chrome's lingering children.
+
+    Headless Chrome's helper processes can outlive the reaped browser and
+    keep writing the profile directory; a cleanup race here must not fail
+    a test whose assertions already passed."""
+    for _ in range(5):
+        try:
+            shutil.rmtree(path)
+            return
+        except OSError:
+            time.sleep(0.2)
+    shutil.rmtree(path, ignore_errors=True)
+    print(f"warning: browser profile at {path} could not be fully removed",
+          file=sys.stderr)
 
 
 def main():
@@ -70,32 +89,35 @@ def main():
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    profile = None
     try:
-        with tempfile.TemporaryDirectory(prefix="neko-wasm-browser-") as profile:
-            with tempfile.TemporaryFile(mode="w+") as browser_log:
-                browser = subprocess.Popen([
-                    args.browser, "--headless", "--disable-gpu", "--no-first-run",
-                    "--no-default-browser-check", "--disable-background-networking",
-                    f"--user-data-dir={profile}",
-                    f"http://127.0.0.1:{server.server_port}/index.html?runner={args.runner}",
-                ], stdout=browser_log, stderr=browser_log)
+        profile = tempfile.mkdtemp(prefix="neko-wasm-browser-")
+        with tempfile.TemporaryFile(mode="w+") as browser_log:
+            browser = subprocess.Popen([
+                args.browser, "--headless", "--disable-gpu", "--no-first-run",
+                "--no-default-browser-check", "--disable-background-networking",
+                f"--user-data-dir={profile}",
+                f"http://127.0.0.1:{server.server_port}/index.html?runner={args.runner}",
+            ], stdout=browser_log, stderr=browser_log)
+            try:
+                deadline = time.monotonic() + 40
+                while not completed.wait(0.1):
+                    if browser.poll() is not None or time.monotonic() >= deadline:
+                        browser_log.seek(0)
+                        raise RuntimeError("browser exited or timed out\n" + browser_log.read())
+                result = results[0]
+                print(json.dumps(result), flush=True)
+                return 0 if result["ok"] else 1
+            finally:
+                browser.terminate()
                 try:
-                    deadline = time.monotonic() + 40
-                    while not completed.wait(0.1):
-                        if browser.poll() is not None or time.monotonic() >= deadline:
-                            browser_log.seek(0)
-                            raise RuntimeError("browser exited or timed out\n" + browser_log.read())
-                    result = results[0]
-                    print(json.dumps(result), flush=True)
-                    return 0 if result["ok"] else 1
-                finally:
-                    browser.terminate()
-                    try:
-                        browser.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        browser.kill()
-                        browser.wait()
+                    browser.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    browser.kill()
+                    browser.wait()
     finally:
+        if profile is not None:
+            release_profile(profile)
         a_frame.set()
         lifecycle_frame.set()
         server.shutdown()
