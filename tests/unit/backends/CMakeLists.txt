@@ -4,6 +4,7 @@ endif()
 # The COFF reader suites parse bytes offline and run everywhere; the
 # VirtualAlloc suite gates itself to Windows inside pe/.
 add_subdirectory(pe)
+add_subdirectory(wasm)
 if(TARGET neko_backend_pdb)
   # The DIA reader is real only when the SDK was found; the placeholder
   # target carries nothing to test.

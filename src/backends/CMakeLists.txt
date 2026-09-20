@@ -34,3 +34,4 @@ endif()
 
 # The Windows runtime half gates itself inside pe/.
 add_subdirectory(pe)
+add_subdirectory(wasm)
