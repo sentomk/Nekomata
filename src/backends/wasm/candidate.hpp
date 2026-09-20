@@ -2,6 +2,7 @@
 
 #include "module_descriptor.hpp"
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -39,8 +40,8 @@ struct module_contract {
   std::vector<std::string> entries;
 };
 
-enum class candidate_status { loading, ready, rejected, cancelled, activated };
-enum class candidate_error {
+enum class candidate_status : std::uint8_t { loading, ready, rejected, cancelled, activated };
+enum class candidate_error : std::uint8_t {
   none,
   invalid_contract,
   load_failed,
