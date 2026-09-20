@@ -12,6 +12,10 @@ add_subdirectory(contract)
 add_subdirectory(integration)
 add_subdirectory(tooling)
 
+if(NEKOMATA_TEST_WASM)
+  add_subdirectory(e2e/wasm)
+endif()
+
 if(NEKOMATA_TARGET_LINUX)
   add_subdirectory(e2e)
   if(NEKOMATA_BUILD_FUZZ AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
