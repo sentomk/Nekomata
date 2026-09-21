@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>nekomata · wasm hot reload</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 2rem;
+      font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      background: #10141a; color: #cdd6e0;
+    }
+    h1 { font-size: 16px; font-weight: 600; color: #8ab4f8; margin: 0 0 1rem; }
+    canvas {
+      display: block; background: #0a0d12;
+      border: 1px solid #2a3340; border-radius: 6px;
+    }
+    #hud { margin-top: .75rem; color: #9aa7b4; }
+    #log {
+      margin-top: 1rem; white-space: pre-wrap; max-height: 12rem;
+      overflow-y: auto; color: #7d8a98; font-size: 12px;
+    }
+    footer { margin-top: 1.5rem; color: #5d6a78; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>nekomata · browser hot reload — the world survives every publish</h1>
+  <canvas id="world" width="800" height="480"></canvas>
+  <div id="hud">waiting for the first generation…</div>
+  <pre id="log"></pre>
+  <footer>
+    publish a behavior with <code>python3 publish.py &lt;1|2|3&gt;</code> —
+    the trail color marks each generation; the tick counter never restarts.
+  </footer>
+  <script src="main.js"></script>
+</body>
+</html>

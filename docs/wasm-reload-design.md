@@ -1,10 +1,10 @@
 # Browser WASM hot-reload design
 
 Status: the private candidate lifecycle, HTTP-polling delivery with digest
-verification, and the private browser reload session are implemented. A
-public WASM backend, application-facing CMake integration, and a browser
-demo are planned. This document distinguishes those goals from the current
-code.
+verification, the private browser reload session, and a local browser demo
+are implemented. A public WASM backend and application-facing CMake
+integration are planned. This document distinguishes those goals from the
+current code.
 
 ## Purpose and scope
 
@@ -243,10 +243,17 @@ mock fetchers. Session integration also exists in private form:
 same safe-point protocol as the native session — reports each generation
 exactly once as an applied or rejected transaction reusing `candidate_error`
 classification, and exposes the active snapshot for per-frame entry
-resolution. What remains is the first browser run of the poller and session
-through the demo, then public backend factories, application-facing CMake
-integration, and the convergence of the two event vocabularies at that
-factory boundary.
+resolution.
+
+The first browser demo exists at
+[`examples/wasm_reload`](../examples/wasm_reload/): a page owns a ball
+world, `reload_session.update()` runs once per frame, and a publish script
+compiles one behavior generation, stages the artifact at an immutable
+sequence-named path, and atomically replaces the polled manifest. The
+trail color marks each applied generation and the tick counter never
+restarts; the demo is not registered in CMake or CI. What remains is public
+backend factories with application-facing CMake integration, and the
+convergence of the two event vocabularies at that factory boundary.
 
 Session integration must connect preparation and safe-point activation to the
 library's reload model without making the browser loader responsible for
@@ -255,7 +262,9 @@ integration step; application-facing CMake integration follows that factory
 work. Neither native backend factories nor a native embedded WASM runtime are
 prerequisites for this browser path.
 
-A later browser demo can show boids acquiring new avoidance and vortex code
-while retaining identity, position, velocity, trail, and world age. Two pages
-receiving the same generation should keep their separate worlds. The current
-fixtures remain tests, not that demo or proof of remote generation delivery.
+A richer demo can still show boids acquiring new avoidance and vortex code
+while retaining identity, position, velocity, trail, and world age; the
+current ball demo establishes the loop with a smaller world. Two pages
+receiving the same generation keep their separate worlds — the world is
+per-page state. The current fixtures remain tests, and the demo is a local
+development tool, not proof of remote generation delivery.
