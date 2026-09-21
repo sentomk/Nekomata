@@ -55,7 +55,7 @@ std::uint64_t next_wasm_sequence(const std::filesystem::path& modules) {
         continue;
       }
       try {
-        next = std::max(next, std::stoull(digits) + 1);
+        next = std::max<std::uint64_t>(next, std::stoull(digits) + 1);
       } catch (const std::out_of_range&) {
         // Absurdly large numbers never take part in sequence allocation.
       }
