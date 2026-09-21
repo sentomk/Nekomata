@@ -197,8 +197,9 @@ does not erase preparation state or diagnostics.
 An asynchronous backend need not physically abort an in-flight request when
 disabled. Its completion must not activate code or report a transaction outside
 `update()`, and no disabled group may commit. Already-started preparation may
-finish into retained pending state. The browser's late-completion handling
-still needs implementation and tests.
+finish into retained pending state. The private browser session tests cover
+late completions with controlled fetchers; full browser pause/resume delivery
+coverage is still required.
 
 The portable `neko.integration.session.lifecycle` suite exercises this contract
 through the public session with a supplied group registry, real publication

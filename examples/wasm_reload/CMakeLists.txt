@@ -23,6 +23,7 @@ add_executable(page
   "${neko_root}/src/backends/wasm/offer_poller.cpp"
   "${neko_root}/src/backends/wasm/session.cpp"
   "${neko_root}/src/backends/wasm/emscripten_loader.cpp"
+  "${neko_root}/src/backends/wasm/emscripten_scheduler.cpp"
   "${neko_root}/src/protocol/wasm_offer.cpp"
   "${neko_root}/src/base/c/neko_sha256.c")
 target_include_directories(page PRIVATE "${neko_root}/src" "${CMAKE_CURRENT_LIST_DIR}")

@@ -62,3 +62,10 @@ C++ owner of a committed module and calls a saved entry to verify page
 residency. The server holds the first response until a browser frame releases
 it, so the
 cancelled request cannot complete early by accident.
+
+`poll_scheduler` exercises the browser event-loop timer: callbacks are deferred,
+subscriptions survive destruction of their scheduler, a cancelled subscription
+never fires, and an executing callback can destroy its own subscription without
+firing again. It is registered in the same WASM CI job. The private session's
+watch/unwatch ordering is covered by deterministic native tests; end-to-end
+browser session pause/resume delivery is still separate work.

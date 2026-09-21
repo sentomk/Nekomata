@@ -1,10 +1,10 @@
 # Browser WASM hot-reload design
 
 Status: the private candidate lifecycle, HTTP-polling delivery with digest
-verification, the private browser reload session, and a local browser demo
-are implemented. A public WASM backend and application-facing CMake
-integration are planned. This document distinguishes those goals from the
-current code.
+verification, the private browser reload session with watch/unwatch controls,
+and a local browser demo using CMake publication are implemented. Public
+backend integration and page-side group registration are planned. This document
+distinguishes those goals from the current code.
 
 ## Purpose and scope
 
@@ -24,7 +24,7 @@ The intended end-to-end flow is:
 ```text
 developer rebuilds C++ with emcc
               |
-       publishes generation             planned delivery layer
+       publishes generation             HTTP-polling delivery
               |
 browser receives and verifies artifacts
               |
@@ -54,6 +54,7 @@ Its headers are private, not a supported application API.
 | `module_loader` | Own a load request and deliver exactly one result on the calling event loop. |
 | `manifest_fetcher` | Own one manifest URL fetch and deliver its text on the calling event loop. |
 | `offer_poller` | Poll the stable manifest URL, order offers, and turn superseding offers into loading candidates. |
+| `poll_scheduler` | Schedule observation independently of frame commits; an owning subscription controls each enable cycle. |
 | `emscripten_loader` | Fetch artifact bytes, verify the contract SHA-256 before instantiation, stage under a private MEMFS path, and own the loader reference. |
 | `emscripten_manifest_fetcher` | Fetch one manifest URL as text on the browser event loop. |
 | `module_image` | Keep loaded code available and release an uncommitted reference on destruction. |
@@ -178,8 +179,8 @@ an automatic rollback to the previous module.
 
 Paths must name immutable contents because the underlying loader may cache
 them. Overwriting a URL is not a supported way to identify a new generation.
-There is currently no artifact digest, publisher authentication, remote stream,
-or pre-instantiation compatibility check.
+Artifact digests are checked before instantiation. Publisher authentication
+and pre-instantiation descriptor compatibility checks are not implemented.
 
 ## Verification and CI
 
@@ -201,9 +202,11 @@ execution tests the lifecycle logic, not execution of WASM in a native host.
 - `neko.e2e.wasm.candidate_lifetime` checks late callbacks after cancellation
   and destruction, loader destruction, asynchronous cached completion, and
   invocation of committed code after all C++ owners are gone.
+- `neko.e2e.wasm.poll_scheduler` checks deferred browser timer callbacks,
+  subscription ownership, cancellation, and self-destruction during a callback.
 
 The [`wasm` CI job](../.github/workflows/ci.yml) pins Emscripten 6.0.9, builds
-the main and side modules, and runs native candidate tests plus both browser
+the main and side modules, and runs native lifecycle tests plus the browser
 tests in Ubuntu's Chrome. CTest diagnostics are uploaded on failure. Wiring
 these jobs is not evidence that a particular remote run passed; consult that
 commit's CI results.
@@ -239,11 +242,19 @@ Still planned on top of the offer: the poller now exists —
 offers through `compare_wasm_offers`, and hands superseding offers to the
 candidate lifecycle as observable events; its native suite drives it through
 mock fetchers. Session integration also exists in private form:
-`neko::wasm::reload_session` pins one group, polls inside `update()`, reports
-completed candidates as applied or rejected transactions using `candidate_error`,
-and exposes the active snapshot for per-frame entry resolution. It has no
-`watch()`, `unwatch()` or public observation `snapshot()` yet. Sharing a safe
-point does not make its lifecycle equivalent to the native managed session.
+`neko::wasm::reload_session` pins one group, initially disabled. Its `watch()`
+and `unwatch()` overloads control an observation subscription while preserving
+the poller and its consumer cursor. The browser scheduler polls every 100 ms
+on the event loop, without requiring `update()`. Each enable cycle has a fresh
+weak callback token, so a queued callback from an earlier cycle cannot start
+another poll after disable or re-enable.
+
+`update()` only consumes prepared results while enabled. In-flight fetches
+may finish while paused, retaining a candidate or rejection for resume; they
+cannot activate it. Destruction cancels scheduling and invalidates outstanding
+observation callbacks. Applied/rejected results still use the private
+`candidate_error` vocabulary, and `current()` exposes the active entry set.
+Public observation `snapshot()` and multi-group registration are not implemented.
 
 ### Session lifecycle convergence
 
@@ -264,12 +275,14 @@ Unknown group IDs are configuration errors. A disabled group can retain
 `ready` or `failed` state, so `enabled` must be observed separately. Each group
 is its own transaction; disabling one must not block another enabled group.
 The native contract is covered by `neko.integration.session.lifecycle` in the
-ordinary platform and sanitizer CI jobs. Equivalent browser lifecycle and
-late-completion tests are still required; the existing browser fixtures do
-not establish watch/unwatch parity.
+ordinary platform and sanitizer CI jobs. The WASM session unit suite drives
+observation separately from commits and covers pauses before and after
+completion, cursor retention, old ticks after resume, scheduling failure, and
+destruction with outstanding requests. The real browser scheduler is tested
+separately. Full browser session pause/resume delivery coverage is still required.
 
-Browser observation can use asynchronous event-loop scheduling instead of a
-native worker thread. Public integration also requires page-side group
+Browser observation uses asynchronous event-loop scheduling instead of a
+native worker thread. Public integration still requires page-side group
 registration, unified transaction results, and a stable behavior-call seam.
 Adding a factory alone does not provide these capabilities, and the private
 `current()->entry(...)` access pattern is not a new public session promise.
@@ -291,9 +304,9 @@ event vocabularies at that factory boundary.
 Session integration must connect preparation and safe-point activation to the
 library's reload model without making the browser loader responsible for
 building code or owning the world. Public backend factories remain a final
-integration step; application-facing CMake integration follows that factory
-work. Neither native backend factories nor a native embedded WASM runtime are
-prerequisites for this browser path.
+integration step; the existing CMake publication path still needs consumer
+registration for that public interface. Neither native backend factories nor
+a native embedded WASM runtime are prerequisites for this browser path.
 
 A richer demo can still show boids acquiring new avoidance and vortex code
 while retaining identity, position, velocity, trail, and world age; the

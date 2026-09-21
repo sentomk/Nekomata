@@ -44,10 +44,12 @@ rejections with their classification.
   and the manifest atomically replaces `offers/latest`. `ABI_ID` and
   `ENTRIES` are declared here; the side module's descriptor must match them,
   and the candidate validation rejects drift.
-- The page links the backend sources directly and calls
-  `session.update()` once per frame. That call is the safe point: the poll
-  happens inside it, a ready candidate activates inside it, and the frame
-  resolves every entry through the one `current()` snapshot.
+- The page links the backend sources directly and calls `session.watch()`
+  to start event-loop polling. `session.update()` once per frame is the safe
+  point: it activates a ready candidate without starting a fetch, and the
+  frame resolves every entry through the one `current()` snapshot.
+  `unwatch()` pauses polling and activation while preserving the running
+  behavior, pending candidate and consumer cursor; `watch()` resumes them.
 - Each artifact is verified against the manifest's SHA-256 before
   instantiation by `emscripten_loader`; a tampered digest rejects as an
   integrity failure without touching the running behavior.

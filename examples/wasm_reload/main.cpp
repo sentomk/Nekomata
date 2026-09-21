@@ -1,6 +1,7 @@
 #include "contract.hpp"
 
 #include <backends/wasm/emscripten_loader.hpp>
+#include <backends/wasm/emscripten_scheduler.hpp>
 #include <backends/wasm/session.hpp>
 
 #include <emscripten.h>
@@ -17,6 +18,7 @@ demo::world_state* const the_world = &world;
 
 neko::wasm::emscripten_loader loader;
 neko::wasm::emscripten_manifest_fetcher fetcher;
+neko::wasm::emscripten_poll_scheduler scheduler;
 std::unique_ptr<neko::wasm::reload_session> session;
 
 EM_JS(void, draw_tick, (double x, double y, int behavior), {
@@ -108,8 +110,9 @@ bool frame(double, void*) {
 
 int main() {
   session = std::make_unique<neko::wasm::reload_session>(
-      loader, fetcher, "offers/latest", demo::group_id,
+      loader, fetcher, scheduler, "offers/latest", demo::group_id,
       [](const neko::wasm::offer_event& event) { note(1, describe(event).c_str()); });
+  session->watch();
   emscripten_request_animation_frame_loop(frame, nullptr);
   return 0;
 }

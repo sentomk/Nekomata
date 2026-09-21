@@ -34,7 +34,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--browser", required=True)
     parser.add_argument("--root", required=True, type=pathlib.Path)
-    parser.add_argument("--runner", choices=("runner", "lifecycle"), default="runner")
+    parser.add_argument("--runner", choices=("runner", "lifecycle", "scheduler"), default="runner")
     args = parser.parse_args()
     completed = threading.Event()
     a_frame = threading.Event()
