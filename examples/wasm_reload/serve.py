@@ -12,7 +12,7 @@ import http.server
 import pathlib
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent / "public"
+DEFAULT_ROOT = pathlib.Path(__file__).resolve().parent / "public"
 
 
 class demo_handler(http.server.SimpleHTTPRequestHandler):
@@ -38,14 +38,16 @@ class demo_handler(http.server.SimpleHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8931)
+    parser.add_argument("--directory", type=pathlib.Path, default=DEFAULT_ROOT,
+                        help="served build directory (default: %(default)s)")
     args = parser.parse_args()
-    if not (ROOT / "main.js").exists():
-        sys.exit("public/main.js is missing; run bash run_demo.sh (or build_main.sh) first")
-    handler = functools.partial(demo_handler, directory=str(ROOT))
+    if not (args.directory / "main.js").exists():
+        sys.exit(f"{args.directory}/main.js is missing; run bash run_demo.sh first")
+    handler = functools.partial(demo_handler, directory=str(args.directory))
     server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler)
     server.last_smoke = None
-    print(f"open http://127.0.0.1:{args.port}/ then publish: python3 publish.py <1|2|3>",
-          flush=True)
+    print(f"open http://127.0.0.1:{args.port}/ then republish with:",
+          "cmake --build <demo-build> --target ball_reload", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

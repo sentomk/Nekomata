@@ -45,7 +45,7 @@ function(nekomata_add_reload_unit name)
 endfunction()
 
 function(nekomata_add_reload_group name)
-  cmake_parse_arguments(ARG "" "GROUP_ID" "SOURCES;UNITS" ${ARGN})
+  cmake_parse_arguments(ARG "" "GROUP_ID;ABI_ID;OFFER_ROOT" "SOURCES;UNITS;ENTRIES" ${ARGN})
   if(ARG_UNPARSED_ARGUMENTS)
     message(FATAL_ERROR "nekomata_add_reload_group(${name}): unknown arguments "
       "${ARG_UNPARSED_ARGUMENTS}")
@@ -56,15 +56,22 @@ function(nekomata_add_reload_group name)
   if(NOT ARG_SOURCES AND NOT ARG_UNITS)
     message(FATAL_ERROR "nekomata_add_reload_group(${name}): SOURCES or UNITS is required")
   endif()
-  if(NOT TARGET neko_publisher AND NOT TARGET nekomata::host_publisher)
-    message(FATAL_ERROR "nekomata_add_reload_group(${name}): the private host publisher "
-      "executable is not available; the adapter needs the Nekomata build tree or an "
-      "installed nekomata package")
-  endif()
-  if(TARGET neko_publisher)
-    set(neko_publisher_executable "$<TARGET_FILE:neko_publisher>")
+  # Emscripten projects cannot build the host publisher with their own
+  # toolchain; they point NEKOMATA_PUBLISHER_EXECUTABLE at a native build's
+  # or install's tool instead.
+  if(DEFINED NEKOMATA_PUBLISHER_EXECUTABLE)
+    set(neko_publisher_executable "${NEKOMATA_PUBLISHER_EXECUTABLE}")
   else()
-    set(neko_publisher_executable "$<TARGET_FILE:nekomata::host_publisher>")
+    if(NOT TARGET neko_publisher AND NOT TARGET nekomata::host_publisher)
+      message(FATAL_ERROR "nekomata_add_reload_group(${name}): the private host publisher "
+        "executable is not available; the adapter needs the Nekomata build tree, an "
+        "installed nekomata package, or NEKOMATA_PUBLISHER_EXECUTABLE")
+    endif()
+    if(TARGET neko_publisher)
+      set(neko_publisher_executable "$<TARGET_FILE:neko_publisher>")
+    else()
+      set(neko_publisher_executable "$<TARGET_FILE:nekomata::host_publisher>")
+    endif()
   endif()
 
   # Resolve the group identity.
@@ -125,8 +132,99 @@ function(nekomata_add_reload_group name)
   string(SHA256 compat_digest "${fingerprint}")
   string(SUBSTRING "${compat_digest}" 0 12 compat12)
   set(publication_key "${name}-${compat12}-$<CONFIG>")
+
+  if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    # Browser flavor: the units link into one side module, and the publisher
+    # releases it as a `nekomata-wasm/1` offer behind an atomically replaced
+    # `latest`. No embedded descriptor section: the browser session pins the
+    # group by identity, and the side module carries its own descriptor.
+    if(NOT ARG_ABI_ID)
+      message(FATAL_ERROR "nekomata_add_reload_group(${name}): Emscripten groups require "
+        "ABI_ID; entry signatures and the persistent state layout are application knowledge")
+    endif()
+    if(NOT ARG_ENTRIES)
+      message(FATAL_ERROR "nekomata_add_reload_group(${name}): Emscripten groups require "
+        "ENTRIES naming the module's exported entry order")
+    endif()
+    if(ARG_OFFER_ROOT)
+      set(offer_root "${ARG_OFFER_ROOT}")
+    else()
+      set(offer_root "${CMAKE_BINARY_DIR}/nekomata-wasm/${name}")
+    endif()
+
+    # Pinned dialect shared by the browser fixtures and the demo; this is
+    # the group's build information, and changing it changes reload
+    # semantics. Side modules build in two steps: the compile step needs
+    # `-sSIDE_MODULE=2` to mark side-module semantics, otherwise the link
+    # step internalizes every symbol and dlopen finds no descriptor. The
+    # explicit `-fPIC` overrides the units' native no-pic hot dialect by
+    # command-line order; side modules relocate at instantiation.
+    set(wasm_compile_flags -std=c++20 -O0 -g -Wall -Wextra -Werror -fno-exceptions -fno-rtti
+      -sSIDE_MODULE=2 -fPIC)
+    set(wasm_link_flags -std=c++20 -O0 -g -Wall -Wextra -Werror -fno-exceptions -fno-rtti
+      -sASSERTIONS=2 -sSIDE_MODULE=1)
+
+    set(wasm_objects "")
+    set(wasm_depends "")
+    foreach(unit IN LISTS member_units)
+      target_compile_options(${unit} PRIVATE ${wasm_compile_flags})
+      # Side modules relocate at instantiation: the units must compile as
+      # position-independent code.
+      set_property(TARGET ${unit} PROPERTY POSITION_INDEPENDENT_CODE ON)
+      list(APPEND wasm_objects "$<TARGET_OBJECTS:${unit}>")
+      list(APPEND wasm_depends "${unit}")
+    endforeach()
+
+    set(wasm_dir "${CMAKE_BINARY_DIR}/nekomata-wasm/${name}")
+    set(wasm_module "${wasm_dir}/module.wasm")
+    add_custom_command(
+      OUTPUT "${wasm_module}"
+      COMMAND "${CMAKE_CXX_COMPILER}" ${wasm_link_flags} ${wasm_objects} -o "${wasm_module}"
+      DEPENDS ${wasm_objects} ${wasm_depends}
+      VERBATIM)
+    add_custom_target(${name}_module DEPENDS "${wasm_module}")
+
+    set(wasm_request "${wasm_dir}/publish_$<CONFIG>.request")
+    string(CONCAT wasm_request_content
+      "nekomata-publisher-request/1\n"
+      "--root\n${offer_root}\n"
+      "--key\n${publication_key}\n"
+      "--group\n${group_id}\n"
+      "--abi\n${ARG_ABI_ID}\n"
+      "--module\n${wasm_module}\n")
+    foreach(entry IN LISTS ARG_ENTRIES)
+      if(entry MATCHES "[\r\n]")
+        message(FATAL_ERROR "nekomata_add_reload_group(${name}): entry names must not contain "
+          "newlines")
+      endif()
+      string(APPEND wasm_request_content "--entry\n${entry}\n")
+    endforeach()
+    file(GENERATE OUTPUT "${wasm_request}" CONTENT "${wasm_request_content}")
+
+    set(wasm_stamp "${wasm_dir}/$<CONFIG>.reload.stamp")
+    add_custom_command(
+      OUTPUT "${wasm_stamp}"
+      COMMAND ${neko_publisher_executable} wasm --request "${wasm_request}"
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "${wasm_dir}"
+      COMMAND "${CMAKE_COMMAND}" -E touch "${wasm_stamp}"
+      DEPENDS ${neko_publisher_executable} "${wasm_request}" "${wasm_module}"
+      VERBATIM)
+    add_custom_target(${name}_reload DEPENDS "${wasm_stamp}")
+    # The target-level edge makes the Unix Makefiles generator rebuild the
+    # objects at all, mirroring the native publication wiring.
+    add_dependencies(${name}_reload ${name}_module)
+    return()
+  endif()
+
+  if(ARG_ENTRIES)
+    message(FATAL_ERROR "nekomata_add_reload_group(${name}): ENTRIES applies to Emscripten "
+      "groups only")
+  endif()
   set(compat_id "cmake:${compat_digest}-$<CONFIG>")
   set(abi_id "elf-${CMAKE_SYSTEM_PROCESSOR}-patch-v1")
+  if(ARG_ABI_ID)
+    set(abi_id "${ARG_ABI_ID}")
+  endif()
   set(generation_root "${CMAKE_BINARY_DIR}/nekomata")
 
   # Build member keys and the request-file arguments.

@@ -4,9 +4,12 @@
 #include <base/lock.hpp>
 #include <base/sha256.hpp>
 #include <protocol/generation_offer.hpp>
+#include <protocol/wasm_offer.hpp>
 
 #include <algorithm>
 #include <chrono>
+#include <stdexcept>
+#include <string>
 #include <system_error>
 #include <utility>
 
@@ -27,6 +30,34 @@ std::uint64_t next_sequence(const std::filesystem::path& offers) {
         next = std::max(next, reference.sequence + 1);
       } catch (const generation_offer_error&) {
         // Foreign or malformed names never take part in sequence allocation.
+      }
+    }
+  }
+  return next;
+}
+
+// Sequence-named artifacts `<sequence>-<generation>.wasm` make sequence
+// allocation stateless, mirroring the managed ready markers.
+std::uint64_t next_wasm_sequence(const std::filesystem::path& modules) {
+  std::uint64_t next = 1;
+  std::error_code ec;
+  if (std::filesystem::is_directory(modules, ec) && !ec) {
+    for (const auto& entry : std::filesystem::directory_iterator(modules)) {
+      const auto name = entry.path().filename().string();
+      const auto dash = name.find('-');
+      if (dash == std::string::npos || !name.ends_with(".wasm")) {
+        continue;
+      }
+      const auto digits = name.substr(0, dash);
+      if (digits.empty() || !std::ranges::all_of(digits, [](unsigned char byte) {
+            return byte >= '0' && byte <= '9';
+          })) {
+        continue;
+      }
+      try {
+        next = std::max(next, std::stoull(digits) + 1);
+      } catch (const std::out_of_range&) {
+        // Absurdly large numbers never take part in sequence allocation.
       }
     }
   }
@@ -120,6 +151,62 @@ publish_result publish_generation(const publish_request& request) {
   write_required_file(stream / "offers" / "offer.staging", "", "cannot write publication file");
   std::filesystem::rename(stream / "offers" / "offer.staging", marker);
 
+  return {offer.sequence, offer.generation_id};
+}
+
+publish_result publish_wasm_offer(const wasm_publish_request& request) {
+  if (request.offer_root.empty() || request.publication_key.empty() || request.group_id.empty() ||
+      request.abi_id.empty() || request.module_file.empty() || request.entries.empty()) {
+    throw std::runtime_error("wasm publish request needs an offer root, publication key, group "
+                             "and ABI identities, a module, and at least one entry");
+  }
+
+  const auto modules = request.offer_root / "modules";
+  std::filesystem::create_directories(modules);
+  // One offer URL has one logical producer; the lock serializes sequence
+  // allocation and the manifest replacement when processes race anyway.
+  const file_lock lock(request.offer_root / ".publish.lock");
+
+  const auto sequence = next_wasm_sequence(modules);
+
+  const auto module_bytes = read_file_if_present(request.module_file);
+  if (!module_bytes) {
+    throw std::runtime_error("cannot read wasm module '" + request.module_file.generic_string() +
+                             "'");
+  }
+  const auto module_digest = sha256_hex(*module_bytes);
+
+  std::string identity_input = request.abi_id + "\n" + module_digest + "\n";
+  for (const auto& entry : request.entries) {
+    identity_input += entry;
+    identity_input += '\n';
+  }
+
+  wasm_offer offer;
+  offer.group_id = request.group_id;
+  offer.sequence = sequence;
+  offer.abi_id = request.abi_id;
+  offer.entries = request.entries;
+  offer.generation_id = "g-" + sha256_hex(identity_input).substr(0, 16);
+  offer.artifact_path = "modules/" + std::to_string(sequence) + "-" + offer.generation_id + ".wasm";
+  offer.sha256 = module_digest;
+  validate_wasm_offer(offer, "wasm publish request");
+
+  const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+  const auto staged_module = modules / (".staging-" + std::to_string(nonce) + ".wasm");
+  write_required_file(staged_module, *module_bytes, "cannot write wasm artifact");
+  std::error_code rename_ec;
+  std::filesystem::rename(staged_module, request.offer_root / offer.artifact_path, rename_ec);
+  if (rename_ec) {
+    std::filesystem::remove(staged_module, rename_ec);
+    throw std::runtime_error("cannot release wasm artifact '" + offer.artifact_path + "'");
+  }
+
+  // The manifest replacement is the publication point: staged beside its
+  // destination and renamed, so a page never observes a torn offer.
+  write_required_file(request.offer_root / "latest.staging", serialize_wasm_offer(offer),
+                      "cannot write wasm offer");
+  std::filesystem::rename(request.offer_root / "latest.staging", request.offer_root / "latest");
   return {offer.sequence, offer.generation_id};
 }
 

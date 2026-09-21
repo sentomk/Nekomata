@@ -59,6 +59,66 @@ if(NOT request_matched)
 endif()
 unset(oversized_argument)
 
+# The browser flavor: the same tool publishes a `nekomata-wasm/1` offer
+# behind an atomically replaced `latest`, with sequence-named artifacts.
+set(wasm_root "${CMAKE_CURRENT_BINARY_DIR}/publisher-wasm-cli")
+file(REMOVE_RECURSE "${wasm_root}")
+file(MAKE_DIRECTORY "${wasm_root}")
+file(WRITE "${wasm_root}/module.wasm" "wasm-bytes")
+
+function(publish_wasm expect_sequence)
+  execute_process(
+    COMMAND "${PUBLISHER}" wasm
+      --root "${wasm_root}" --key "cli-e2e" --group "//cli:ball"
+      --abi "wasm32-ball-v1" --module "${wasm_root}/module.wasm"
+      --entry "identify" --entry "update_world"
+    RESULT_VARIABLE wasm_status OUTPUT_VARIABLE wasm_output ERROR_VARIABLE wasm_error TIMEOUT 30)
+  if(NOT "${wasm_status}" EQUAL 0)
+    message(FATAL_ERROR "wasm publisher failed (${wasm_status}):\n${wasm_output}${wasm_error}")
+  endif()
+  string(REGEX MATCH "^([0-9]+) (g-[0-9a-f]+)" wasm_matched "${wasm_output}")
+  if(NOT wasm_matched)
+    message(FATAL_ERROR "unexpected wasm publisher output:\n${wasm_output}")
+  endif()
+  if(NOT "${CMAKE_MATCH_1}" STREQUAL "${expect_sequence}")
+    message(FATAL_ERROR "expected wasm sequence ${expect_sequence}, got ${CMAKE_MATCH_1}")
+  endif()
+  set(wasm_generation_id "${CMAKE_MATCH_2}" PARENT_SCOPE)
+endfunction()
+
+publish_wasm(1)
+file(WRITE "${wasm_root}/module.wasm" "wasm-bytes-2")
+publish_wasm(2)
+
+file(READ "${wasm_root}/latest" wasm_offer_text)
+foreach(wasm_required IN ITEMS
+    "nekomata-wasm/1"
+    "group_id \"//cli:ball\""
+    "sequence 2"
+    "abi_id \"wasm32-ball-v1\""
+    "entry \"identify\""
+    "entry \"update_world\"")
+  string(FIND "${wasm_offer_text}" "${wasm_required}" wasm_at)
+  if(wasm_at EQUAL -1)
+    message(FATAL_ERROR "missing '${wasm_required}' in wasm offer:\n${wasm_offer_text}")
+  endif()
+endforeach()
+
+# The manifest names the sequence-named immutable artifact, and both
+# published artifacts survive the replacement of `latest`.
+file(GLOB wasm_artifacts "${wasm_root}/modules/*.wasm")
+list(LENGTH wasm_artifacts wasm_artifact_count)
+if(NOT wasm_artifact_count EQUAL 2)
+  message(FATAL_ERROR "expected 2 immutable artifacts, got ${wasm_artifact_count}: ${wasm_artifacts}")
+endif()
+string(REGEX MATCH "\"modules/2-${wasm_generation_id}.wasm\"" wasm_artifact_row "${wasm_offer_text}")
+if(NOT wasm_artifact_row)
+  message(FATAL_ERROR "offer does not name its sequence-named artifact:\n${wasm_offer_text}")
+endif()
+if(NOT EXISTS "${wasm_root}/modules/2-${wasm_generation_id}.wasm")
+  message(FATAL_ERROR "sequence-named artifact missing: modules/2-${wasm_generation_id}.wasm")
+endif()
+
 file(GLOB markers "${root}/cli-e2e/offers/*.ready")
 list(LENGTH markers marker_count)
 if(NOT marker_count EQUAL 2)

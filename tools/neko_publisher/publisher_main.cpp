@@ -197,9 +197,96 @@ int run_descriptor(int argc, char** argv) {
 
 } // namespace
 
+// Publishes one browser offer: consumes the side module and ordered entry
+// set, and releases artifact plus polled manifest atomically.
+int run_wasm(int argc, char** argv) {
+  std::vector<std::string> request_arguments;
+  std::vector<char*> request_argv;
+  if (argc == 4 && std::string{argv[2]} == "--request") {
+    try {
+      request_arguments = load_request_arguments(argv[3]);
+    } catch (const std::exception& error) {
+      std::cerr << "neko_publisher: " << error.what() << '\n';
+      return 1;
+    }
+    request_argv.reserve(request_arguments.size() + 2);
+    request_argv.push_back(argv[0]);
+    request_argv.push_back(argv[1]);
+    for (auto& argument : request_arguments) {
+      request_argv.push_back(argument.data());
+    }
+    argc = static_cast<int>(request_argv.size());
+    argv = request_argv.data();
+  } else if (argc > 2 && std::string{argv[2]} == "--request") {
+    return usage();
+  }
+
+  neko::detail::wasm_publish_request request;
+  for (int i = 2; i < argc; ++i) {
+    const std::string flag = argv[i];
+    const auto value = [argc, argv, &i]() -> const char* {
+      if (i + 1 >= argc) {
+        return nullptr;
+      }
+      return argv[++i];
+    };
+    if (flag == "--root") {
+      const auto v = value();
+      if (v == nullptr) {
+        return usage();
+      }
+      request.offer_root = v;
+    } else if (flag == "--key") {
+      const auto v = value();
+      if (v == nullptr) {
+        return usage();
+      }
+      request.publication_key = v;
+    } else if (flag == "--group") {
+      const auto v = value();
+      if (v == nullptr) {
+        return usage();
+      }
+      request.group_id = v;
+    } else if (flag == "--abi") {
+      const auto v = value();
+      if (v == nullptr) {
+        return usage();
+      }
+      request.abi_id = v;
+    } else if (flag == "--module") {
+      const auto v = value();
+      if (v == nullptr) {
+        return usage();
+      }
+      request.module_file = v;
+    } else if (flag == "--entry") {
+      const auto v = value();
+      if (v == nullptr) {
+        return usage();
+      }
+      request.entries.emplace_back(v);
+    } else {
+      return usage();
+    }
+  }
+
+  try {
+    const auto result = neko::detail::publish_wasm_offer(request);
+    std::cout << result.sequence << ' ' << result.generation_id << '\n';
+    return 0;
+  } catch (const std::exception& error) {
+    std::cerr << "neko_publisher: " << error.what() << '\n';
+    return 1;
+  }
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string{argv[1]} == "descriptor") {
     return run_descriptor(argc, argv);
+  }
+  if (argc > 1 && std::string{argv[1]} == "wasm") {
+    return run_wasm(argc, argv);
   }
 
   std::vector<std::string> request_arguments;

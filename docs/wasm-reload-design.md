@@ -245,15 +245,17 @@ exactly once as an applied or rejected transaction reusing `candidate_error`
 classification, and exposes the active snapshot for per-frame entry
 resolution.
 
-The first browser demo exists at
-[`examples/wasm_reload`](../examples/wasm_reload/): a page owns a ball
-world, `reload_session.update()` runs once per frame, and a publish script
-compiles one behavior generation, stages the artifact at an immutable
-sequence-named path, and atomically replaces the polled manifest. The
-trail color marks each applied generation and the tick counter never
-restarts; the demo is not registered in CMake or CI. What remains is public
-backend factories with application-facing CMake integration, and the
-convergence of the two event vocabularies at that factory boundary.
+The demo at [`examples/wasm_reload`](../examples/wasm_reload/) consumes the
+same CMake registration as native groups: under the Emscripten toolchain,
+`nekomata_add_reload_group` gains `ABI_ID`, `ENTRIES`, and `OFFER_ROOT`
+arguments, links its units into one side module, and drives the host
+publisher's `wasm` mode — reusing the request pipeline and the publisher's
+lock, sequence, and atomic-release discipline. The request still describes
+build inputs; the published manifest differs per backend
+(`nekomata-generation/2` versus `nekomata-wasm/1`), and the browser flavor
+emits no embedded descriptor section. The demo is not registered in CI.
+What remains is public backend factories with the convergence of the two
+event vocabularies at that factory boundary.
 
 Session integration must connect preparation and safe-point activation to the
 library's reload model without making the browser loader responsible for

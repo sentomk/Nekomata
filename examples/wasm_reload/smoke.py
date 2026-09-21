@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Headless smoke check: the page must apply a published generation and
-advance the world. Serves public/, launches the browser the e2e suite uses,
-and waits for the page to report its smoke verdict."""
+"""Headless smoke check through the CMake integration: builds the page and
+publishes one generation with the `ball_reload` target, then verifies in a
+real browser that the polled generation applied and the world advanced."""
 
 import pathlib
 import subprocess
@@ -10,18 +10,26 @@ import tempfile
 import time
 
 HERE = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-import serve  # noqa: E402
-
-import http.server
+REPO = HERE.parent.parent
 
 
 def main():
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), serve.demo_handler)
-    server.last_smoke = None
+    build = HERE / "build"
+    if not (build / "build.ninja").exists():
+        sys.exit("demo not configured; run bash run_demo.sh once first")
+
+    subprocess.run(["cmake", "--build", str(build), "--target", "ball_reload"], check=True,
+                   stdout=subprocess.DEVNULL)
+
+    sys.path.insert(0, str(HERE))
     import functools
-    server.RequestHandlerClass = functools.partial(serve.demo_handler,
-                                                    directory=str(serve.ROOT))
+    import http.server
+    import serve
+
+    public = build / "public"
+    handler = functools.partial(serve.demo_handler, directory=str(public))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server.last_smoke = None
     import threading
     threading.Thread(target=server.serve_forever, daemon=True).start()
     port = server.server_address[1]
@@ -31,9 +39,15 @@ def main():
     try:
         candidates = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
                       "google-chrome", "chromium", "chromium-browser"]
-        browser_path = next((c for c in candidates if pathlib.Path(c).exists()
-                             or subprocess.run(["which", c], capture_output=True).returncode == 0),
-                            None)
+        browser_path = None
+        for candidate in candidates:
+            probe = pathlib.Path(candidate)
+            if probe.exists():
+                browser_path = str(probe)
+                break
+            if subprocess.run(["which", candidate], capture_output=True).returncode == 0:
+                browser_path = candidate
+                break
         if not browser_path:
             sys.exit("no Chrome/Chromium found")
 
@@ -49,7 +63,7 @@ def main():
             time.sleep(0.1)
         verdict = server.last_smoke
         if verdict == "ok":
-            print("smoke: ok — a polled generation applied and the world advanced")
+            print("smoke: ok — a CMake-published generation applied and the world advanced")
             return 0
         print(f"smoke: {verdict or 'timed out'}")
         return 1

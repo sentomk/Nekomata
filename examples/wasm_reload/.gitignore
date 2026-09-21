@@ -1,3 +1,5 @@
 # Build outputs and published generations are local artifacts.
 public/
+build/
 .build/
+__pycache__/

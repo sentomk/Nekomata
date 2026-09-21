@@ -1,56 +1,62 @@
 # Browser hot-reload demo
 
-A minimal visible loop over the private WASM backend: a page owns a world,
-`neko::wasm::reload_session` polls `offers/latest`, and every publish swaps
-the ball's physics on the existing world. The trail color marks each
-generation and the tick counter never restarts — that is the whole point.
+A minimal visible loop over the private WASM backend through the real CMake
+integration: a page owns a world, `neko::wasm::reload_session` polls
+`offers/latest`, and every `ball_reload` build publishes a new behavior
+generation on the existing world. The trail color marks each generation and
+the tick counter never restarts — that is the whole point.
 
 This is a development demo, not a supported application API and not test
 infrastructure; the headers under `src/backends/wasm` stay private.
 
 ## Run it
 
-Requirements: Emscripten (`emcc`/`em++` on `PATH` or via
-`NEKOMATA_EMXX`/`NEKOMATA_EMCC`), Python 3, any browser.
+Requirements: Emscripten (`emcc`/`em++` on `PATH`, or `EMSDK`), Python 3, any
+browser, and one native configure of this repository (`bash
+scripts/configure.sh debug`) providing the host publisher.
 
 ```sh
-bash run_demo.sh            # terminal 1: builds the main module, serves the page
+bash run_demo.sh            # terminal 1: configures, builds, serves the page
 ```
 
 Open the printed URL (default `http://127.0.0.1:8931/`). The ball waits
-until the first generation arrives:
+until the first generation arrives — `run_demo.sh` publishes one already.
+Then iterate from another terminal:
 
 ```sh
-python3 publish.py 1        # terminal 2: linear bounce — the ball starts moving
-python3 publish.py 2        # gravity arcs, on the same world
-python3 publish.py 3        # spring pull toward the center
-python3 publish.py 1        # and back; the trail shows every switch
+build=examples/wasm_reload/build
+cmake --build $build --target ball_reload                    # republish hot.cpp
+cmake -B $build -DDEMO_BEHAVIOR=2 && cmake --build $build --target ball_reload
 ```
 
-The HUD reports the active behavior, the ever-growing tick count, and the
-count of applied and rejected generations; the log lists delivery events
-(acceptance, staleness, conflicts) and rejections with their classification.
+Behavior 1 is a linear bounce, 2 gravity arcs, 3 a spring pull toward the
+center; editing `hot.cpp` directly is the same loop. The HUD reports the
+active behavior, the ever-growing tick count, and applied/rejected counts;
+the log lists delivery events (acceptance, staleness, conflicts) and
+rejections with their classification.
 
-## How it maps to the backend
+## How it maps to the integration
 
-- `publish.py` compiles `hot.cpp` with a fixed flag set, writes the artifact
-  to an immutable sequence-named path, and atomically replaces
-  `offers/latest` — the manifest fetch itself is the ready marker.
+- `nekomata_add_reload_group(ball ...)` under the Emscripten toolchain links
+  the group's units into one side module (`-sSIDE_MODULE=2` compile,
+  `-sSIDE_MODULE=1` link) and drives the host publisher's `wasm` mode: the
+  artifact lands at an immutable sequence-named path below `offers/modules/`
+  and the manifest atomically replaces `offers/latest`. `ABI_ID` and
+  `ENTRIES` are declared here; the side module's descriptor must match them,
+  and the candidate validation rejects drift.
+- The page links the backend sources directly and calls
+  `session.update()` once per frame. That call is the safe point: the poll
+  happens inside it, a ready candidate activates inside it, and the frame
+  resolves every entry through the one `current()` snapshot.
 - Each artifact is verified against the manifest's SHA-256 before
-  instantiation by `emscripten_loader`; a tampered digest would reject as an
+  instantiation by `emscripten_loader`; a tampered digest rejects as an
   integrity failure without touching the running behavior.
-- `main.cpp` calls `session.update()` once per frame. That call is the safe
-  point: the poll happens inside it, a ready candidate activates inside it,
-  and the frame resolves every entry through the one `current()` snapshot.
-- Behaviors share the `demo-ball-v1` ABI identity. Publishing a module with
-  a different `abi_id` or entry set would be rejected, leaving the previous
-  behavior active.
 
 A headless smoke check exists for quick verification without eyes — it
-applies the newest published generation and reports whether the world
-advanced:
+republishes through the `ball_reload` target and reports whether a polled
+generation applied and the world advanced:
 
 ```sh
-python3 publish.py 1   # have at least one generation published
+bash run_demo.sh &   # once, to configure and build
 python3 smoke.py
 ```

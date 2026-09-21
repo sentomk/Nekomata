@@ -31,6 +31,16 @@ struct publish_result {
   std::string generation_id;
 };
 
+/// One browser side module to publish behind one polled offer URL.
+struct wasm_publish_request {
+  std::filesystem::path offer_root; ///< served directory holding `latest` and `modules/`
+  std::string publication_key;      ///< publisher-side stream identity
+  std::string group_id;
+  std::string abi_id; ///< app-declared entry signatures and state layout
+  std::filesystem::path module_file;
+  std::vector<std::string> entries; ///< ordered entry membership the offer names
+};
+
 /// Publishes one complete, immutable generation under
 /// `<generation_root>/<publication_key>/` and releases its ready offer
 /// atomically. Concurrent publishers on one stream serialize under a stream
@@ -43,5 +53,15 @@ struct publish_result {
 /// Throws `std::runtime_error` for unusable inputs; filesystem failures
 /// leave only staging data behind, never a ready offer.
 [[nodiscard]] publish_result publish_generation(const publish_request& request);
+
+/// Publishes one `nekomata-wasm/1` offer under `<offer_root>`: the artifact
+/// staged at an immutable sequence-named path below `modules/`, and the
+/// manifest atomically replacing `latest` last — a crash leaves an
+/// unreferenced artifact, never a torn manifest. Same discipline as the
+/// managed stream: one lock serializes concurrent publishers, the sequence
+/// is strictly increasing, and the generation identity is deterministic in
+/// the ABI, module bytes, and entry membership. Throws `std::runtime_error`
+/// for unusable inputs.
+[[nodiscard]] publish_result publish_wasm_offer(const wasm_publish_request& request);
 
 } // namespace neko::detail
