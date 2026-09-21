@@ -239,11 +239,42 @@ Still planned on top of the offer: the poller now exists —
 offers through `compare_wasm_offers`, and hands superseding offers to the
 candidate lifecycle as observable events; its native suite drives it through
 mock fetchers. Session integration also exists in private form:
-`neko::wasm::reload_session` pins one group, polls inside `update()` — the
-same safe-point protocol as the native session — reports each generation
-exactly once as an applied or rejected transaction reusing `candidate_error`
-classification, and exposes the active snapshot for per-frame entry
-resolution.
+`neko::wasm::reload_session` pins one group, polls inside `update()`, reports
+completed candidates as applied or rejected transactions using `candidate_error`,
+and exposes the active snapshot for per-frame entry resolution. It has no
+`watch()`, `unwatch()` or public observation `snapshot()` yet. Sharing a safe
+point does not make its lifecycle equivalent to the native managed session.
+
+### Session lifecycle convergence
+
+The public backend must obey the existing
+[managed lifecycle contract](managed-reload-design.md), rather than expose
+the private browser session as a second public interface:
+
+| Operation | Required managed behavior |
+| --- | --- |
+| Construction | Register known groups, initially disabled. |
+| `watch()` / `watch(group_id)` | Idempotently enable all known groups or one group and start observation and preparation. |
+| `unwatch()` / `unwatch(group_id)` | Pause observation and consumption; retain the cursor, prepared work and unreported rejection. Applied code keeps running. |
+| Re-enable | Resume from the cursor; retained work is eligible for consumption unless superseded, without fetching already-observed generations again. |
+| `update()` | Consume enabled groups' prepared results at the application safe point; callbacks never activate code. |
+| `snapshot()` | Expose immutable observation state, independently from the callable entry set. |
+
+Unknown group IDs are configuration errors. A disabled group can retain
+`ready` or `failed` state, so `enabled` must be observed separately. Each group
+is its own transaction; disabling one must not block another enabled group.
+The native contract is covered by `neko.integration.session.lifecycle` in the
+ordinary platform and sanitizer CI jobs. Equivalent browser lifecycle and
+late-completion tests are still required; the existing browser fixtures do
+not establish watch/unwatch parity.
+
+Browser observation can use asynchronous event-loop scheduling instead of a
+native worker thread. Public integration also requires page-side group
+registration, unified transaction results, and a stable behavior-call seam.
+Adding a factory alone does not provide these capabilities, and the private
+`current()->entry(...)` access pattern is not a new public session promise.
+
+### Build integration and remaining work
 
 The demo at [`examples/wasm_reload`](../examples/wasm_reload/) consumes the
 same CMake registration as native groups: under the Emscripten toolchain,

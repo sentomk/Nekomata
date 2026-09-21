@@ -231,9 +231,11 @@ session.unwatch();
 ```
 
 All four operations are idempotent for known groups. An unknown ID is a
-configuration error. Disabling a group discards uncommitted prepared work but
-does not restore code already applied. Re-enabling resumes from the existing
-cursor and does not replay older generations.
+configuration error. Disabling a group retains prepared work and unreported
+rejections, but prevents their consumption by `update()` until re-enabled.
+It does not restore code already applied. Re-enabling resumes from the existing
+cursor and does not replay older generations; newer observations may supersede
+a retained result. See the [managed lifecycle contract](managed-reload-design.md).
 
 The GN label without its default toolchain is the default `group_id`, for
 example `//game:gameplay_hot`. A declaration may provide an explicit stable

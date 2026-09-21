@@ -177,12 +177,34 @@ public:
 are the same logical operation with different scope.
 
 `unwatch()` disables every group. `unwatch(group_id)` disables one group.
-Disabling prevents new discovery and discards uncommitted prepared work. It
-does not undo an applied generation.
+Disabling pauses new observation and prevents `update()` from committing or
+reporting that group's pending result. It retains already-prepared work and
+unreported rejections, and does not undo an applied generation. This matches
+the native runtime's pause behavior: the consumer cursor has already advanced
+past prepared work, so discarding it would lose that generation on resume.
 
 These four operations are idempotent for known groups. An unknown group ID is
 a configuration error. Re-enabling a group resumes from its existing consumer
 cursor and MUST NOT replay generations observed before it was disabled.
+
+After re-enabling, a retained result is eligible for the next `update()`;
+newer observations may supersede it under the normal newest-offer policy.
+Applying retained work is not replay: it was prepared but never committed.
+A retained rejection is reported at most once. A disabled group may therefore
+have `enabled == false` with a `ready` or `failed` snapshot state; disabling
+does not erase preparation state or diagnostics.
+
+An asynchronous backend need not physically abort an in-flight request when
+disabled. Its completion must not activate code or report a transaction outside
+`update()`, and no disabled group may commit. Already-started preparation may
+finish into retained pending state. The browser's late-completion handling
+still needs implementation and tests.
+
+The portable `neko.integration.session.lifecycle` suite exercises this contract
+through the public session with a supplied group registry, real publication
+files and the real preparation worker. It covers named and all-group pauses,
+retained preparation and rejection, cursor continuity, and group isolation.
+The ELF managed reload suite separately verifies real executable redirection.
 
 `watch()` activates discovery and preparation. Routine file I/O, parsing,
 symbol resolution, relocation, and validation SHOULD happen on an internal

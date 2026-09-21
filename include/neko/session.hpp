@@ -149,13 +149,19 @@ public:
   /// watches it disambiguates.
   void watch(const char* group_id);
 
-  /// Disable every managed group. Object watches are not affected. Idempotent.
+  /// Pause every managed group, retaining its cursor and pending result.
+  /// Disabled groups start no new observation and do not commit or report
+  /// pending results in update(). Already-started preparation may finish.
+  /// Object watches are not affected. Idempotent.
   void unwatch();
 
   /// Disable one managed group. Idempotent; an unknown ID is a configuration
   /// exception. Re-enabling a group resumes from its consumer cursor and
-  /// never replays generations already observed. Disabling never restores
-  /// applied machine code.
+  /// never replays generations already observed. Prepared work and unreported
+  /// rejections survive the pause; after re-enabling, update() may consume
+  /// them unless newer observations supersede them. Disabling never restores
+  /// applied machine code. An enabled flag and a ready/failed snapshot state
+  /// are independent: a disabled group can retain a pending result.
   void unwatch(std::string_view group_id);
 
   /// Literal overload for `unwatch(std::string_view)`.

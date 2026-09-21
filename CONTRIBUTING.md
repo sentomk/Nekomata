@@ -163,7 +163,7 @@ helpers and doctest.
 | `tests/unit/backends/elf/`, `tests/unit/backends/dwarf/` | offline ELF/DWARF parsing and metadata |
 | `tests/unit/tui/` | TUI layout and input behavior when `NEKOMATA_TUI=ON` |
 | `tests/contract/` | public-header hygiene and the API surface (`smoke`, `public_api`) |
-| `tests/integration/` | publisher acceptance and embedded-descriptor discovery |
+| `tests/integration/` | publisher acceptance, embedded-descriptor discovery and managed-session pause/resume lifecycle |
 | `tests/e2e/reload/managed/` | managed ELF end-to-end reload, state continuity, rejection recovery and unwatch/resume |
 | `examples/hello_reload/` | end-to-end reload: logic swap and state continuity |
 | `tests/e2e/reload/multi_tu/`, `tests/e2e/reload/atomicity/` | complete multi-object generations, all-or-nothing commit and recovery |

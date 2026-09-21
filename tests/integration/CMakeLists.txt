@@ -1,2 +1,3 @@
 add_subdirectory(publisher)
 add_subdirectory(descriptor_discovery)
+add_subdirectory(session_lifecycle)
