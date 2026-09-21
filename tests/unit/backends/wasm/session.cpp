@@ -2,17 +2,24 @@
 #include <doctest/doctest.h>
 
 #include <backends/wasm/session.hpp>
+#include <backends/wasm/session_error.hpp>
 
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace {
+using neko::reload_error_code;
+using neko::update_status;
 using namespace neko::wasm;
+
+static_assert(std::is_same_v<decltype(std::declval<reload_session&>().update()),
+                             decltype(std::declval<neko::reload_session&>().update())>);
 
 constexpr std::string_view a_digest =
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -95,7 +102,10 @@ public:
   module_entry entries[2];
   module_descriptor value{
       {module_interface_version, sizeof(module_descriptor)}, "test-v1", 2, entries};
-  const module_header* descriptor() const noexcept override { return &value.header; }
+  bool has_descriptor = true;
+  const module_header* descriptor() const noexcept override {
+    return has_descriptor ? &value.header : nullptr;
+  }
   void keep_resident() noexcept override {}
   ~test_image() override {
     if (released_ != nullptr) {
@@ -141,6 +151,96 @@ struct diagnostics_log {
 
 } // namespace
 
+TEST_CASE("candidate error classification uses the public rejection vocabulary") {
+  struct mapping {
+    candidate_error internal;
+    reload_error_code external;
+  };
+  constexpr mapping cases[] = {
+      {candidate_error::none, reload_error_code::none},
+      {candidate_error::invalid_contract, reload_error_code::invalid_artifact},
+      {candidate_error::load_failed, reload_error_code::object_rejected},
+      {candidate_error::integrity, reload_error_code::integrity},
+      {candidate_error::missing_descriptor, reload_error_code::object_rejected},
+      {candidate_error::incompatible, reload_error_code::incompatible},
+      {candidate_error::invalid_descriptor, reload_error_code::object_rejected},
+  };
+  for (const auto& entry : cases) {
+    CAPTURE(entry.internal);
+    CHECK(classify_candidate_error(entry.internal) == entry.external);
+    CHECK(classify_candidate_error(entry.internal) != reload_error_code::commit_failed);
+  }
+}
+
+TEST_CASE("session rejection preserves identity, diagnostics and the previous entry set") {
+  test_loader loader;
+  scripted_fetcher fetcher;
+  manual_scheduler scheduler;
+  reload_session session{loader, fetcher, scheduler, "offers/latest", "physics"};
+  session.watch();
+  poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest, "physics"));
+  loader.finish(std::make_unique<test_image>(behavior_a));
+  REQUIRE(session.update().any_applied());
+  const auto active = session.current();
+
+  auto image = std::make_unique<test_image>(behavior_b);
+  auto status = module_load_status::loaded;
+  auto expected_code = reload_error_code::object_rejected;
+  std::string diagnostic;
+  std::string expected_message;
+  SUBCASE("load failure is not classified from diagnostic words") {
+    image.reset();
+    status = module_load_status::load_failed;
+    diagnostic = "digest mismatch: this is only loader diagnostic text";
+    expected_message = diagnostic;
+  }
+  SUBCASE("digest mismatch does not require a diagnostic keyword") {
+    image.reset();
+    status = module_load_status::digest_mismatch;
+    diagnostic = "opaque loader diagnostic";
+    expected_code = reload_error_code::integrity;
+    expected_message = diagnostic;
+  }
+  SUBCASE("missing descriptor") {
+    image->has_descriptor = false;
+    expected_message = "missing wasm module descriptor";
+  }
+  SUBCASE("incompatible descriptor layout") {
+    ++image->value.header.version;
+    expected_code = reload_error_code::incompatible;
+    expected_message = "incompatible wasm descriptor layout";
+  }
+  SUBCASE("incompatible application ABI") {
+    image->value.abi_id = "other-abi";
+    expected_code = reload_error_code::incompatible;
+    expected_message = "wasm module ABI mismatch";
+  }
+  SUBCASE("incomplete entry set") {
+    image->value.entry_count = 1;
+    expected_message = "wasm entry membership mismatch";
+  }
+  SUBCASE("invalid entry address") {
+    image->entries[0].address = nullptr;
+    expected_message = "invalid wasm entry descriptor";
+  }
+
+  poll(scheduler, fetcher, offer_text(8, "gen-8", b_digest, "physics"));
+  loader.finish(std::move(image), std::move(diagnostic), status);
+  const neko::update_result result = session.update();
+  REQUIRE(result.events.size() == 1);
+  CHECK_FALSE(result.any_applied());
+  const auto& event = result.events.front();
+  CHECK(event.status == update_status::rejected);
+  CHECK(event.code == expected_code);
+  CHECK(event.group_id == "physics");
+  CHECK(event.generation_id == "gen-8");
+  CHECK(event.redirected_function_count == 0);
+  CHECK(event.message == expected_message);
+  CHECK(session.current() == active);
+  CHECK(session.current()->entry("tick") == behavior_a);
+  CHECK(session.update().events.empty());
+}
+
 TEST_CASE("an empty expected group is a configuration error") {
   test_loader loader;
   scripted_fetcher fetcher;
@@ -164,16 +264,19 @@ TEST_CASE("a ready generation applies at the update safe point") {
   // loading, so nothing applies yet.
   auto loading = session.update();
   CHECK(loading.events.empty());
+  CHECK_FALSE(loading.any_applied());
   CHECK(session.current() == nullptr);
 
   loader.finish(std::make_unique<test_image>(behavior_a));
   auto applied = session.update();
   REQUIRE(applied.events.size() == 1);
+  CHECK(applied.any_applied());
   const auto& event = applied.events.front();
   CHECK(event.status == update_status::applied);
-  CHECK(event.code == candidate_error::none);
+  CHECK(event.code == reload_error_code::none);
+  CHECK(event.group_id == "game");
   CHECK(event.generation_id == "gen-7");
-  CHECK(event.redirected_entry_count == 2);
+  CHECK(event.redirected_function_count == 2);
   CHECK(event.message.empty());
   REQUIRE(session.current() != nullptr);
   CHECK(session.current()->entry_count() == 2);
@@ -203,9 +306,12 @@ TEST_CASE("a rejected generation reports once and the active set survives") {
 
   auto rejected = session.update();
   REQUIRE(rejected.events.size() == 1);
+  CHECK_FALSE(rejected.any_applied());
   const auto& event = rejected.events.front();
   CHECK(event.status == update_status::rejected);
-  CHECK(event.code == candidate_error::integrity);
+  CHECK(event.code == reload_error_code::integrity);
+  CHECK(event.group_id == "game");
+  CHECK(event.redirected_function_count == 0);
   CHECK(event.generation_id == "gen-8");
   CHECK(event.message == "wasm artifact digest mismatch for 'modules/gen.wasm'");
 
@@ -392,7 +498,10 @@ TEST_CASE("manifest and artifact completions may finish while paused without act
   const auto result = session.update();
   REQUIRE(result.events.size() == 1);
   CHECK(result.events[0].status == (reject ? update_status::rejected : update_status::applied));
-  CHECK(result.events[0].code == (reject ? candidate_error::integrity : candidate_error::none));
+  CHECK(result.events[0].code == (reject ? reload_error_code::integrity : reload_error_code::none));
+  CHECK(result.events[0].group_id == "game");
+  CHECK(result.events[0].redirected_function_count == (reject ? 0 : 2));
+  CHECK(result.any_applied() == !reject);
   CHECK(result.events[0].generation_id == "gen-7");
   CHECK(result.events[0].message == (reject ? "bad digest" : ""));
   CHECK(session.update().events.empty());
@@ -469,7 +578,8 @@ TEST_CASE("an already rejected candidate remains reportable after pause") {
   const auto rejected = session.update();
   REQUIRE(rejected.events.size() == 1);
   CHECK(rejected.events[0].status == update_status::rejected);
-  CHECK(rejected.events[0].code == candidate_error::integrity);
+  CHECK(rejected.events[0].code == reload_error_code::integrity);
+  CHECK(rejected.events[0].group_id == "game");
   CHECK(rejected.events[0].message == "bad digest");
   CHECK(session.update().events.empty());
   CHECK(loader.opened_paths.size() == 1);

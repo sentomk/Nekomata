@@ -32,6 +32,15 @@ retained state. `update()` only consumes prepared results while enabled.
 Repeated enable/disable calls are idempotent; an unknown group is a
 configuration error. Old scheduling callbacks cannot revive after re-enable.
 
+The session returns `neko::update_result` directly. Both applied and rejected
+events identify their group and generation; only applied events report a
+nonzero `redirected_function_count`. `session_error.hpp` translates the
+candidate's typed error to `neko::reload_error_code`, preserving its diagnostic
+text. Load/descriptor failures are `object_rejected`, digest mismatches are
+`integrity`, and ABI/layout mismatches are `incompatible`. No candidate failure
+claims a rolled-back entry write through `commit_failed`. Sharing result types
+does not connect this private session to the public backend yet.
+
 `poll_scheduler` separates observation from frame commits. Its owning
 subscription stops scheduling when destroyed; the browser implementation
 uses a 100 ms event-loop interval. A session's loader, fetcher and scheduler

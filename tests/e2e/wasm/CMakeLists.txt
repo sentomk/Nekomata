@@ -49,7 +49,8 @@ foreach(runner IN ITEMS runner lifecycle scheduler session)
   if(runner STREQUAL "session")
     set(runner_sources ${session_sources})
     # The offer codec throws on malformed input; the poller catches it.
-    set(runner_flags -fexceptions -sDISABLE_EXCEPTION_CATCHING=0)
+    set(runner_flags -fexceptions -sDISABLE_EXCEPTION_CATCHING=0
+      "-I${PROJECT_SOURCE_DIR}/include")
   endif()
   add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${runner}.js" "${CMAKE_CURRENT_BINARY_DIR}/${runner}.wasm"
@@ -68,6 +69,8 @@ foreach(runner IN ITEMS runner lifecycle scheduler session)
       "${wasm_backend}/emscripten_scheduler.cpp" "${wasm_backend}/emscripten_scheduler.hpp"
       "${wasm_backend}/poll_scheduler.hpp"
       ${runner_sources} "${wasm_backend}/session.hpp" "${wasm_backend}/offer_poller.hpp"
+      "${wasm_backend}/session_error.hpp" "${PROJECT_SOURCE_DIR}/include/neko/session.hpp"
+      "${PROJECT_SOURCE_DIR}/include/neko/fwd.hpp"
       "${wasm_backend}/manifest_fetcher.hpp" "${PROJECT_SOURCE_DIR}/src/protocol/wasm_offer.hpp"
       "${PROJECT_SOURCE_DIR}/src/protocol/scanner.hpp"
       "${wasm_backend}/module_descriptor.hpp"

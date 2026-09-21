@@ -89,6 +89,10 @@ Every update checks exact world-field equality; every tick checks identity,
 age and generation-consistent behavior. Finally, the CMake target publishes
 C with an incompatible descriptor version. One rejection is reported; B
 continues advancing through repeated delivery of C without replaying it.
+The session returns the public `neko::update_result`; the browser checks the
+group identity, redirected-function count, public rejection code and
+`any_applied()` alongside world continuity. Native unit tests cover every
+candidate-to-public error mapping and retain the original diagnostic text.
 
 Download release and loader-completion observations establish ordering, not
 elapsed-time guesses. Deadlines only turn a stalled test into a failure. The

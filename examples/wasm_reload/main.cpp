@@ -70,10 +70,10 @@ std::string last_note = "waiting for the first generation";
 
 bool frame(double, void*) {
   for (const auto& event : session->update().events) {
-    if (event.status == neko::wasm::update_status::applied) {
+    if (event.status == neko::update_status::applied) {
       ++applied_total;
       last_note = "applied generation " + event.generation_id + " (" +
-                  std::to_string(event.redirected_entry_count) + " entries)";
+                  std::to_string(event.redirected_function_count) + " entries)";
       note(1, last_note.c_str());
     } else {
       ++rejected_total;

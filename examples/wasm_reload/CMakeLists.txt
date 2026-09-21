@@ -26,7 +26,8 @@ add_executable(page
   "${neko_root}/src/backends/wasm/emscripten_scheduler.cpp"
   "${neko_root}/src/protocol/wasm_offer.cpp"
   "${neko_root}/src/base/c/neko_sha256.c")
-target_include_directories(page PRIVATE "${neko_root}/src" "${CMAKE_CURRENT_LIST_DIR}")
+target_include_directories(page PRIVATE
+  "${neko_root}/src" "${neko_root}/include" "${CMAKE_CURRENT_LIST_DIR}")
 # Exceptions stay enabled for the page: the offer codec reports malformed
 # manifests by throwing. The side module keeps the fixture dialect.
 target_compile_options(page PRIVATE

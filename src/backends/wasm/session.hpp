@@ -5,35 +5,19 @@
 #include "offer_poller.hpp"
 #include "poll_scheduler.hpp"
 
-#include <cstddef>
+#include <neko/session.hpp>
+
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace neko::wasm {
-
-enum class update_status : std::uint8_t {
-  applied,  ///< the transaction redirected the live entry set
-  rejected, ///< the previous entry set stayed active; `message` says why
-};
-
-struct update_event {
-  update_status status = update_status::applied;
-  candidate_error code = candidate_error::none;
-  std::string generation_id;
-  std::size_t redirected_entry_count = 0;
-  std::string message;
-};
-
-struct update_result {
-  std::vector<update_event> events;
-};
 
 // The browser reload agent: one poller, one pending candidate, one active
 // module, all on the application event loop. watch() starts preparation;
 // update() only consumes prepared results at the application's safe point.
 // The application owns the world and keeps reloadable code quiescent during
-// update(). Rejection classification reuses candidate_error.
+// update(). Transactions use the public session result vocabulary; candidate
+// validation and the callable entry snapshot remain backend-private.
 class reload_session {
 public:
   using diagnostics_callback = offer_poller::event_callback;
@@ -57,7 +41,7 @@ public:
 
   // Pausing retains the consumer cursor and pending result, including an
   // in-flight completion. Disabled groups never commit or report a transaction.
-  [[nodiscard]] update_result update();
+  [[nodiscard]] ::neko::update_result update();
 
   // The owning, immutable snapshot of the active entry set. A frame should
   // retain one snapshot and resolve every entry through it, so identity and

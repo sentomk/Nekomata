@@ -258,9 +258,33 @@ another poll after disable or re-enable.
 `update()` only consumes prepared results while enabled. In-flight fetches
 may finish while paused, retaining a candidate or rejection for resume; they
 cannot activate it. Destruction cancels scheduling and invalidates outstanding
-observation callbacks. Applied/rejected results still use the private
-`candidate_error` vocabulary, and `current()` exposes the active entry set.
+observation callbacks. Transactions return the same `neko::update_result`
+defined in [`include/neko/session.hpp`](../include/neko/session.hpp), including
+`group_id`, `generation_id`, `redirected_function_count` and `any_applied()`.
+No second WASM result type or conversion wrapper is exposed. `current()`
+still exposes the private active entry set.
 Public observation `snapshot()` and multi-group registration are not implemented.
+
+Candidate validation retains its private `candidate_error` vocabulary.
+[`session_error.hpp`](../src/backends/wasm/session_error.hpp) maps that typed
+classification to the public result without parsing diagnostic messages:
+
+| Candidate error | Public `reload_error_code` |
+| --- | --- |
+| `none` | `none` |
+| `invalid_contract` | `invalid_artifact` |
+| `incompatible` | `incompatible` |
+| `integrity` | `integrity` |
+| `load_failed`, `missing_descriptor`, `invalid_descriptor` | `object_rejected` |
+
+`load_failed` currently combines transport, staging and instantiation failures;
+it cannot establish an integrity failure from its type alone. The session
+preserves the diagnostic text unchanged. A rejected event redirects zero
+functions and retains the active entry set. An activation refusal before any
+entry switch is also `object_rejected`, not `commit_failed`: the latter is
+reserved for an entry write that failed and was successfully rolled back.
+Manifest transport/codec diagnostics and ignored offers remain observation
+diagnostics, not generation transactions.
 
 ### Session lifecycle convergence
 
@@ -291,7 +315,7 @@ and world continuity; it is not evidence for the still-pending public backend.
 
 Browser observation uses asynchronous event-loop scheduling instead of a
 native worker thread. Public integration still requires page-side group
-registration, unified transaction results, and a stable behavior-call seam.
+registration, observation snapshots, and a stable behavior-call seam.
 Adding a factory alone does not provide these capabilities, and the private
 `current()->entry(...)` access pattern is not a new public session promise.
 

@@ -1,4 +1,5 @@
 #include "session.hpp"
+#include "session_error.hpp"
 
 #include <stdexcept>
 #include <utility>
@@ -71,7 +72,7 @@ void reload_session::unwatch(std::string_view group_id) {
   unwatch();
 }
 
-update_result reload_session::update() {
+::neko::update_result reload_session::update() {
   update_result result;
   if (!observation_) {
     return result;
@@ -84,6 +85,7 @@ update_result reload_session::update() {
   }
 
   update_event event;
+  event.group_id = group_id_;
   event.generation_id = accepted->generation_id;
   switch (pending->status()) {
   case candidate_status::ready:
@@ -91,16 +93,16 @@ update_result reload_session::update() {
     // itself performs no allocation, validation, or behavior invocation.
     if (active_.activate(*pending)) {
       event.status = update_status::applied;
-      event.redirected_entry_count = active_.current()->entry_count();
+      event.redirected_function_count = active_.current()->entry_count();
     } else {
       event.status = update_status::rejected;
-      event.code = candidate_error::invalid_contract;
+      event.code = reload_error_code::object_rejected;
       event.message = "activation refused a ready candidate";
     }
     break;
   case candidate_status::rejected:
     event.status = update_status::rejected;
-    event.code = pending->error();
+    event.code = classify_candidate_error(pending->error());
     event.message = std::string{pending->message()};
     break;
   case candidate_status::loading:

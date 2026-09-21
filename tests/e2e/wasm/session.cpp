@@ -11,6 +11,9 @@
 #include <utility>
 
 namespace {
+using neko::reload_error_code;
+using neko::update_result;
+using neko::update_status;
 using namespace neko::wasm;
 
 // Observe real HTTP and loader completions without replacing their behavior.
@@ -113,8 +116,9 @@ update_result safe_update() {
 void require_applied(const update_result& result) {
   require(result.events.size() == 1, "expected exactly one generation transaction");
   const auto& event = result.events.front();
-  require(event.status == update_status::applied && event.code == candidate_error::none &&
-              event.redirected_entry_count == 2 && !event.generation_id.empty(),
+  require(result.any_applied() && event.status == update_status::applied &&
+              event.code == reload_error_code::none && event.group_id == "flock" &&
+              event.redirected_function_count == 2 && !event.generation_id.empty(),
           "generation did not apply its entire entry set");
 }
 
@@ -231,9 +235,9 @@ bool frame(double, void*) {
     if (!result.events.empty()) {
       require(result.events.size() == 1, "C produced multiple transactions");
       const auto& event = result.events.front();
-      require(event.status == update_status::rejected &&
-                  event.code == candidate_error::incompatible &&
-                  event.redirected_entry_count == 0 && !event.message.empty() &&
+      require(!result.any_applied() && event.status == update_status::rejected &&
+                  event.code == reload_error_code::incompatible && event.group_id == "flock" &&
+                  event.redirected_function_count == 0 && !event.message.empty() &&
                   !event.generation_id.empty() && event.generation_id != applied_a &&
                   event.generation_id != applied_b,
               "C did not report an incompatible-generation rejection");
