@@ -9,3 +9,9 @@ nekomata_add_unit_test(
   SOURCES offer_poller.cpp
   LIBRARIES neko_wasm_candidate
   PRIVATE_INCLUDES "${PROJECT_SOURCE_DIR}/src")
+
+nekomata_add_unit_test(
+  NAME unit.backends.wasm.session
+  SOURCES session.cpp
+  LIBRARIES neko_wasm_candidate
+  PRIVATE_INCLUDES "${PROJECT_SOURCE_DIR}/src")

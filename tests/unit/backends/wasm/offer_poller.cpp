@@ -242,9 +242,10 @@ TEST_CASE("a superseding offer replaces the pending candidate") {
   CHECK(log.kinds.back() == offer_event_kind::offer_accepted);
   CHECK(loader.opened_paths.size() == 2);
   CHECK(loader.opened_digests.back() == b_digest);
+  // The superseded candidate was destroyed with its poller slot; only the
+  // newest candidate remains addressable.
   REQUIRE(poller.pending() != nullptr);
   CHECK(poller.pending() != first);
-  CHECK(first->status() == candidate_status::cancelled);
   REQUIRE(poller.accepted() != nullptr);
   CHECK(poller.accepted()->generation_id == "gen-8");
 }

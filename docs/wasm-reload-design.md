@@ -1,8 +1,10 @@
 # Browser WASM hot-reload design
 
-Status: the private candidate lifecycle is implemented. Remote generation
-delivery, integration with `neko::reload_session`, and a public WASM backend
-are planned. This document distinguishes those goals from the current code.
+Status: the private candidate lifecycle, HTTP-polling delivery with digest
+verification, and the private browser reload session are implemented. A
+public WASM backend, application-facing CMake integration, and a browser
+demo are planned. This document distinguishes those goals from the current
+code.
 
 ## Purpose and scope
 
@@ -58,6 +60,7 @@ Its headers are private, not a supported application API.
 | `candidate` | Validate a requested contract and own the prepared result until activation or discard. |
 | `prepared_module` | Own a copied entry set and its image; provide immutable lookup to callers. |
 | `active_module` | Consume a ready candidate and replace the complete active entry set. |
+| `reload_session` | Own the poller and the active module; report generation transactions at the application's safe point. |
 | Application | Own persistent state, define entry signatures, and establish the safe point. |
 
 The current browser fixtures compile a persistent Emscripten main module and
@@ -235,10 +238,15 @@ Still planned on top of the offer: the poller now exists —
 `offer_poller` fetches the manifest URL on the application event loop, orders
 offers through `compare_wasm_offers`, and hands superseding offers to the
 candidate lifecycle as observable events; its native suite drives it through
-mock fetchers, and the browser adapter awaits its first Chrome run with the
-demo. What remains is session integration: pinning the group identity,
-connecting prepared candidates to safe-point activation through the library's
-reload model, and application-facing reporting on top of these events.
+mock fetchers. Session integration also exists in private form:
+`neko::wasm::reload_session` pins one group, polls inside `update()` — the
+same safe-point protocol as the native session — reports each generation
+exactly once as an applied or rejected transaction reusing `candidate_error`
+classification, and exposes the active snapshot for per-frame entry
+resolution. What remains is the first browser run of the poller and session
+through the demo, then public backend factories, application-facing CMake
+integration, and the convergence of the two event vocabularies at that
+factory boundary.
 
 Session integration must connect preparation and safe-point activation to the
 library's reload model without making the browser loader responsible for

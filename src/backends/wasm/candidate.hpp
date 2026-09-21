@@ -65,6 +65,7 @@ enum class candidate_error : std::uint8_t {
 class prepared_module {
 public:
   [[nodiscard]] module_function entry(std::string_view name) const noexcept;
+  [[nodiscard]] std::size_t entry_count() const noexcept { return entries_.size(); }
 
 private:
   friend class candidate;

@@ -21,6 +21,7 @@ struct offer_poller::state {
   manifest_fetcher* fetcher = nullptr;
   std::string manifest_url;
   event_callback on_event;
+  std::string expected_group;
   bool fetching = false;
   std::optional<::neko::detail::wasm_offer> last;
   std::unique_ptr<candidate> pending;
@@ -36,6 +37,13 @@ struct offer_poller::state {
       offer = ::neko::detail::parse_wasm_offer(fetched.text, manifest_url);
     } catch (const ::neko::detail::wasm_offer_error& error) {
       deliver_event(on_event, offer_event_kind::manifest_invalid, error.what());
+      return;
+    }
+
+    if (!expected_group.empty() && offer.group_id != expected_group) {
+      deliver_event(on_event, offer_event_kind::offer_ignored,
+                    "offer group '" + offer.group_id + "' does not match watched group '" +
+                        expected_group + "'");
       return;
     }
 
@@ -85,12 +93,14 @@ std::string resolve_artifact_url(std::string_view manifest_url, std::string_view
 }
 
 offer_poller::offer_poller(module_loader& loader, manifest_fetcher& fetcher,
-                           std::string manifest_url, event_callback on_event)
+                           std::string manifest_url, event_callback on_event,
+                           std::string expected_group)
     : state_(std::make_shared<state>()) {
   state_->loader = &loader;
   state_->fetcher = &fetcher;
   state_->manifest_url = std::move(manifest_url);
   state_->on_event = std::move(on_event);
+  state_->expected_group = std::move(expected_group);
   if (state_->manifest_url.empty()) {
     throw std::runtime_error("offer_poller: manifest URL must not be empty");
   }

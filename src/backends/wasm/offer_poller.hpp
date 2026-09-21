@@ -38,15 +38,15 @@ struct offer_event {
 // the polling cadence. Ordering follows `compare_wasm_offers` against the
 // last accepted offer: a superseding offer replaces the pending candidate,
 // and acceptance is delivery bookkeeping, not a promise the candidate will
-// validate. The application keeps the safe point and activates through
-// `active_module`. One poller watches one group; pinning the group identity
-// arrives with session integration.
+// validate. A nonempty `expected_group` pins the watched group: offers for
+// any other group are ignored without becoming the ordering reference. The
+// application keeps the safe point and activates through `active_module`.
 class offer_poller {
 public:
   using event_callback = std::function<void(const offer_event&)>;
 
   offer_poller(module_loader& loader, manifest_fetcher& fetcher, std::string manifest_url,
-               event_callback on_event = {});
+               event_callback on_event = {}, std::string expected_group = {});
   ~offer_poller();
   offer_poller(const offer_poller&) = delete;
   offer_poller& operator=(const offer_poller&) = delete;
