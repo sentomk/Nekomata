@@ -34,8 +34,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--browser", required=True)
     parser.add_argument("--root", required=True, type=pathlib.Path)
-    parser.add_argument("--runner", choices=("runner", "lifecycle", "scheduler"), default="runner")
+    parser.add_argument("--runner", choices=("runner", "lifecycle", "scheduler", "session"),
+                        default="runner")
+    for tool in ("cmake", "emcmake", "ninja", "publisher"):
+        parser.add_argument("--" + tool)
     args = parser.parse_args()
+    scenario = None
+    if args.runner == "session":
+        if not all((args.cmake, args.emcmake, args.ninja, args.publisher)):
+            parser.error("session requires --cmake, --emcmake, --ninja and --publisher")
+        from session_fixture import session_fixture
+        scenario = session_fixture(args)
+        args.root = scenario.public
     completed = threading.Event()
     a_frame = threading.Event()
     lifecycle_frame = threading.Event()
@@ -46,6 +56,8 @@ def main():
             pass
 
         def do_GET(self):
+            if scenario is not None and scenario.before_get(self):
+                return
             if self.path in ("/late.wasm", "/abandoned.wasm"):
                 if not lifecycle_frame.wait(timeout=10):
                     self.send_error(504, "lifecycle frame did not run")
@@ -58,6 +70,8 @@ def main():
             super().do_GET()
 
         def do_POST(self):
+            if scenario is not None and scenario.post(self):
+                return
             if self.path == "/lifecycle-frame":
                 lifecycle_frame.set()
                 self.send_response(204)
@@ -100,7 +114,7 @@ def main():
                 f"http://127.0.0.1:{server.server_port}/index.html?runner={args.runner}",
             ], stdout=browser_log, stderr=browser_log)
             try:
-                deadline = time.monotonic() + 40
+                deadline = time.monotonic() + (90 if scenario is not None else 40)
                 while not completed.wait(0.1):
                     if browser.poll() is not None or time.monotonic() >= deadline:
                         browser_log.seek(0)
@@ -123,6 +137,8 @@ def main():
         server.shutdown()
         server.server_close()
         thread.join()
+        if scenario is not None:
+            scenario.close()
 
 
 if __name__ == "__main__":

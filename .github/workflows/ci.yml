@@ -62,13 +62,14 @@ jobs:
           .tools/emsdk/emsdk install 6.0.9
           .tools/emsdk/emsdk activate 6.0.9
 
-      - name: Build and test WASM candidates in Chrome
+      - name: Build and test WASM reload lifecycle in Chrome
         run: |
           source .tools/emsdk/emsdk_env.sh
           em++ --version
           google-chrome --version
           bash scripts/configure.sh debug \
             -DNEKOMATA_TEST_WASM=ON \
+            -DNEKOMATA_BUILD_TOOLS=ON \
             -DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF \
             -DNEKOMATA_WASM_BROWSER="$(command -v google-chrome)"
           # Exercise the native managed lifecycle alongside the WASM suites
@@ -78,7 +79,10 @@ jobs:
             neko_unit_backends_wasm_offer_poller \
             neko_unit_backends_wasm_session \
             neko_integration_session_lifecycle
-          bash scripts/test.sh debug -R '^neko\.((unit\.backends|e2e)\.wasm\.|integration\.session\.lifecycle$)' --no-tests=error
+          bash scripts/test.sh debug -R '^neko\.((unit\.backends|e2e)\.wasm\.|integration\.session\.lifecycle$)' \
+            -E '^neko\.e2e\.wasm\.session_lifecycle$' --no-tests=error
+          # Keep the CMake publisher-to-browser acceptance gate explicit.
+          bash scripts/test.sh debug -R '^neko\.e2e\.wasm\.session_lifecycle$' --no-tests=error
 
       - name: Preserve test diagnostics
         if: failure()

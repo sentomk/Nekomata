@@ -41,15 +41,25 @@ add_custom_command(
     "${PROJECT_SOURCE_DIR}/src/base/c/neko_sha256.c"
     -o "${CMAKE_CURRENT_BINARY_DIR}/neko_sha256.o"
   DEPENDS "${PROJECT_SOURCE_DIR}/src/base/c/neko_sha256.c" VERBATIM)
-foreach(runner IN ITEMS runner lifecycle scheduler)
+set(session_sources "${wasm_backend}/offer_poller.cpp" "${wasm_backend}/session.cpp"
+  "${PROJECT_SOURCE_DIR}/src/protocol/wasm_offer.cpp")
+foreach(runner IN ITEMS runner lifecycle scheduler session)
+  set(runner_sources "")
+  set(runner_flags "")
+  if(runner STREQUAL "session")
+    set(runner_sources ${session_sources})
+    # The offer codec throws on malformed input; the poller catches it.
+    set(runner_flags -fexceptions -sDISABLE_EXCEPTION_CATCHING=0)
+  endif()
   add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${runner}.js" "${CMAKE_CURRENT_BINARY_DIR}/${runner}.wasm"
-    COMMAND "${NEKOMATA_EMXX}" ${wasm_flags} -sMAIN_MODULE=1 -sENVIRONMENT=web
+    COMMAND "${NEKOMATA_EMXX}" ${wasm_flags} ${runner_flags} -sMAIN_MODULE=1 -sENVIRONMENT=web
       -sALLOW_MEMORY_GROWTH=1 -sFETCH=1
       "-I${CMAKE_CURRENT_BINARY_DIR}"
       "${CMAKE_CURRENT_SOURCE_DIR}/${runner}.cpp"
       "${wasm_backend}/candidate.cpp" "${wasm_backend}/emscripten_loader.cpp"
       "${wasm_backend}/emscripten_scheduler.cpp"
+      ${runner_sources}
       "${CMAKE_CURRENT_BINARY_DIR}/neko_sha256.o"
       -o "${CMAKE_CURRENT_BINARY_DIR}/${runner}.js"
     DEPENDS "${runner}.cpp" contract.hpp "${CMAKE_CURRENT_BINARY_DIR}/fixture_digests.h"
@@ -57,6 +67,9 @@ foreach(runner IN ITEMS runner lifecycle scheduler)
       "${wasm_backend}/emscripten_loader.cpp" "${wasm_backend}/emscripten_loader.hpp"
       "${wasm_backend}/emscripten_scheduler.cpp" "${wasm_backend}/emscripten_scheduler.hpp"
       "${wasm_backend}/poll_scheduler.hpp"
+      ${runner_sources} "${wasm_backend}/session.hpp" "${wasm_backend}/offer_poller.hpp"
+      "${wasm_backend}/manifest_fetcher.hpp" "${PROJECT_SOURCE_DIR}/src/protocol/wasm_offer.hpp"
+      "${PROJECT_SOURCE_DIR}/src/protocol/scanner.hpp"
       "${wasm_backend}/module_descriptor.hpp"
       "${CMAKE_CURRENT_BINARY_DIR}/neko_sha256.o" VERBATIM)
 endforeach()
@@ -84,6 +97,7 @@ add_custom_target(neko_wasm_fixtures ALL DEPENDS
   "${CMAKE_CURRENT_BINARY_DIR}/runner.js" "${CMAKE_CURRENT_BINARY_DIR}/runner.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/lifecycle.js" "${CMAKE_CURRENT_BINARY_DIR}/lifecycle.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/scheduler.js" "${CMAKE_CURRENT_BINARY_DIR}/scheduler.wasm"
+  "${CMAKE_CURRENT_BINARY_DIR}/session.js" "${CMAKE_CURRENT_BINARY_DIR}/session.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/late.wasm" "${CMAKE_CURRENT_BINARY_DIR}/abandoned.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/a.wasm" "${CMAKE_CURRENT_BINARY_DIR}/b.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/incompatible.wasm"
@@ -100,3 +114,16 @@ add_test(NAME neko.e2e.wasm.poll_scheduler
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_browser.py"
     --browser "${NEKOMATA_WASM_BROWSER}" --root "${CMAKE_CURRENT_BINARY_DIR}" --runner scheduler)
 set_tests_properties(neko.e2e.wasm.poll_scheduler PROPERTIES TIMEOUT 60 LABELS "e2e;wasm")
+
+if(TARGET neko_publisher)
+  find_program(NEKOMATA_EMCMAKE NAMES emcmake REQUIRED)
+  get_filename_component(build_tool_dir "${CMAKE_MAKE_PROGRAM}" DIRECTORY)
+  find_program(NEKOMATA_WASM_NINJA NAMES ninja HINTS "${build_tool_dir}" REQUIRED)
+  add_dependencies(neko_wasm_fixtures neko_publisher)
+  add_test(NAME neko.e2e.wasm.session_lifecycle
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_browser.py"
+      --browser "${NEKOMATA_WASM_BROWSER}" --root "${CMAKE_CURRENT_BINARY_DIR}" --runner session
+      --cmake "${CMAKE_COMMAND}" --emcmake "${NEKOMATA_EMCMAKE}"
+      --ninja "${NEKOMATA_WASM_NINJA}" --publisher "$<TARGET_FILE:neko_publisher>")
+  set_tests_properties(neko.e2e.wasm.session_lifecycle PROPERTIES TIMEOUT 180 LABELS "e2e;wasm")
+endif()

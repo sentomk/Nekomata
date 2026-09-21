@@ -204,6 +204,12 @@ execution tests the lifecycle logic, not execution of WASM in a native host.
   invocation of committed code after all C++ owners are gone.
 - `neko.e2e.wasm.poll_scheduler` checks deferred browser timer callbacks,
   subscription ownership, cancellation, and self-destruction during a callback.
+- `neko.e2e.wasm.session_lifecycle` publishes real CMake-built generations over
+  HTTP to the private session. It checks disabled observation, preparation
+  without frame updates, an artifact finishing while paused, retained work
+  committed on resume, exact world-state continuity and one incompatible
+  generation rejection followed by continued old-code execution. Server gates
+  establish download ordering; the fixture observes real loader completions.
 
 The [`wasm` CI job](../.github/workflows/ci.yml) pins Emscripten 6.0.9, builds
 the main and side modules, and runs native lifecycle tests plus the browser
@@ -279,7 +285,9 @@ ordinary platform and sanitizer CI jobs. The WASM session unit suite drives
 observation separately from commits and covers pauses before and after
 completion, cursor retention, old ticks after resume, scheduling failure, and
 destruction with outstanding requests. The real browser scheduler is tested
-separately. Full browser session pause/resume delivery coverage is still required.
+separately. `neko.e2e.wasm.session_lifecycle` covers the CMake publisher-to-HTTP
+pause/resume path with the private session, including late artifact completion
+and world continuity; it is not evidence for the still-pending public backend.
 
 Browser observation uses asynchronous event-loop scheduling instead of a
 native worker thread. Public integration still requires page-side group
