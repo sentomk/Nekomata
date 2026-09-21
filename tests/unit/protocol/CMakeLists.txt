@@ -11,6 +11,12 @@ nekomata_add_unit_test(
   LIBRARIES nekomata::neko)
 
 nekomata_add_unit_test(
+  NAME unit.protocol.wasm_offer
+  SOURCES wasm_offer.cpp
+  PRIVATE_INCLUDES "${PROJECT_SOURCE_DIR}/src"
+  LIBRARIES nekomata::neko)
+
+nekomata_add_unit_test(
   NAME unit.protocol.descriptor_section
   SOURCES descriptor_section.cpp
   PRIVATE_INCLUDES "${PROJECT_SOURCE_DIR}/src"

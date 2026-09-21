@@ -203,15 +203,30 @@ This CMake registration is test infrastructure, not application build integratio
 
 ## Remaining design work
 
-The next layers must supply complete generation identity and immutable
-artifacts, integrity and compatibility checks before instantiation where
-possible, delivery ordering and supersession policy, and observable acceptance
-or rejection results. Their transport and metadata format are not selected by
-the candidate implementation. Reusing the existing format identifiers was
-considered and rejected: `nekomata-publisher-request` describes build inputs
-before a generation exists, and the managed `nekomata-generation/2` manifest
-has member rows that do not fit one artifact with an ordered entry set. The
-browser manifest format will be selected together with its transport.
+Delivery is selected: HTTP polling. The page fetches a stable manifest URL
+on the application event loop; artifacts live at immutable paths and are
+fetched independently; a lower `sequence` is ignored and an equal `sequence`
+must repeat the identical offer, because one sequence slot belongs to one
+immutable generation. Long-polling is a later optimization; WebSocket and
+SSE push were rejected as dependency weight for the development loop.
+
+The metadata format is selected with that transport: the
+[`nekomata-wasm/1`](../src/protocol/wasm_offer.hpp) offer codec — one
+immutable artifact with its SHA-256, the ordered entry set, the declared
+`abi_id`, and the supersession `sequence`. Reusing the existing format
+identifiers was considered and rejected: `nekomata-publisher-request/1`
+describes build inputs before a generation exists, and the managed
+`nekomata-generation/2` manifest has member rows that do not fit one
+artifact with an ordered entry set. Build-provenance rows are deliberately
+absent until a consumer exists. The codec touches neither network nor
+filesystem; ordering decisions are a pure comparison on the value.
+
+Still planned on top of the offer: the bytes-first loader pipeline — fetch
+the artifact, verify its SHA-256 before instantiation, then instantiate —
+which is the only place the digest and the pre-instantiation `abi_id` gate
+acquire teeth; the poller that drives the fetch and hands validated offers
+to the candidate lifecycle; and observable acceptance or rejection results
+for the application.
 
 Session integration must connect preparation and safe-point activation to the
 library's reload model without making the browser loader responsible for
