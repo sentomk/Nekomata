@@ -20,24 +20,35 @@ public:
   virtual void keep_resident() noexcept = 0;
 };
 
+// Outcome classification supplied by the loader for an imageless result.
+enum class module_load_status : std::uint8_t { loaded, load_failed, digest_mismatch };
+
 struct module_load_result {
   std::unique_ptr<module_image> image;
   std::string message;
+  // Digest mismatches classify as `integrity` failures; every other
+  // imageless result is an ordinary load failure.
+  module_load_status status = module_load_status::loaded;
 };
 
 class module_loader {
 public:
   using completion = std::function<void(module_load_result)>;
   virtual ~module_loader() = default;
-  // Own the path and completion until delivering exactly one result on the
-  // calling event loop. Completion may also run before open() returns.
-  virtual void open(std::string path, completion complete) = 0;
+  // Own the path, expected SHA-256, and completion until delivering exactly
+  // one result on the calling event loop. The digest must be verified
+  // against the fetched bytes before instantiation when the loader has
+  // them; loaders without byte access cannot fake that guarantee.
+  virtual void open(std::string path, std::string_view sha256, completion complete) = 0;
 };
 
 struct module_contract {
   std::string abi_id;
   // Exact ordered membership; abi_id also covers each entry's signature.
   std::vector<std::string> entries;
+  // Expected SHA-256 of the artifact bytes: 64 lowercase hex digits. The
+  // contract never trusts an unverified artifact.
+  std::string sha256;
 };
 
 enum class candidate_status : std::uint8_t { loading, ready, rejected, cancelled, activated };
@@ -45,6 +56,7 @@ enum class candidate_error : std::uint8_t {
   none,
   invalid_contract,
   load_failed,
+  integrity,
   missing_descriptor,
   incompatible,
   invalid_descriptor,

@@ -1,5 +1,6 @@
 # These fixtures cross-compile independently of the native project toolchain.
 find_program(NEKOMATA_EMXX NAMES em++ REQUIRED)
+find_program(NEKOMATA_EMCC NAMES emcc REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_program(NEKOMATA_WASM_BROWSER
   NAMES chromium chromium-browser google-chrome chrome
@@ -34,18 +35,40 @@ foreach(generation IN ITEMS a b incompatible incomplete)
     DEPENDS generation.cpp contract.hpp
       "${wasm_backend}/module_descriptor.hpp" "${wasm_backend}/candidate.hpp" VERBATIM)
 endforeach()
+add_custom_command(
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/neko_sha256.o"
+  COMMAND "${NEKOMATA_EMCC}" -c -Wall -Wextra -Werror -O2
+    "${PROJECT_SOURCE_DIR}/src/base/c/neko_sha256.c"
+    -o "${CMAKE_CURRENT_BINARY_DIR}/neko_sha256.o"
+  DEPENDS "${PROJECT_SOURCE_DIR}/src/base/c/neko_sha256.c" VERBATIM)
 foreach(runner IN ITEMS runner lifecycle)
   add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${runner}.js" "${CMAKE_CURRENT_BINARY_DIR}/${runner}.wasm"
     COMMAND "${NEKOMATA_EMXX}" ${wasm_flags} -sMAIN_MODULE=1 -sENVIRONMENT=web
-      -sALLOW_MEMORY_GROWTH=1 "${CMAKE_CURRENT_SOURCE_DIR}/${runner}.cpp"
+      -sALLOW_MEMORY_GROWTH=1 -sFETCH=1
+      "-I${CMAKE_CURRENT_BINARY_DIR}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/${runner}.cpp"
       "${wasm_backend}/candidate.cpp" "${wasm_backend}/emscripten_loader.cpp"
+      "${CMAKE_CURRENT_BINARY_DIR}/neko_sha256.o"
       -o "${CMAKE_CURRENT_BINARY_DIR}/${runner}.js"
-    DEPENDS "${runner}.cpp" contract.hpp
+    DEPENDS "${runner}.cpp" contract.hpp "${CMAKE_CURRENT_BINARY_DIR}/fixture_digests.h"
       "${wasm_backend}/candidate.cpp" "${wasm_backend}/candidate.hpp"
       "${wasm_backend}/emscripten_loader.cpp" "${wasm_backend}/emscripten_loader.hpp"
-      "${wasm_backend}/module_descriptor.hpp" VERBATIM)
+      "${wasm_backend}/module_descriptor.hpp"
+      "${CMAKE_CURRENT_BINARY_DIR}/neko_sha256.o" VERBATIM)
 endforeach()
+add_custom_command(
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/fixture_digests.h"
+  COMMAND "${CMAKE_COMMAND}"
+    "-DOUT=${CMAKE_CURRENT_BINARY_DIR}/fixture_digests.h"
+    "-DA=${CMAKE_CURRENT_BINARY_DIR}/a.wasm"
+    "-DB=${CMAKE_CURRENT_BINARY_DIR}/b.wasm"
+    "-DINCOMPATIBLE=${CMAKE_CURRENT_BINARY_DIR}/incompatible.wasm"
+    "-DINCOMPLETE=${CMAKE_CURRENT_BINARY_DIR}/incomplete.wasm"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/generate_digests.cmake"
+  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/a.wasm" "${CMAKE_CURRENT_BINARY_DIR}/b.wasm"
+    "${CMAKE_CURRENT_BINARY_DIR}/incompatible.wasm"
+    "${CMAKE_CURRENT_BINARY_DIR}/incomplete.wasm" VERBATIM)
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/late.wasm" "${CMAKE_CURRENT_BINARY_DIR}/abandoned.wasm"
   COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_CURRENT_BINARY_DIR}/a.wasm"

@@ -36,13 +36,15 @@ the next three ticks must execute it on the existing world. Both the identity
 and update entries must come from the same generation.
 
 After activation the suite offers an incompatible interface version, a null
-update entry and a missing artifact, in that order. Each must produce its
-expected backend rejection classification without changing the active module.
-The world must continue advancing under B for at least three frames after
-each rejection. This validates cooperative fixture activation, not arbitrary
-module initialization rollback, thread safety or production ABI validation.
-The incompatible fixture deliberately retains the same descriptor prefix;
-the version check happens after loading, before accessing its function entries.
+update entry, a missing artifact, and real bytes with a tampered digest, in
+that order. Each must produce its expected backend rejection classification
+without changing the active module; the digest mismatch is caught before
+instantiation. The world must continue advancing under B for at least three
+frames after each rejection. This validates cooperative fixture activation,
+not arbitrary module initialization rollback, thread safety or production ABI
+validation. The incompatible fixture deliberately retains the same descriptor
+prefix; the version check happens after loading, before accessing its
+function entries.
 
 No `neko::reload_session` or public WASM backend is introduced here. Remote
 generation streams, artifact digests, pre-instantiation ABI metadata and old
@@ -54,8 +56,9 @@ runner's Chrome. Candidate ownership and validation tests also run in the
 ordinary native and sanitizer jobs. CI uploads CTest diagnostics on failure.
 
 `candidate_lifetime` drives actual late loader callbacks after cancellation,
-candidate destruction and loader destruction, then checks synchronous cached
-completion and ready-candidate cancellation. Finally it destroys every C++
-owner of a committed module and calls a saved entry to verify page residency.
-The server holds the first response until a browser frame releases it, so the
+candidate destruction and loader destruction, then checks cached completion
+on the event loop and ready-candidate cancellation. Finally it destroys every
+C++ owner of a committed module and calls a saved entry to verify page
+residency. The server holds the first response until a browser frame releases
+it, so the
 cancelled request cannot complete early by accident.

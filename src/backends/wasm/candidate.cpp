@@ -5,6 +5,25 @@
 
 namespace neko::wasm {
 
+namespace {
+
+// The contract accepts exactly the digest spelling the offer codec writes:
+// 64 lowercase hexadecimal digits.
+bool is_digest_shape(std::string_view value) {
+  if (value.size() != 64) {
+    return false;
+  }
+  for (const char digit : value) {
+    const auto byte = static_cast<unsigned char>(digit);
+    if (!((byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+} // namespace
+
 struct candidate::state {
   candidate_status status = candidate_status::loading;
   candidate_error error = candidate_error::none;
@@ -37,6 +56,10 @@ candidate::candidate(module_loader& loader, std::string path, module_contract co
     state_->reject(candidate_error::invalid_contract, "invalid wasm module contract");
     return;
   }
+  if (!is_digest_shape(expected.sha256)) {
+    state_->reject(candidate_error::invalid_contract, "invalid wasm artifact digest");
+    return;
+  }
   for (auto it = expected.entries.begin(); it != expected.entries.end(); ++it) {
     if (it->empty() || it->find('\0') != std::string::npos ||
         std::find(expected.entries.begin(), it, *it) != it) {
@@ -45,56 +68,65 @@ candidate::candidate(module_loader& loader, std::string path, module_contract co
     }
   }
 
-  loader.open(std::move(path), [weak = std::weak_ptr<state>{state_}](module_load_result result) {
-    const auto pending = weak.lock();
-    if (!pending || pending->status != candidate_status::loading) {
-      return;
-    }
-    if (!result.image) {
-      pending->reject(candidate_error::load_failed, result.message.empty()
-                                                        ? "wasm module load failed"
-                                                        : std::move(result.message));
-      return;
-    }
-    const auto* header = result.image->descriptor();
-    if (header == nullptr) {
-      pending->reject(candidate_error::missing_descriptor, "missing wasm module descriptor");
-      return;
-    }
-    if (header->version != module_interface_version || header->size != sizeof(module_descriptor)) {
-      pending->reject(candidate_error::incompatible, "incompatible wasm descriptor layout");
-      return;
-    }
-    const auto& descriptor = *reinterpret_cast<const module_descriptor*>(header);
-    if (descriptor.abi_id == nullptr || pending->contract.abi_id != descriptor.abi_id) {
-      pending->reject(candidate_error::incompatible, "wasm module ABI mismatch");
-      return;
-    }
-    if (descriptor.entry_count != pending->contract.entries.size() ||
-        descriptor.entries == nullptr) {
-      pending->reject(candidate_error::invalid_descriptor, "wasm entry membership mismatch");
-      return;
-    }
-    for (std::size_t index = 0; index < descriptor.entry_count; ++index) {
-      const auto& entry = descriptor.entries[index];
-      if (entry.name == nullptr || entry.address == nullptr ||
-          pending->contract.entries[index] != entry.name) {
-        pending->reject(candidate_error::invalid_descriptor, "invalid wasm entry descriptor");
-        return;
-      }
-    }
-    // Own metadata before making the candidate ready. Activation then needs
-    // no allocation, validation or calls into the candidate's behavior.
-    auto prepared = std::make_shared<prepared_module>();
-    prepared->entries_.reserve(descriptor.entry_count);
-    for (std::size_t index = 0; index < descriptor.entry_count; ++index) {
-      prepared->entries_.push_back(
-          {descriptor.entries[index].name, descriptor.entries[index].address});
-    }
-    prepared->image_ = std::move(result.image);
-    pending->prepared = std::move(prepared);
-    pending->status = candidate_status::ready;
-  });
+  loader.open(
+      std::move(path), state_->contract.sha256,
+      [weak = std::weak_ptr<state>{state_}](module_load_result result) {
+        const auto pending = weak.lock();
+        if (!pending || pending->status != candidate_status::loading) {
+          return;
+        }
+        if (!result.image) {
+          if (result.status == module_load_status::digest_mismatch) {
+            pending->reject(candidate_error::integrity, result.message.empty()
+                                                            ? "wasm artifact digest mismatch"
+                                                            : std::move(result.message));
+          } else {
+            pending->reject(candidate_error::load_failed, result.message.empty()
+                                                              ? "wasm module load failed"
+                                                              : std::move(result.message));
+          }
+          return;
+        }
+        const auto* header = result.image->descriptor();
+        if (header == nullptr) {
+          pending->reject(candidate_error::missing_descriptor, "missing wasm module descriptor");
+          return;
+        }
+        if (header->version != module_interface_version ||
+            header->size != sizeof(module_descriptor)) {
+          pending->reject(candidate_error::incompatible, "incompatible wasm descriptor layout");
+          return;
+        }
+        const auto& descriptor = *reinterpret_cast<const module_descriptor*>(header);
+        if (descriptor.abi_id == nullptr || pending->contract.abi_id != descriptor.abi_id) {
+          pending->reject(candidate_error::incompatible, "wasm module ABI mismatch");
+          return;
+        }
+        if (descriptor.entry_count != pending->contract.entries.size() ||
+            descriptor.entries == nullptr) {
+          pending->reject(candidate_error::invalid_descriptor, "wasm entry membership mismatch");
+          return;
+        }
+        for (std::size_t index = 0; index < descriptor.entry_count; ++index) {
+          const auto& entry = descriptor.entries[index];
+          if (entry.name == nullptr || entry.address == nullptr ||
+              pending->contract.entries[index] != entry.name) {
+            pending->reject(candidate_error::invalid_descriptor, "invalid wasm entry descriptor");
+            return;
+          }
+        }
+        // Own metadata before making the candidate ready. Activation then needs
+        // no allocation, validation or calls into the candidate's behavior.
+        auto prepared = std::make_shared<prepared_module>();
+        prepared->entries_.reserve(descriptor.entry_count);
+        for (std::size_t index = 0; index < descriptor.entry_count; ++index) {
+          prepared->entries_.push_back(
+              {descriptor.entries[index].name, descriptor.entries[index].address});
+        }
+        prepared->image_ = std::move(result.image);
+        pending->prepared = std::move(prepared);
+        pending->status = candidate_status::ready;
+      });
 }
 
 candidate::~candidate() = default;

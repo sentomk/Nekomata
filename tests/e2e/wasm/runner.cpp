@@ -1,4 +1,5 @@
 #include "contract.hpp"
+#include "fixture_digests.h"
 
 #include <backends/wasm/emscripten_loader.hpp>
 #include <emscripten.h>
@@ -26,12 +27,18 @@ bool rejection_reported = false;
 
 struct rejection_case {
   const char* path;
+  const char* digest;
   candidate_error expected;
 };
+// The tampered case names real bytes with the wrong digest: the mismatch
+// must be caught before instantiation, without touching the active module.
+constexpr const char* tampered_digest =
+    "0000000000000000000000000000000000000000000000000000000000000000";
 constexpr rejection_case rejection_cases[] = {
-    {"incompatible.wasm", candidate_error::incompatible},
-    {"incomplete.wasm", candidate_error::invalid_descriptor},
-    {"absent.wasm", candidate_error::load_failed},
+    {"incompatible.wasm", incompatible_digest, candidate_error::incompatible},
+    {"incomplete.wasm", incomplete_digest, candidate_error::invalid_descriptor},
+    {"absent.wasm", a_digest, candidate_error::load_failed},
+    {"b.wasm", tampered_digest, candidate_error::integrity},
 };
 
 EM_JS(void, report, (int ok, const char* message),
@@ -49,8 +56,8 @@ std::uint32_t identify(const prepared_module& module) {
   return reinterpret_cast<identify_fn>(module.entry("identify"))();
 }
 
-void prepare(const char* path) {
-  pending = std::make_unique<candidate>(loader, path, flock_contract());
+void prepare(const char* path, std::string_view digest) {
+  pending = std::make_unique<candidate>(loader, path, flock_contract(digest));
 }
 
 bool frame(double, void*) {
@@ -63,7 +70,7 @@ bool frame(double, void*) {
     require(active.activate(*pending), "A activation failed");
     generation_a = active.current();
     require(identify(*generation_a) == 1, "A identity");
-    prepare("b.wasm");
+    prepare("b.wasm", b_digest);
     return true;
   }
 
@@ -124,15 +131,15 @@ bool frame(double, void*) {
     ++ticks_after_commit;
     if (ticks_after_commit >= 3 && !pending) {
       require(ticks_while_ready == 3, "candidate did not wait for the safe point");
-      prepare(rejection_cases[rejection_index].path);
+      prepare(rejection_cases[rejection_index].path, rejection_cases[rejection_index].digest);
     }
     if (rejection_reported && world.tick_count >= rejection_tick + 3) {
       pending.reset();
       rejection_reported = false;
       ++rejection_index;
-      if (rejection_index == 3) {
+      if (rejection_index == 4) {
         require(identify(*generation_a) == 1, "old code no longer callable");
-        report(1, "backend candidates preserved state across activation and three rejection cases");
+        report(1, "backend candidates preserved state across activation and four rejection cases");
         return false;
       }
     }
@@ -143,7 +150,7 @@ bool frame(double, void*) {
 } // namespace
 
 int main() {
-  prepare("a.wasm");
+  prepare("a.wasm", a_digest);
   emscripten_request_animation_frame_loop(frame, nullptr);
   emscripten_exit_with_live_runtime();
 }

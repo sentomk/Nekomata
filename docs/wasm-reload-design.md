@@ -50,7 +50,7 @@ Its headers are private, not a supported application API.
 | Component | Responsibility |
 | --- | --- |
 | `module_loader` | Own a load request and deliver exactly one result on the calling event loop. |
-| `emscripten_loader` | Adapt `emscripten_dlopen`, resolve the descriptor, and own the loader reference. |
+| `emscripten_loader` | Fetch artifact bytes, verify the contract SHA-256 before instantiation, stage under a private MEMFS path, and own the loader reference. |
 | `module_image` | Keep loaded code available and release an uncommitted reference on destruction. |
 | `candidate` | Validate a requested contract and own the prepared result until activation or discard. |
 | `prepared_module` | Own a copied entry set and its image; provide immutable lookup to callers. |
@@ -103,9 +103,13 @@ loading ---- validation succeeds ----> ready ---- activate ----> activated
    +---- cancel -------------------------+----> cancelled
 ```
 
-An invalid input contract is rejected before loading. Construction can also
-finish with a ready or rejected result immediately: an already-loaded immutable
-path can complete synchronously inside `open()`.
+An invalid input contract is rejected before loading — the contract's
+SHA-256 is structurally required, so no load ever starts without an expected
+digest. The adapter verifies the fetched bytes against that digest before
+instantiation; a mismatch rejects as an `integrity` failure without touching
+the compiler. Real fetches always complete on the event loop, though the
+loader interface itself still permits a synchronous completion inside
+`open()`.
 
 The loader owns the request path and completion callback independently of the
 loader object's lifetime. The callback holds only a weak reference to candidate
@@ -155,8 +159,8 @@ reference; it does not promise reclamation of linear memory or table slots.
 Load failures and descriptor rejection leave the active slot untouched. The
 browser tests verify that the previous behavior continues advancing the world.
 The error classifications are `invalid_contract`, `load_failed`,
-`missing_descriptor`, `incompatible`, and `invalid_descriptor`; the exact
-diagnostics live with the implementation and regression tests.
+`integrity`, `missing_descriptor`, `incompatible`, and `invalid_descriptor`;
+the exact diagnostics live with the implementation and regression tests.
 
 This guarantee depends on cooperative modules. Emscripten instantiates a module
 before descriptor validation; initialization and descriptor access must be
@@ -184,9 +188,12 @@ execution tests the lifecycle logic, not execution of WASM in a native host.
 - `neko.e2e.wasm.generations` holds a download until the old world advances,
   keeps a ready candidate inactive for three frames, then switches both entries
   at a frame boundary with identical world fields and address. New behavior
-  runs on that world. Rejected candidates leave the current behavior advancing.
+  runs on that world. Rejected candidates leave the current behavior
+  advancing: an incompatible descriptor, an incomplete entry table, a missing
+  artifact, and — against real bytes — a tampered digest rejected before
+  instantiation.
 - `neko.e2e.wasm.candidate_lifetime` checks late callbacks after cancellation
-  and destruction, loader destruction, cached synchronous completion, and
+  and destruction, loader destruction, asynchronous cached completion, and
   invocation of committed code after all C++ owners are gone.
 
 The [`wasm` CI job](../.github/workflows/ci.yml) pins Emscripten 6.0.9, builds
@@ -221,12 +228,12 @@ artifact with an ordered entry set. Build-provenance rows are deliberately
 absent until a consumer exists. The codec touches neither network nor
 filesystem; ordering decisions are a pure comparison on the value.
 
-Still planned on top of the offer: the bytes-first loader pipeline — fetch
-the artifact, verify its SHA-256 before instantiation, then instantiate —
-which is the only place the digest and the pre-instantiation `abi_id` gate
-acquire teeth; the poller that drives the fetch and hands validated offers
-to the candidate lifecycle; and observable acceptance or rejection results
-for the application.
+Still planned on top of the offer: the poller that fetches the manifest URL
+on the application event loop, hands superseding offers to the candidate
+lifecycle, and reports observable acceptance or rejection results for the
+application. The bytes-first fetch-verify-instantiate pipeline now exists in
+`emscripten_loader`; the `abi_id` gate it feeds already rejects before any
+application behavior runs.
 
 Session integration must connect preparation and safe-point activation to the
 library's reload model without making the browser loader responsible for

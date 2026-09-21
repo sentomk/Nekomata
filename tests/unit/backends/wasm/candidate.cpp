@@ -50,20 +50,25 @@ private:
 
 class test_loader final : public module_loader {
 public:
-  void open(std::string path, completion complete) override {
+  void open(std::string path, std::string_view sha256, completion complete) override {
     opened_path = std::move(path);
+    opened_digest = std::string{sha256};
     pending = std::move(complete);
   }
-  void finish(std::unique_ptr<module_image> image, std::string message = {}) {
+  void finish(std::unique_ptr<module_image> image, std::string message = {},
+              module_load_status status = module_load_status::loaded) {
     auto callback = std::move(pending);
-    callback({std::move(image), std::move(message)});
+    callback({std::move(image), std::move(message), status});
   }
   std::string opened_path;
+  std::string opened_digest;
   completion pending;
 };
 
-module_contract contract() {
-  return {"test-v1", {"tick"}};
+constexpr const char* a_digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+module_contract contract(std::string_view sha256 = a_digest) {
+  return {"test-v1", {"tick"}, std::string{sha256}};
 }
 
 TEST_CASE("preparation owns code without executing it; activation consumes a ready candidate") {
@@ -177,6 +182,27 @@ TEST_CASE("load failures carry a diagnostic") {
   CHECK(pending.message() == "download failed");
 }
 
+TEST_CASE("the artifact digest travels with the load request") {
+  test_loader loader;
+  candidate pending(loader, "a.wasm", contract());
+  CHECK(loader.opened_path == "a.wasm");
+  CHECK(loader.opened_digest == a_digest);
+}
+
+TEST_CASE("digest mismatches reject as integrity failures") {
+  test_loader loader;
+  candidate pending(loader, "tampered.wasm", contract());
+  loader.finish(nullptr, "wasm artifact digest mismatch", module_load_status::digest_mismatch);
+  CHECK(pending.status() == candidate_status::rejected);
+  CHECK(pending.error() == candidate_error::integrity);
+  CHECK(pending.message() == "wasm artifact digest mismatch");
+
+  candidate quiet(loader, "tampered.wasm", contract());
+  loader.finish(nullptr, {}, module_load_status::digest_mismatch);
+  CHECK(quiet.error() == candidate_error::integrity);
+  CHECK(quiet.message() == "wasm artifact digest mismatch");
+}
+
 TEST_CASE("invalid contracts do not start I/O") {
   test_loader loader;
   auto expected = contract();
@@ -191,6 +217,18 @@ TEST_CASE("invalid contracts do not start I/O") {
   }
   SUBCASE("duplicate name") {
     expected.entries.push_back("tick");
+  }
+  SUBCASE("missing digest") {
+    expected.sha256.clear();
+  }
+  SUBCASE("short digest") {
+    expected.sha256 = std::string(63, 'a');
+  }
+  SUBCASE("uppercase digest") {
+    expected.sha256 = std::string(64, 'A');
+  }
+  SUBCASE("non-hex digest") {
+    expected.sha256 = std::string(64, 'g');
   }
   candidate pending(loader, "a.wasm", std::move(expected));
   CHECK(pending.status() == candidate_status::rejected);
@@ -281,7 +319,7 @@ TEST_CASE("synchronous completion is safe during construction") {
   class inline_loader final : public module_loader {
   public:
     explicit inline_loader(lifetime& life) : life_(life) {}
-    void open(std::string, completion complete) override {
+    void open(std::string, std::string_view, completion complete) override {
       complete({std::make_unique<test_image>(life_), {}});
     }
 
