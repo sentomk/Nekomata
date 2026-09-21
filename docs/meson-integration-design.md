@@ -587,6 +587,6 @@ supported Meson extension mechanism can be distributed and can obtain the exact
 native object set without depending on Meson internals. If that proof fails,
 the proposed surface must be revised explicitly.
 
-Current object watches, `generation_watch`, depfile planning, and handwritten
+Current object watches and handwritten
 demo rebuild scripts are implementation and compatibility mechanisms. They
 must not be presented as satisfying this Meson contract.

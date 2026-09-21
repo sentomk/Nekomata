@@ -9,10 +9,6 @@
 #include <string_view>
 
 int main() {
-  const neko::generation_watch generation{"generation.ready"};
-  if (generation.manifest_path.filename() != "generation.ready") {
-    return 2;
-  }
   const auto version = neko::version_string();
   if (version != NEKOMATA_VERSION_STRING) {
     return 1;

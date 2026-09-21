@@ -6,7 +6,6 @@
 namespace neko {
 
 class reload_session;
-struct generation_watch;
 
 enum class log_level : std::uint8_t;
 
@@ -35,12 +34,5 @@ struct generation_fixup;
 struct loaded_image;
 
 } // namespace backend
-
-namespace legacy {
-
-class depfile_planner;
-struct depfile_entry;
-
-} // namespace legacy
 
 } // namespace neko

@@ -14,8 +14,3 @@ nekomata_add_unit_test(
   NAME unit.runtime.managed_session
   SOURCES managed_session.cpp
   LIBRARIES nekomata::neko)
-
-nekomata_add_unit_test(
-  NAME unit.runtime.depfile_planner
-  SOURCES depfile_planner.cpp
-  LIBRARIES nekomata::neko)

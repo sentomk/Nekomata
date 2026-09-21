@@ -3,7 +3,7 @@
 // reload_session's implementation core. The public header carries none of
 // this machinery; the four session TUs split it by responsibility:
 //   session.cpp            construction, watch surface, update() orchestration
-//   prepare_generation.cpp legacy watch claiming and preparation
+//   prepare_generation.cpp object watch claiming and preparation
 //   reload_transaction.cpp the zero-write/commit/rollback engine
 //   managed_worker.cpp     the managed-group state machine and its worker
 
@@ -106,7 +106,6 @@ public:
 
   void watch(std::filesystem::path object_path);
   void watch(std::filesystem::path object_path, const std::filesystem::path& source_path);
-  void watch(generation_watch generation);
   void watch();
   void watch(std::string_view group_id);
   void unwatch();
@@ -122,9 +121,8 @@ public:
   void validate_generation(const prepared_generation& generation) const;
   void commit(prepared_generation& generation);
 
-  // prepare_generation.cpp — legacy watch claiming and preparation.
+  // prepare_generation.cpp — object watch claiming and preparation.
   [[nodiscard]] std::unique_ptr<prepared_reload> try_prepare(const watched_object& watched);
-  [[nodiscard]] std::unique_ptr<prepared_generation> try_prepare(const generation_watch& watched);
 
   // managed_worker.cpp — the managed-group state machine and its worker.
   void enable_managed_group(managed_group& group);
@@ -138,7 +136,6 @@ public:
 
   backend::bundle backends_;
   std::vector<watched_object> watched_;
-  std::vector<generation_watch> generation_watches_;
   std::vector<std::unique_ptr<managed_group>> managed_groups_;
 
   // Background preparation. The worker discovers offers, parses objects, and

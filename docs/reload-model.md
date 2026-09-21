@@ -39,84 +39,24 @@ the precondition is met.
 
 ## Complete build generations
 
-A multi-TU reload uses a generation manifest rather than relying on unrelated
-files happening to appear during the same poll:
+A multi-TU reload no longer watches loose manifests. Build integration
+publishes managed generations through the publisher, and the session consumes
+them per embedded reload group:
 
 ```cpp
 neko::reload_session session{neko::elf::create_backend()};
-session.watch(neko::generation_watch{"build/nekomata/generation.ready"});
+session.watch(); // every reload group embedded in this program
 ```
 
-The watched manifest is itself the ready marker. It has this line-oriented,
-versioned format:
-
-```text
-nekomata-generation-v1
-id "2026-09-13T01:42:18Z-17"
-changed "/project/include/ui.hpp"
-object "generations/17/widget.o" "/project/src/widget.cpp" "-std=c++20 -O0 -g"
-object "generations/17/view.o" "/project/src/view.cpp" "-std=c++20 -O0 -g"
-```
-
-- Every value is a C++-style quoted string; escapes and spaces are supported.
-- Relative object and source paths are resolved against the manifest directory.
-- `id` identifies one build attempt and must not be reused after it applies.
-- Each `changed` row records an input that triggered the build.
-- Each `object` row records an immutable object, its translation-unit source
-  identity, and its complete build-information string.
-- Blank lines and lines whose first non-space character is `#` are ignored.
-
-The build integration writes every object to a generation-specific path, closes
-the files, writes the manifest to a staging path on the same filesystem, and
-renames that staging file to the watched path. It must never modify a listed
-object after publication. Nekomata atomically claims and consumes only the
-manifest; it reads listed objects without renaming or deleting them.
-
-Nekomata claims and prepares the complete generation, validates every affected
-function, detects conflicting replacements, and commits the generation
-all-or-nothing. An incomplete or rejected generation must never leak a subset
-of its redirects into the running process. A rejected marker is consumed, but
-its immutable artifacts remain available for diagnostics, and the producer may
-republish the corrected attempt with the same ID. Once an ID applies, publishing
-it again is rejected.
-
-The configured patch planner must produce exactly the source identities listed
-by the manifest. The default planner treats every `changed` path as one
-translation unit, which covers direct source changes. GCC and Clang builds can
-expand header changes through their GNU Make-compatible dependency files:
-
-```cpp
-auto planner = std::make_shared<neko::depfile_planner>(
-    std::vector<neko::depfile_entry>{
-        {"src/widget.cpp", "build/widget.d", "/project"},
-        {"src/view.cpp", "build/view.d", "/project"},
-    });
-
-auto backend = neko::elf::create_backend();
-backend.planner = planner;
-neko::reload_session session{std::move(backend)};
-session.watch(neko::generation_watch{"build/nekomata/generation.ready"});
-```
-
-Compile each registered translation unit with dependency output enabled, for
-example `-MMD -MP -MF build/widget.next.d`. The planner reads every registered
-file when planning and returns all translation units that depend on any
-`changed` path, in registration order. Relative translation-unit and depfile
-paths use the entry's compilation working directory. Missing or malformed
-files reject planning rather than silently omitting a translation unit.
-
-The configured `.d` files are the active snapshot used to plan and validate a
-generation. A build writes its next dependency files to staging or
-generation-specific paths, publishes the generation, waits until that manifest
-has been consumed, and only then atomically promotes the next dependency
-snapshot. Keeping the prior graph through validation matters when an edit
-removes the include edge that triggered the build.
-
-This parser deliberately supports the GNU Make depfile format emitted by GCC
-and Clang; dependency output is not compiler-universal. MSVC exposes include
-information through `/showIncludes` or `/sourceDependencies` JSON, which will
-require a separate provider adapter rather than pretending those formats are
-`.d` files.
+Each generation is one immutable object set described by the managed
+`nekomata-generation 2` manifest and published behind a `.ready` marker: the
+producer writes every object, closes them, and renames the marker last.
+Nekomata prepares the complete generation, validates every affected function,
+detects conflicting replacements, and commits the generation all-or-nothing.
+An incomplete or rejected generation must never leak a subset of its
+redirects into the running process, and a rejected generation leaves the
+previous behavior active. See docs/managed-reload-design.md for the manifest
+codec, the publication protocol, and per-group consumer cursors.
 
 Independent watch targets may still produce independent generations. Their
 results must remain distinguishable rather than being collapsed into one

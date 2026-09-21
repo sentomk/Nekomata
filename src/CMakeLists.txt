@@ -2,7 +2,7 @@
 #
 # The target split states the boundaries in the link graph:
 #   neko_protocol        the generation codecs shared by runtime and publisher
-#   neko_runtime         the consumer kernel (session, streams, legacy watches)
+#   neko_runtime         the consumer kernel (session, streams, object watches)
 #   neko_publisher_lib   the publication primitive behind the host publisher
 # The convenience aggregate behind the `nekomata::neko` alias is defined in
 # the top-level CMakeLists once this directory has returned.
@@ -21,8 +21,6 @@ nekomata_apply_clang_tidy(neko_protocol)
 add_library(neko_runtime STATIC
   core/log.cpp
   core/version.cpp
-  runtime/legacy/depfile_planner.cpp
-  runtime/legacy/generation.cpp
   runtime/descriptor_discovery.cpp
   runtime/generation_stream.cpp
   runtime/managed_worker.cpp

@@ -222,9 +222,9 @@ session.watch();
 ```
 
 An `object_generation_source` may provide the corresponding single-object
-escape hatch. These source types are not used by managed examples. Existing
-path-shaped `watch()` overloads and `generation_watch` should be deprecated
-after their source-based replacements ship. In particular,
+escape hatch. These source types are not used by managed examples. The
+remaining path-shaped `watch()` overloads should be deprecated after their
+source-based replacements ship. In particular,
 `watch(std::filesystem::path)` MUST NOT coexist with
 `watch(std::string_view group_id)`: a string literal would be ambiguous in both
 the type system and the reader's mental model.
@@ -615,7 +615,7 @@ target_link_libraries(demo PRIVATE demo_hot nekomata::backends::elf)
 
 The sources share one configuration. CMake tracks header dependencies. The
 publication target includes both current objects even when only one rebuilds.
-No runtime `depfile_planner` is configured.
+No runtime patch planner is configured; CMake owns dependency tracking.
 
 ### 11.3 CMake: complex multi-TU
 
@@ -997,11 +997,10 @@ increasing sequence allocation, staged materialization with copied objects,
 and same-directory atomic release; identical content reuses its generation
 identity at the next sequence.
 
-Legacy path-shaped object watches, `generation_watch`, the v1 ready marker,
-public planner setup, and handwritten demo rebuild scripts remain compatibility
-mechanisms. Managed stream errors are also classified through transitional
-message matching internally; stable typed errors should originate below the
-session boundary before the compatibility path is retired.
+Path-shaped object watches and handwritten demo rebuild scripts remain
+compatibility mechanisms. Managed stream errors are also classified through
+transitional message matching internally; stable typed errors should originate
+below the session boundary before the compatibility path is retired.
 
 Migration order:
 

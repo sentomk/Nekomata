@@ -117,12 +117,6 @@ void reload_session::impl::watch(std::filesystem::path object_path,
   watched_.push_back({std::move(object_path), detail::normalized_source_path(source_path)});
 }
 
-void reload_session::impl::watch(generation_watch generation) {
-  check_fatal_error();
-  generation.manifest_path = detail::normalized_source_path(generation.manifest_path);
-  generation_watches_.push_back(std::move(generation));
-}
-
 void reload_session::impl::watch() {
   check_fatal_error();
   if (managed_groups_.empty()) {
@@ -160,9 +154,6 @@ session_snapshot reload_session::impl::snapshot() const {
   out.last_result = last_result_;
   for (const auto& watched : watched_) {
     out.watched_paths.push_back(watched.object_path.string());
-  }
-  for (const auto& watched : generation_watches_) {
-    out.watched_paths.push_back(watched.manifest_path.string());
   }
   for (const auto& group : managed_groups_) {
     group_snapshot entry;
@@ -248,23 +239,10 @@ update_result reload_session::impl::update() {
     lock.unlock();
   }
 
-  // The legacy watch surface keeps its one-transaction-per-call shape; its
+  // The object watch surface keeps its one-transaction-per-call shape; its
   // rejections are values now, reported after the managed events.
   try {
     prepared_generation generation;
-    for (const auto& watched : generation_watches_) {
-      if (auto offered_generation = try_prepare(watched)) {
-        validate_generation(*offered_generation);
-        const std::size_t count = redirected(*offered_generation);
-        commit(*offered_generation);
-        update_event event;
-        event.generation_id = offered_generation->id;
-        event.redirected_function_count = count;
-        result.events.push_back(std::move(event));
-        return result;
-      }
-    }
-
     for (const auto& watched : watched_) {
       if (auto prepared = try_prepare(watched)) {
         generation.reloads.push_back(std::move(prepared));
@@ -308,10 +286,6 @@ void reload_session::watch(std::filesystem::path object_path) {
 void reload_session::watch(std::filesystem::path object_path,
                            const std::filesystem::path& source_path) {
   impl_->watch(std::move(object_path), source_path);
-}
-
-void reload_session::watch(generation_watch generation) {
-  impl_->watch(std::move(generation));
 }
 
 void reload_session::watch() {

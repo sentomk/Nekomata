@@ -30,8 +30,5 @@ static_assert(!complete_type<neko::backend::generation_symbol>);
 static_assert(!complete_type<neko::backend::generation_fixup>);
 static_assert(!complete_type<neko::backend::loaded_image>);
 static_assert(!complete_type<neko::backend::bundle>);
-static_assert(!complete_type<neko::legacy::depfile_planner>);
-static_assert(!complete_type<neko::legacy::depfile_entry>);
-static_assert(!complete_type<neko::generation_watch>);
 
 } // namespace

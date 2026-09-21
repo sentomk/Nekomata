@@ -3,8 +3,6 @@
 //
 // Deliberately not included:
 //   - fwd.hpp: lean entry for compile-radius-sensitive TUs
-//   - legacy/depfile_planner.hpp: the manual integration model, include on
-//     demand
 #pragma once
 
 #include <neko/config.hpp>

@@ -567,7 +567,7 @@ reports structured update events. The repository does not yet export
 `nekomata_add_reload_unit()`, `nekomata_add_reload_group()`, or the CMake
 publication targets described here.
 
-Current object watches, `generation_watch`, depfile planning, and handwritten
+Current object watches and handwritten
 demo rebuild scripts are implementation and compatibility mechanisms. They
 must not be presented as satisfying this CMake contract.
 

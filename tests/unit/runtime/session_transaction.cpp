@@ -58,28 +58,6 @@ void offer(const std::filesystem::path& path) {
   }
 }
 
-struct generation_member {
-  std::filesystem::path object;
-  std::filesystem::path source;
-};
-
-void publish_generation(const std::filesystem::path& manifest, std::string_view id,
-                        const std::vector<generation_member>& members) {
-  const auto staging = manifest.string() + ".staging";
-  std::ofstream file(staging);
-  file << "nekomata-generation-v1\n";
-  file << "id " << std::quoted(id) << '\n';
-  for (const auto& member : members) {
-    file << "changed " << std::quoted(member.source.generic_string()) << '\n';
-  }
-  for (const auto& member : members) {
-    file << "object " << std::quoted(member.object.generic_string()) << ' '
-         << std::quoted(member.source.generic_string()) << ' ' << std::quoted("-O0 -g") << '\n';
-  }
-  file.close();
-  std::filesystem::rename(staging, manifest);
-}
-
 class fake_process final : public neko::backend::symbol_provider,
                            public neko::backend::state_manager {
 public:
@@ -420,94 +398,6 @@ TEST_CASE("one update rejects objects that replace the same live entry") {
         "reload rejected before any write: multiple objects replace entry of second_tick");
   CHECK(allocations->reclaimed == 2);
   CHECK(allocations->released_to_process == 0);
-}
-
-TEST_CASE("a generation marker exposes only a complete immutable object set") {
-  constexpr std::uintptr_t a_entry = 0x4040;
-  constexpr std::uintptr_t b_entry = 0x5050;
-
-  std::array<std::uint8_t, 8> a_code{};
-  std::array<std::uint8_t, 8> b_code{};
-  auto allocations = std::make_shared<allocation_counters>();
-  std::vector<neko::backend::loaded_image> images;
-  images.push_back(image(a_code.data(), "a_tick", a_entry, allocations));
-  images.push_back(image(b_code.data(), "b_tick", b_entry, allocations));
-
-  auto loader = std::make_shared<queued_loader>(std::move(images));
-  auto process = std::make_shared<fake_process>();
-  auto substituter = std::make_shared<recording_substituter>(0);
-
-  neko::backend::bundle backends;
-  backends.loader = loader;
-  backends.symbols = process;
-  backends.state = process;
-  backends.substituter = substituter;
-
-  temporary_directory temporary;
-  const auto a_object = temporary.path() / "g2" / "a.o";
-  const auto b_object = temporary.path() / "g2" / "b.o";
-  const auto manifest = temporary.path() / "generation.ready";
-  std::filesystem::create_directory(a_object.parent_path());
-  offer(a_object);
-
-  const std::vector<generation_member> members{
-      {"g2/a.o", "a.cpp"},
-      {"g2/b.o", "b.cpp"},
-  };
-
-  {
-    neko::reload_session session{std::move(backends)};
-    session.watch(neko::generation_watch{manifest});
-
-    // An object becoming visible is not an offer until the producer publishes
-    // the generation marker.
-    CHECK(session.update().events.empty());
-    CHECK(loader->load_count() == 0);
-    CHECK(std::filesystem::exists(a_object));
-
-    // A premature marker is consumed and rejected before any object is loaded.
-    publish_generation(manifest, "g2", members);
-    const auto missing_object_error =
-        "reload generation 'g2' rejected before any write: object file is not ready: " +
-        b_object.string();
-    const auto incomplete = session.update();
-    REQUIRE(incomplete.events.size() == 1);
-    REQUIRE(incomplete.events.front().status == neko::update_status::rejected);
-    REQUIRE(incomplete.events.front().code == neko::reload_error_code::integrity);
-    const std::string rejection = incomplete.events.front().message;
-    CHECK(rejection == missing_object_error);
-    CHECK(loader->load_count() == 0);
-    CHECK(substituter->prechecked.empty());
-    CHECK(substituter->patched.empty());
-    CHECK_FALSE(std::filesystem::exists(manifest));
-    CHECK(std::filesystem::exists(a_object));
-
-    // A rejected attempt may retry its stable ID. Once all immutable objects
-    // exist, both become live together and remain available for diagnostics.
-    offer(b_object);
-    publish_generation(manifest, "g2", members);
-    CHECK(session.update().any_applied());
-    CHECK(loader->load_count() == 2);
-    CHECK(substituter->prechecked.size() == 2);
-    CHECK(substituter->patched.size() == 2);
-    CHECK(std::filesystem::exists(a_object));
-    CHECK(std::filesystem::exists(b_object));
-    CHECK(allocations->reclaimed == 0);
-    CHECK(allocations->released_to_process == 0);
-
-    publish_generation(manifest, "g2", members);
-    const auto replay = session.update();
-    REQUIRE(replay.events.size() == 1);
-    CHECK(replay.events.front().status == neko::update_status::rejected);
-    CHECK(replay.events.front().message == "reload generation 'g2' was already applied");
-
-    const auto stats = session.snapshot();
-    CHECK(stats.applied == 1);
-    CHECK(stats.rejected == 2);
-    CHECK(stats.last_result == "reload generation 'g2' was already applied");
-  }
-  CHECK(allocations->reclaimed == 0);
-  CHECK(allocations->released_to_process == 2);
 }
 
 TEST_CASE("rejected candidate state is reclaimed with its code") {

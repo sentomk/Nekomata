@@ -591,7 +591,7 @@ The repository does not currently contain `nekomata.gni`,
 The runtime already discovers embedded ELF descriptors and provides managed
 `watch()`/`unwatch()` with structured update events.
 
-Current object watches, `generation_watch`, depfile planning, and handwritten
+Current object watches and handwritten
 demo rebuild scripts are implementation and compatibility mechanisms. They
 must not be presented as if they already satisfy this GN contract.
 

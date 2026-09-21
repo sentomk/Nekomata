@@ -1,4 +1,3 @@
-add_subdirectory(multi_tu)
 add_subdirectory(atomicity)
 add_subdirectory(soak)
 add_subdirectory(duplicate_names)

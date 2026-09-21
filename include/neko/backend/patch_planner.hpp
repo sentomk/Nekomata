@@ -1,9 +1,9 @@
 // patch_planner — from changed files to a reload plan.
 //
 // Answers "what does this change break?": which translation units must be
-// recompiled before a reload can be offered. depfile_planner supplies a
-// compiler-generated dependency graph; reload_session falls back to treating
-// every changed file as one translation unit when no planner is configured.
+// recompiled before a reload can be offered. reload_session falls back to
+// treating every changed file as one translation unit when no planner is
+// configured.
 
 #pragma once
 

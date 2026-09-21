@@ -7,10 +7,10 @@
 //     ... session.update() once per frame / loop iteration ...
 //
 // Trigger model: compilation is the caller's business. An individual object
-// watch is claimed atomically when a complete file appears. A generation watch
-// is claimed only when its manifest appears, after the producer has published
-// its complete immutable object set. Half-written or unpublished objects are
-// never picked up.
+// watch is claimed atomically when a complete file appears. Managed groups
+// apply a generation only when its publisher marks it ready, after the
+// complete immutable object set exists. Half-written or unpublished objects
+// are never picked up.
 //
 // Threading model: reload_session performs no internal synchronization. The
 // caller must serialize all member calls and establish a quiescent point for
@@ -31,14 +31,6 @@
 
 namespace neko {
 
-/// Watches an atomically published build-generation manifest. The manifest is
-/// the ready marker: it names the generation, changed files, and the complete
-/// object/source/build-information set. See docs/reload-model.md for its
-/// on-disk format.
-struct generation_watch {
-  std::filesystem::path manifest_path;
-};
-
 /// Outcome of one committed or rejected transaction inside an `update()` call.
 enum class update_status : std::uint8_t {
   applied,  ///< the transaction redirected live entries
@@ -57,7 +49,7 @@ enum class reload_error_code : std::uint8_t {
 };
 
 /// One transaction outcome. Managed reload groups carry their `group_id` and
-/// `generation_id`; legacy watch transactions leave both empty.
+/// `generation_id`; object watch transactions leave both empty.
 struct update_event {
   update_status status = update_status::applied;
   reload_error_code code = reload_error_code::none;
@@ -68,8 +60,8 @@ struct update_event {
 };
 
 /// The result of one `update()` call. An empty event list means nothing was
-/// ready. Managed-group events come first in ascending `group_id` order; a
-/// legacy watch transaction, when one applies, comes last.
+/// ready. Managed-group events come first in ascending `group_id` order; an
+/// object watch transaction, when one applies, comes last.
 struct update_result {
   std::vector<update_event> events;
 
@@ -142,11 +134,6 @@ public:
   /// or canonicalizing the source file).
   void watch(std::filesystem::path object_path, const std::filesystem::path& source_path);
 
-  /// Watch complete build generations published at `manifest_path`. Unlike
-  /// individual object watches, no object is claimed before the manifest is
-  /// atomically published.
-  void watch(generation_watch generation);
-
   /// Enable every managed reload group embedded in this program, discovered
   /// from the linked descriptors at session construction. Throws a
   /// configuration exception when the executable embeds no group descriptor,
@@ -162,8 +149,7 @@ public:
   /// watches it disambiguates.
   void watch(const char* group_id);
 
-  /// Disable every managed group. Legacy object and manifest watches are not
-  /// affected. Idempotent.
+  /// Disable every managed group. Object watches are not affected. Idempotent.
   void unwatch();
 
   /// Disable one managed group. Idempotent; an unknown ID is a configuration
@@ -176,7 +162,7 @@ public:
   void unwatch(const char* group_id);
 
   /// Pick up every ready managed group and, when no managed transaction was
-  /// rejected, the first ready legacy generation or batched object watches.
+  /// rejected, the batched object watches.
   /// Each managed group is its own all-or-nothing transaction; one group's
   /// rejection does not prevent the others from applying. Artifact problems
   /// are rejected events, not exceptions: no entry changed for a rejected
