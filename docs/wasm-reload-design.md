@@ -207,7 +207,11 @@ The next layers must supply complete generation identity and immutable
 artifacts, integrity and compatibility checks before instantiation where
 possible, delivery ordering and supersession policy, and observable acceptance
 or rejection results. Their transport and metadata format are not selected by
-the candidate implementation.
+the candidate implementation. Reusing the existing format identifiers was
+considered and rejected: `nekomata-publisher-request` describes build inputs
+before a generation exists, and the managed `nekomata-generation-v2` manifest
+has member rows that do not fit one artifact with an ordered entry set. The
+browser manifest format will be selected together with its transport.
 
 Session integration must connect preparation and safe-point activation to the
 library's reload model without making the browser loader responsible for
