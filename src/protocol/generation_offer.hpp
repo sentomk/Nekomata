@@ -78,7 +78,8 @@ private:
   std::size_t line_;
 };
 
-inline constexpr std::string_view generation_offer_format = "nekomata-generation-v2";
+inline constexpr std::string_view generation_offer_format_name = "nekomata-generation";
+inline constexpr std::uint64_t generation_offer_format_version = 2;
 
 [[nodiscard]]
 std::string_view generation_offer_error_code_name(generation_offer_error_code code) noexcept;

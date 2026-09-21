@@ -156,11 +156,15 @@ group_descriptor parse_group_descriptor(std::string_view text, std::string_view 
   if (!line.empty() && line.back() == '\r') {
     line.pop_back();
   }
-  if (line != group_descriptor_format) {
-    const descriptor_error_code code = line.starts_with("nekomata-group-")
+  const auto magic_issue =
+      inspect_magic_line(line, group_descriptor_format_name, group_descriptor_format_version);
+  if (magic_issue != magic_line_issue::none) {
+    const descriptor_error_code code = magic_issue == magic_line_issue::wrong_version
                                            ? descriptor_error_code::unsupported_version
                                            : descriptor_error_code::invalid_format;
-    reject(code, source, line_number, "expected " + std::string(group_descriptor_format));
+    reject(code, source, line_number,
+           "expected " +
+               compose_magic_line(group_descriptor_format_name, group_descriptor_format_version));
   }
 
   group_descriptor descriptor;
@@ -278,7 +282,8 @@ std::string serialize_group_descriptor(const group_descriptor& descriptor) {
   validate_group_descriptor(descriptor);
 
   std::ostringstream output;
-  output << group_descriptor_format << '\n';
+  output << compose_magic_line(group_descriptor_format_name, group_descriptor_format_version)
+         << '\n';
   output << "group_id " << std::quoted(descriptor.group_id) << '\n';
   output << "publication_key " << std::quoted(descriptor.publication_key) << '\n';
   output << "baseline_sequence " << descriptor.baseline_sequence << '\n';

@@ -218,11 +218,15 @@ generation_offer parse_generation_offer(std::string_view text, std::string_view 
   if (!line.empty() && line.back() == '\r') {
     line.pop_back();
   }
-  if (line != generation_offer_format) {
-    const auto code = line.starts_with("nekomata-generation-")
+  const auto magic_issue =
+      inspect_magic_line(line, generation_offer_format_name, generation_offer_format_version);
+  if (magic_issue != magic_line_issue::none) {
+    const auto code = magic_issue == magic_line_issue::wrong_version
                           ? generation_offer_error_code::unsupported_version
                           : generation_offer_error_code::invalid_format;
-    reject(code, source, line_number, "expected " + std::string(generation_offer_format));
+    reject(code, source, line_number,
+           "expected " +
+               compose_magic_line(generation_offer_format_name, generation_offer_format_version));
   }
 
   generation_offer offer;
@@ -347,7 +351,8 @@ std::string serialize_generation_offer(const generation_offer& offer) {
   validate_generation_offer(offer);
 
   std::ostringstream output;
-  output << generation_offer_format << '\n';
+  output << compose_magic_line(generation_offer_format_name, generation_offer_format_version)
+         << '\n';
   output << "group_id " << std::quoted(offer.group_id) << '\n';
   output << "sequence " << offer.sequence << '\n';
   output << "generation_id " << std::quoted(offer.generation_id) << '\n';

@@ -67,7 +67,7 @@ endif()
 
 file(READ "${root}/cli-e2e/generations/${generation_id}/manifest" manifest)
 foreach(required IN ITEMS
-    "nekomata-generation-v2"
+    "nekomata-generation 2"
     "group_id \"//cli:hot\""
     "sequence 2"
     "member \"cli/a\" \"objects/cli/a.o\""

@@ -117,7 +117,7 @@ publish() { # version sequence
     digests+=("$(sha256sum "$gen/objects/$member.o" | cut -d' ' -f1)")
   done
   {
-    printf 'nekomata-generation-v2\n'
+    printf 'nekomata-generation 2\n'
     printf 'group_id "//cross:multi"\n'
     printf 'sequence %s\n' "$sequence"
     printf 'generation_id "gen-%s"\n' "$sequence"

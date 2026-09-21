@@ -49,7 +49,8 @@ private:
   std::size_t line_;
 };
 
-inline constexpr std::string_view group_descriptor_format = "nekomata-group-v1";
+inline constexpr std::string_view group_descriptor_format_name = "nekomata-group";
+inline constexpr std::uint64_t group_descriptor_format_version = 1;
 
 [[nodiscard]] std::string_view descriptor_error_code_name(descriptor_error_code code) noexcept;
 

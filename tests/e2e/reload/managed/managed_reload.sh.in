@@ -42,7 +42,7 @@ publish() { # version sequence
   local digest
   digest=$(sha256sum "$gen/objects/hot.o" | cut -d' ' -f1)
   {
-    printf 'nekomata-generation-v2\n'
+    printf 'nekomata-generation 2\n'
     printf 'group_id "//managed:hot"\n'
     printf 'sequence %s\n' "$sequence"
     printf 'generation_id "gen-%s"\n' "$sequence"

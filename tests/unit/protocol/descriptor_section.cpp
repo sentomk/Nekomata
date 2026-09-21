@@ -111,7 +111,7 @@ TEST_CASE("corrupted payloads report their record offset") {
   } catch (const neko::detail::descriptor_error& error) {
     CHECK(std::string_view{error.what()} ==
           "invalid reload group descriptor 'section record at offset " +
-              std::to_string(second_offset) + "' at line 1: expected nekomata-group-v1");
+              std::to_string(second_offset) + "' at line 1: expected nekomata-group 1");
   }
 }
 

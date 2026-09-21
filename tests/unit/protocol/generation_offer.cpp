@@ -57,7 +57,7 @@ void check_error(std::string_view text, neko::detail::generation_offer_error_cod
   }
 }
 
-constexpr std::string_view valid_prefix = "nekomata-generation-v2\n"
+constexpr std::string_view valid_prefix = "nekomata-generation 2\n"
                                           "group_id \"gameplay\"\n"
                                           "sequence 7\n"
                                           "generation_id \"gen-7\"\n"
@@ -78,7 +78,7 @@ TEST_CASE("managed generation offers have a deterministic round trip") {
   const std::string encoded = neko::detail::serialize_generation_offer(original);
 
   CHECK(encoded ==
-        "nekomata-generation-v2\n"
+        "nekomata-generation 2\n"
         "group_id \"//gameplay:hot(//toolchain:target)\"\n"
         "sequence 43\n"
         "generation_id \"gen-43-a1\"\n"
@@ -107,14 +107,22 @@ TEST_CASE("format and scalar failures are classified") {
   check_error("", neko::detail::generation_offer_error_code::invalid_format, 1,
               "invalid generation offer 'fixture' at line 1: missing format header");
   check_error("not-an-offer\n", neko::detail::generation_offer_error_code::invalid_format, 1,
-              "invalid generation offer 'fixture' at line 1: expected nekomata-generation-v2");
-  check_error("nekomata-generation-v3\n",
+              "invalid generation offer 'fixture' at line 1: expected nekomata-generation 2");
+  check_error("nekomata-generation 3\n",
               neko::detail::generation_offer_error_code::unsupported_version, 1,
-              "invalid generation offer 'fixture' at line 1: expected nekomata-generation-v2");
+              "invalid generation offer 'fixture' at line 1: expected nekomata-generation 2");
+  check_error("nekomata-generation-v2\n",
+              neko::detail::generation_offer_error_code::unsupported_version, 1,
+              "invalid generation offer 'fixture' at line 1: expected nekomata-generation 2");
+  check_error("nekomata-generation\n",
+              neko::detail::generation_offer_error_code::unsupported_version, 1,
+              "invalid generation offer 'fixture' at line 1: expected nekomata-generation 2");
+  check_error("nekomata-group 1\n", neko::detail::generation_offer_error_code::invalid_format, 1,
+              "invalid generation offer 'fixture' at line 1: expected nekomata-generation 2");
   check_error(std::string(valid_prefix) + member_line() + "sequence 8\n",
               neko::detail::generation_offer_error_code::duplicate_field, 8,
               "invalid generation offer 'fixture' at line 8: duplicate sequence");
-  check_error("nekomata-generation-v2\ngroup_id \"gameplay\"\n",
+  check_error("nekomata-generation 2\ngroup_id \"gameplay\"\n",
               neko::detail::generation_offer_error_code::missing_field, 3,
               "invalid generation offer 'fixture' at line 3: missing sequence");
 }

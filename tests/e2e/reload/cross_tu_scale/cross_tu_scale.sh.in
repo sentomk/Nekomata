@@ -99,7 +99,7 @@ publish() { # version sequence
     cp "$source_object" "$generation/objects/unit_$index.o"
   done
   {
-    printf 'nekomata-generation-v2\n'
+    printf 'nekomata-generation 2\n'
     printf 'group_id "//cross:scale-%s"\n' "$COUNT"
     printf 'sequence %s\n' "$sequence"
     printf 'generation_id "gen-%s"\n' "$sequence"

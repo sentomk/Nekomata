@@ -26,6 +26,38 @@ namespace neko::detail {
   return false;
 }
 
+/// The magic line grammar shared by every wire format: a format name and its
+/// version as two space-separated tokens. Codecs keep their own name and
+/// version constants and own the classification of a rejected line.
+[[nodiscard]] inline std::string compose_magic_line(std::string_view name, std::uint64_t version) {
+  return std::string(name) + ' ' + std::to_string(version);
+}
+
+/// Structural findings for a magic line, in detection order. A line naming
+/// the family but carrying another version — including the retired suffix
+/// grammar `name-vN` — reports `wrong_version`, so codecs can distinguish an
+/// unsupported version from a foreign format.
+enum class magic_line_issue : std::uint8_t {
+  none,
+  wrong_name,
+  wrong_version,
+};
+
+[[nodiscard]] inline magic_line_issue
+inspect_magic_line(std::string_view line, std::string_view name, std::uint64_t version) {
+  if (line == compose_magic_line(name, version)) {
+    return magic_line_issue::none;
+  }
+  if (!line.starts_with(name)) {
+    return magic_line_issue::wrong_name;
+  }
+  const std::string_view rest = line.substr(name.size());
+  if (rest.empty() || rest.front() == ' ' || rest.front() == '-') {
+    return magic_line_issue::wrong_version;
+  }
+  return magic_line_issue::wrong_name;
+}
+
 [[nodiscard]] inline bool is_portable_key_character(unsigned char byte) {
   return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
          (byte >= '0' && byte <= '9') || byte == '_' || byte == '-' || byte == '.' || byte == '/';

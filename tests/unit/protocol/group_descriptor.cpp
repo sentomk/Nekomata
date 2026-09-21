@@ -36,7 +36,7 @@ void check_error(std::string_view text, neko::detail::descriptor_error_code expe
   }
 }
 
-constexpr std::string_view valid_prefix = "nekomata-group-v1\n"
+constexpr std::string_view valid_prefix = "nekomata-group 1\n"
                                           "group_id \"gameplay\"\n"
                                           "publication_key \"gameplay-a1\"\n"
                                           "baseline_sequence 7\n"
@@ -49,7 +49,7 @@ TEST_CASE("managed group descriptors have a deterministic round trip") {
   const auto original = descriptor();
   const std::string encoded = neko::detail::serialize_group_descriptor(original);
 
-  CHECK(encoded == "nekomata-group-v1\n"
+  CHECK(encoded == "nekomata-group 1\n"
                    "group_id \"//gameplay:hot(//toolchain:target)\"\n"
                    "publication_key \"gameplay-6f10e51d\"\n"
                    "baseline_sequence 42\n"
@@ -87,10 +87,16 @@ TEST_CASE("format and version failures have stable codes") {
               "invalid reload group descriptor 'fixture' at line 1: missing format header");
   check_error("not-a-descriptor\n", neko::detail::descriptor_error_code::invalid_format, 1,
               "invalid reload group descriptor 'fixture' at line 1: expected "
-              "nekomata-group-v1");
+              "nekomata-group 1");
   check_error("nekomata-group-v2\n", neko::detail::descriptor_error_code::unsupported_version, 1,
               "invalid reload group descriptor 'fixture' at line 1: expected "
-              "nekomata-group-v1");
+              "nekomata-group 1");
+  check_error("nekomata-group\n", neko::detail::descriptor_error_code::unsupported_version, 1,
+              "invalid reload group descriptor 'fixture' at line 1: expected "
+              "nekomata-group 1");
+  check_error("nekomata-generation 2\n", neko::detail::descriptor_error_code::invalid_format, 1,
+              "invalid reload group descriptor 'fixture' at line 1: expected "
+              "nekomata-group 1");
 }
 
 TEST_CASE("required scalar fields occur exactly once") {
@@ -99,7 +105,7 @@ TEST_CASE("required scalar fields occur exactly once") {
               neko::detail::descriptor_error_code::duplicate_field, 8,
               "invalid reload group descriptor 'fixture' at line 8: duplicate group_id");
 
-  check_error("nekomata-group-v1\n"
+  check_error("nekomata-group 1\n"
               "group_id \"gameplay\"\n",
               neko::detail::descriptor_error_code::missing_field, 3,
               "invalid reload group descriptor 'fixture' at line 3: missing publication_key");
