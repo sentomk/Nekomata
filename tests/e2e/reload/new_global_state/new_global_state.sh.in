@@ -90,7 +90,7 @@ publish() { # version sequence
   cp "$dir/a.o" "$generation/objects/a.o"
   cp "$dir/b.o" "$generation/objects/b.o"
   {
-    printf 'nekomata-generation 2\n'
+    printf 'nekomata-generation/2\n'
     printf 'group_id "//state:lifecycle"\n'
     printf 'sequence %s\n' "$sequence"
     printf 'generation_id "gen-%s"\n' "$sequence"

@@ -209,7 +209,7 @@ possible, delivery ordering and supersession policy, and observable acceptance
 or rejection results. Their transport and metadata format are not selected by
 the candidate implementation. Reusing the existing format identifiers was
 considered and rejected: `nekomata-publisher-request` describes build inputs
-before a generation exists, and the managed `nekomata-generation 2` manifest
+before a generation exists, and the managed `nekomata-generation/2` manifest
 has member rows that do not fit one artifact with an ordered entry set. The
 browser manifest format will be selected together with its transport.
 

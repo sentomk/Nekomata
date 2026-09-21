@@ -176,7 +176,7 @@ function(nekomata_add_reload_group name)
   file(MAKE_DIRECTORY "${request_directory}")
   set(request_file "${request_directory}/publish_$<CONFIG>.request")
   string(CONCAT request_content
-    "nekomata-publisher-request 1\n"
+    "nekomata-publisher-request/1\n"
     "--root\n${generation_root}\n"
     "--key\n${publication_key}\n"
     "--group\n${group_id}\n"
@@ -190,7 +190,7 @@ function(nekomata_add_reload_group name)
   set(descriptor_tu "${CMAKE_BINARY_DIR}/nekomata-generators/${name}/descriptor_$<CONFIG>.cpp")
   set(descriptor_request "${request_directory}/descriptor_$<CONFIG>.request")
   string(CONCAT descriptor_request_content
-    "nekomata-publisher-request 1\n"
+    "nekomata-publisher-request/1\n"
     "--output\n${descriptor_tu}\n"
     "--group\n${group_id}\n"
     "--key\n${publication_key}\n"

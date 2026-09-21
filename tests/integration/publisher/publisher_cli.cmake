@@ -38,7 +38,7 @@ publish(2)
 string(REPEAT "x" 2200000 oversized_argument)
 set(request_file "${root}/publish.request")
 file(WRITE "${request_file}"
-  "nekomata-publisher-request 1\n"
+  "nekomata-publisher-request/1\n"
   "--root\n${root}\n"
   "--key\nrequest-e2e\n"
   "--group\n//cli:request\n"
@@ -67,7 +67,7 @@ endif()
 
 file(READ "${root}/cli-e2e/generations/${generation_id}/manifest" manifest)
 foreach(required IN ITEMS
-    "nekomata-generation 2"
+    "nekomata-generation/2"
     "group_id \"//cli:hot\""
     "sequence 2"
     "member \"cli/a\" \"objects/cli/a.o\""

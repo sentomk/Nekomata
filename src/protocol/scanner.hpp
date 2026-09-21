@@ -27,15 +27,16 @@ namespace neko::detail {
 }
 
 /// The magic line grammar shared by every wire format: a format name and its
-/// version as two space-separated tokens. Codecs keep their own name and
-/// version constants and own the classification of a rejected line.
+/// version joined by `/`, forming one token in the idiom of `HTTP/2` and
+/// `TLS/1.3`. Codecs keep their own name and version constants and own the
+/// classification of a rejected line.
 [[nodiscard]] inline std::string compose_magic_line(std::string_view name, std::uint64_t version) {
-  return std::string(name) + ' ' + std::to_string(version);
+  return std::string(name) + '/' + std::to_string(version);
 }
 
 /// Structural findings for a magic line, in detection order. A line naming
-/// the family but carrying another version — including the retired suffix
-/// grammar `name-vN` — reports `wrong_version`, so codecs can distinguish an
+/// the family but carrying another version — including the retired space and
+/// suffix grammars — reports `wrong_version`, so codecs can distinguish an
 /// unsupported version from a foreign format.
 enum class magic_line_issue : std::uint8_t {
   none,
@@ -52,7 +53,7 @@ inspect_magic_line(std::string_view line, std::string_view name, std::uint64_t v
     return magic_line_issue::wrong_name;
   }
   const std::string_view rest = line.substr(name.size());
-  if (rest.empty() || rest.front() == ' ' || rest.front() == '-') {
+  if (rest.empty() || rest.front() == '/' || rest.front() == ' ' || rest.front() == '-') {
     return magic_line_issue::wrong_version;
   }
   return magic_line_issue::wrong_name;

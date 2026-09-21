@@ -49,7 +49,7 @@ session.watch(); // every reload group embedded in this program
 ```
 
 Each generation is one immutable object set described by the managed
-`nekomata-generation 2` manifest and published behind a `.ready` marker: the
+`nekomata-generation/2` manifest and published behind a `.ready` marker: the
 producer writes every object, closes them, and renames the marker last.
 Nekomata prepares the complete generation, validates every affected function,
 detects conflicting replacements, and commits the generation all-or-nothing.

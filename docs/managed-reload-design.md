@@ -286,7 +286,7 @@ Each embedded descriptor contains at least:
 The initial canonical payload is:
 
 ```text
-nekomata-group 1
+nekomata-group/1
 group_id "<opaque-logical-id>"
 publication_key "<portable-component>"
 baseline_sequence <uint64>
@@ -377,7 +377,7 @@ uniquely named offers:
 The canonical managed manifest payload is:
 
 ```text
-nekomata-generation 2
+nekomata-generation/2
 group_id "<opaque-logical-id>"
 sequence <uint64>
 generation_id "<portable-component>"
@@ -968,7 +968,7 @@ be considered later; this design does not claim hard real-time bounds.
 ## 17. Current implementation and migration
 
 The current tree implements the platform-neutral descriptor and
-`nekomata-generation 2` codecs, descriptor-to-generation validation, SHA-256
+`nekomata-generation/2` codecs, descriptor-to-generation validation, SHA-256
 object verification, and immutable local generation streams. Each
 `generation_stream` has an independent consumer cursor, selects offers by
 sequence, and never claims or mutates shared publication state.

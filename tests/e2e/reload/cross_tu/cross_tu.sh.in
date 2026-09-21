@@ -53,7 +53,7 @@ publish() { # version sequence guard(0=omit,1=include)
   digest_a=$(sha256sum "$gen/objects/a.o" | cut -d' ' -f1)
   digest_b=$(sha256sum "$gen/objects/b.o" | cut -d' ' -f1)
   {
-    printf 'nekomata-generation 2\n'
+    printf 'nekomata-generation/2\n'
     printf 'group_id "//cross:tu"\n'
     printf 'sequence %s\n' "$sequence"
     printf 'generation_id "gen-%s"\n' "$sequence"
