@@ -50,7 +50,10 @@ Its headers are private, not a supported application API.
 | Component | Responsibility |
 | --- | --- |
 | `module_loader` | Own a load request and deliver exactly one result on the calling event loop. |
+| `manifest_fetcher` | Own one manifest URL fetch and deliver its text on the calling event loop. |
+| `offer_poller` | Poll the stable manifest URL, order offers, and turn superseding offers into loading candidates. |
 | `emscripten_loader` | Fetch artifact bytes, verify the contract SHA-256 before instantiation, stage under a private MEMFS path, and own the loader reference. |
+| `emscripten_manifest_fetcher` | Fetch one manifest URL as text on the browser event loop. |
 | `module_image` | Keep loaded code available and release an uncommitted reference on destruction. |
 | `candidate` | Validate a requested contract and own the prepared result until activation or discard. |
 | `prepared_module` | Own a copied entry set and its image; provide immutable lookup to callers. |
@@ -228,12 +231,14 @@ artifact with an ordered entry set. Build-provenance rows are deliberately
 absent until a consumer exists. The codec touches neither network nor
 filesystem; ordering decisions are a pure comparison on the value.
 
-Still planned on top of the offer: the poller that fetches the manifest URL
-on the application event loop, hands superseding offers to the candidate
-lifecycle, and reports observable acceptance or rejection results for the
-application. The bytes-first fetch-verify-instantiate pipeline now exists in
-`emscripten_loader`; the `abi_id` gate it feeds already rejects before any
-application behavior runs.
+Still planned on top of the offer: the poller now exists —
+`offer_poller` fetches the manifest URL on the application event loop, orders
+offers through `compare_wasm_offers`, and hands superseding offers to the
+candidate lifecycle as observable events; its native suite drives it through
+mock fetchers, and the browser adapter awaits its first Chrome run with the
+demo. What remains is session integration: pinning the group identity,
+connecting prepared candidates to safe-point activation through the library's
+reload model, and application-facing reporting on top of these events.
 
 Session integration must connect preparation and safe-point activation to the
 library's reload model without making the browser loader responsible for

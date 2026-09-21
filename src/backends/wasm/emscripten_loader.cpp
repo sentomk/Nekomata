@@ -114,6 +114,22 @@ void fetch_failed(emscripten_fetch_t* fetch) {
                      module_load_status::load_failed});
 }
 
+struct text_request {
+  std::string url;
+  manifest_fetcher::completion complete;
+};
+
+void manifest_fetched(emscripten_fetch_t* fetch) {
+  const std::unique_ptr<text_request> request{static_cast<text_request*>(fetch->userData)};
+  request->complete(
+      {true, std::string(fetch->data, static_cast<std::size_t>(fetch->numBytes)), {}});
+}
+
+void manifest_fetch_failed(emscripten_fetch_t* fetch) {
+  const std::unique_ptr<text_request> request{static_cast<text_request*>(fetch->userData)};
+  request->complete({false, {}, "manifest fetch failed for '" + request->url + "'"});
+}
+
 } // namespace
 
 // Bytes-first pipeline: fetch the artifact, verify its SHA-256 before
@@ -135,6 +151,22 @@ void emscripten_loader::open(std::string path, std::string_view sha256, completi
   attr.onsuccess = fetched;
   attr.onerror = fetch_failed;
   emscripten_fetch(&attr, url.c_str());
+}
+
+void emscripten_manifest_fetcher::fetch(std::string url, completion complete) {
+  auto request = std::make_unique<text_request>();
+  request->url = url;
+  request->complete = std::move(complete);
+  const std::string fetched_url = request->url;
+
+  emscripten_fetch_attr_t attr;
+  emscripten_fetch_attr_init(&attr);
+  std::strcpy(attr.requestMethod, "GET");
+  attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+  attr.userData = request.release();
+  attr.onsuccess = manifest_fetched;
+  attr.onerror = manifest_fetch_failed;
+  emscripten_fetch(&attr, fetched_url.c_str());
 }
 
 } // namespace neko::wasm
