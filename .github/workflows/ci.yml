@@ -71,7 +71,12 @@ jobs:
             -DNEKOMATA_TEST_WASM=ON \
             -DNEKOMATA_ENABLE_DWARF_INSPECTION=OFF \
             -DNEKOMATA_WASM_BROWSER="$(command -v google-chrome)"
-          bash scripts/build.sh debug --target neko_wasm_fixtures neko_unit_backends_wasm_candidate
+          # Keep this target list in sync with the executables registered in
+          # tests/unit/backends/wasm/CMakeLists.txt.
+          bash scripts/build.sh debug --target neko_wasm_fixtures \
+            neko_unit_backends_wasm_candidate \
+            neko_unit_backends_wasm_offer_poller \
+            neko_unit_backends_wasm_session
           bash scripts/test.sh debug -R '^neko\.(unit\.backends|e2e)\.wasm\.' --no-tests=error
 
       - name: Preserve test diagnostics
