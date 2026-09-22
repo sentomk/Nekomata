@@ -93,6 +93,10 @@ The session returns the public `neko::update_result`; the browser checks the
 group identity, redirected-function count, public rejection code and
 `any_applied()` alongside world continuity. Native unit tests cover every
 candidate-to-public error mapping and retain the original diagnostic text.
+Browser snapshots additionally check the accepted cursor, enabled flag and
+paused ready/failed states. Every update compares transaction-history changes
+against its returned events; reading a snapshot must not start a fetch, switch
+code or change the world. A saved ready snapshot stays unchanged after commit.
 
 Download release and loader-completion observations establish ordering, not
 elapsed-time guesses. Deadlines only turn a stalled test into a failure. The

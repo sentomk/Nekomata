@@ -41,6 +41,14 @@ text. Load/descriptor failures are `object_rejected`, digest mismatches are
 claims a rolled-back entry write through `commit_failed`. Sharing result types
 does not connect this private session to the public backend yet.
 
+`snapshot() const` returns a value-owned `neko::session_snapshot` without polling
+or consuming work. Ready/rejected candidates remain `ready`/`failed` when
+disabled; other candidates are `preparing` while enabled and `idle` otherwise.
+The observed sequence tracks accepted offers, while counters, `last_result`
+and the last applied generation describe transactions consumed by `update()`.
+Ignored offers and transport diagnostics never become transaction counts.
+The single registered group is always visible; object-watch paths stay empty.
+
 `poll_scheduler` separates observation from frame commits. Its owning
 subscription stops scheduling when destroyed; the browser implementation
 uses a 100 ms event-loop interval. A session's loader, fetcher and scheduler

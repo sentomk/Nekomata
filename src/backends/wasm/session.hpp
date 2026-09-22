@@ -43,6 +43,11 @@ public:
   // in-flight completion. Disabled groups never commit or report a transaction.
   [[nodiscard]] ::neko::update_result update();
 
+  // Pure observation by value: no polling, consumption or activation. A
+  // disabled group can retain ready/failed state. Counters and last_result
+  // describe consumed transactions, not preparation or transport diagnostics.
+  [[nodiscard]] ::neko::session_snapshot snapshot() const;
+
   // The owning, immutable snapshot of the active entry set. A frame should
   // retain one snapshot and resolve every entry through it, so identity and
   // behavior entries belong to the same generation.
@@ -58,6 +63,10 @@ private:
   std::unique_ptr<poll_subscription> subscription_;
   active_module active_;
   std::string reported_generation_;
+  std::size_t applied_ = 0;
+  std::size_t rejected_ = 0;
+  std::string last_result_;
+  std::string last_applied_generation_;
 };
 
 } // namespace neko::wasm

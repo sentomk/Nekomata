@@ -11,6 +11,7 @@
 #include <utility>
 
 namespace {
+using neko::group_state;
 using neko::reload_error_code;
 using neko::update_result;
 using neko::update_status;
@@ -73,6 +74,7 @@ std::shared_ptr<const prepared_module> generation_a;
 std::shared_ptr<const prepared_module> generation_b;
 std::string applied_a;
 std::string applied_b;
+neko::session_snapshot retained_ready;
 unsigned pulses = 0;
 unsigned paused_pulse = 0;
 unsigned paused_fetches = 0;
@@ -106,10 +108,54 @@ std::uint32_t identify(const prepared_module& module) {
   return reinterpret_cast<identify_fn>(module.entry("identify"))();
 }
 
+neko::session_snapshot inspect() {
+  const auto before = world;
+  const auto current = session->current();
+  const auto fetches = fetcher.started;
+  auto snapshot = session->snapshot();
+  require(world == before && session->current() == current && fetcher.started == fetches,
+          "snapshot mutated the world, activation or observation");
+  require(snapshot.managed_groups.size() == 1 && snapshot.managed_groups[0].group_id == "flock" &&
+              snapshot.watched_paths.empty(),
+          "snapshot group registry");
+  return snapshot;
+}
+
+void require_group(bool enabled, group_state state, std::uint64_t sequence,
+                   std::string_view last_applied) {
+  const auto snapshot = inspect();
+  const auto& group = snapshot.managed_groups[0];
+  require(group.enabled == enabled && group.state == state && group.observed_sequence == sequence &&
+              group.last_applied_generation == last_applied,
+          "snapshot did not preserve managed observation semantics");
+}
+
 update_result safe_update() {
   const auto before = world;
+  const auto previous = inspect();
   auto result = session->update();
   require(&world == original_world && world == before, "session update changed persistent state");
+  const auto next = inspect();
+  auto applied = previous.applied;
+  auto rejected = previous.rejected;
+  auto last_result = previous.last_result;
+  auto last_applied = previous.managed_groups[0].last_applied_generation;
+  for (const auto& event : result.events) {
+    if (event.status == update_status::applied) {
+      ++applied;
+      last_applied = event.generation_id;
+      last_result = "applied generation '" + event.generation_id +
+                    "': " + std::to_string(event.redirected_function_count) + " function(s)";
+    } else {
+      ++rejected;
+      last_result = event.message;
+    }
+  }
+  require(next.applied == applied && next.rejected == rejected && next.last_result == last_result &&
+              next.managed_groups[0].last_applied_generation == last_applied &&
+              next.managed_groups[0].observed_sequence ==
+                  previous.managed_groups[0].observed_sequence,
+          "snapshot transaction history disagrees with consumed events");
   return result;
 }
 
@@ -157,6 +203,9 @@ void advance_world() {
 bool frame(double, void*) {
   switch (progress) {
   case step::disabled:
+    require_group(false, group_state::idle, 0, "");
+    require(inspect().applied == 0 && inspect().rejected == 0 && inspect().last_result.empty(),
+            "constructed session has transaction history");
     require(safe_update().events.empty() && !session->current() && fetcher.started == 0,
             "constructed session observed or committed while disabled");
     if (pulses >= 3) {
@@ -172,6 +221,7 @@ bool frame(double, void*) {
     }
     require_applied(result);
     applied_a = result.events.front().generation_id;
+    require_group(true, group_state::preparing, 1, applied_a);
     generation_a = session->current();
     require(generation_a && identify(*generation_a) == 1 && world.tick_count == 0, "A baseline");
     progress = step::running_a;
@@ -188,6 +238,7 @@ bool frame(double, void*) {
     }
     break;
   case step::published_b:
+    require_group(false, group_state::idle, 1, applied_a);
     require_paused();
     require(accepted == 1 && loader.completed == 1, "B was prepared without resuming observation");
     if (control_done() && pulses >= paused_pulse + 3) {
@@ -200,20 +251,32 @@ bool frame(double, void*) {
     require(session->current() == generation_a && loader.completed == 1,
             "B escaped its download gate or changed the active module");
     if (accepted == 2) {
+      require_group(true, group_state::preparing, 2, applied_a);
       pause();
       control("/release-b");
       progress = step::paused_b;
     }
     break;
   case step::paused_b:
+    require_group(false, loader.completed == 2 ? group_state::ready : group_state::idle, 2,
+                  applied_a);
+    require(inspect().applied == 1 && inspect().rejected == 0,
+            "late completion changed transaction counts while paused");
     require_paused();
     if (loader.completed == 2 && ++ready_frames >= 3 && pulses >= paused_pulse + 3 &&
         control_done()) {
+      retained_ready = inspect();
       session->watch("flock");
       // Commit retained work immediately, before a new timer can poll again.
       const auto result = safe_update();
       require_applied(result);
       applied_b = result.events.front().generation_id;
+      require_group(true, group_state::preparing, 2, applied_b);
+      require(retained_ready.applied == 1 && retained_ready.rejected == 0 &&
+                  !retained_ready.managed_groups[0].enabled &&
+                  retained_ready.managed_groups[0].state == group_state::ready &&
+                  retained_ready.managed_groups[0].last_applied_generation == applied_a,
+              "saved snapshot changed after resume and commit");
       generation_b = session->current();
       require(generation_b && generation_b != generation_a && identify(*generation_b) == 2 &&
                   applied_b != applied_a && fetcher.started == paused_fetches,
@@ -231,6 +294,11 @@ bool frame(double, void*) {
     }
     break;
   case step::rejecting_c: {
+    if (loader.completed == 3) {
+      require_group(true, group_state::failed, 3, applied_b);
+      require(inspect().applied == 2 && inspect().rejected == 0,
+              "candidate rejection was counted before consumption");
+    }
     const auto result = safe_update();
     if (!result.events.empty()) {
       require(result.events.size() == 1, "C produced multiple transactions");
@@ -249,6 +317,9 @@ bool frame(double, void*) {
     break;
   }
   case step::rejected_c:
+    require_group(true, group_state::failed, 3, applied_b);
+    require(inspect().applied == 2 && inspect().rejected == 1,
+            "repeated rejected offers changed transaction counts");
     require(safe_update().events.empty() && session->current() == generation_b,
             "rejected generation replayed or replaced B");
     if (control_done() && ignored >= rejected_ignored + 2 &&
@@ -256,6 +327,7 @@ bool frame(double, void*) {
       require(accepted == 3 && loader.completed == 3 && identify(*generation_a) == 1,
               "duplicate offers reloaded code or invalidated A");
       session->unwatch();
+      require_group(false, group_state::failed, 3, applied_b);
       pulse.reset();
       report(1, "CMake publications preserved the browser world across watch, late completion, "
                 "resume and rejection");

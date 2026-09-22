@@ -87,8 +87,17 @@ void reload_session::unwatch(std::string_view group_id) {
   update_event event;
   event.group_id = group_id_;
   event.generation_id = accepted->generation_id;
+  std::string next_reported_generation = event.generation_id;
+  std::string next_applied_generation;
+  std::string next_result;
   switch (pending->status()) {
   case candidate_status::ready:
+    // Prepare the result storage before switching live entries. Bookkeeping
+    // after a successful activation only moves strings and updates counters.
+    result.events.reserve(1);
+    next_applied_generation = event.generation_id;
+    next_result = "applied generation '" + event.generation_id +
+                  "': " + std::to_string(accepted->entries.size()) + " function(s)";
     // The caller keeps reloadable code quiescent for this call; activation
     // itself performs no allocation, validation, or behavior invocation.
     if (active_.activate(*pending)) {
@@ -98,12 +107,15 @@ void reload_session::unwatch(std::string_view group_id) {
       event.status = update_status::rejected;
       event.code = reload_error_code::object_rejected;
       event.message = "activation refused a ready candidate";
+      next_result = event.message;
     }
     break;
   case candidate_status::rejected:
+    result.events.reserve(1);
     event.status = update_status::rejected;
     event.code = classify_candidate_error(pending->error());
     event.message = std::string{pending->message()};
+    next_result = event.message;
     break;
   case candidate_status::loading:
   case candidate_status::cancelled:
@@ -111,9 +123,41 @@ void reload_session::unwatch(std::string_view group_id) {
     return result;
   }
 
-  reported_generation_ = accepted->generation_id;
+  if (event.status == update_status::applied) {
+    ++applied_;
+    last_applied_generation_ = std::move(next_applied_generation);
+  } else {
+    ++rejected_;
+  }
+  last_result_ = std::move(next_result);
+  reported_generation_ = std::move(next_reported_generation);
   result.events.push_back(std::move(event));
   return result;
+}
+
+::neko::session_snapshot reload_session::snapshot() const {
+  session_snapshot out;
+  out.applied = applied_;
+  out.rejected = rejected_;
+  out.last_result = last_result_;
+  group_snapshot group;
+  group.group_id = group_id_;
+  group.enabled = observation_ != nullptr;
+  group.last_applied_generation = last_applied_generation_;
+  const auto& poller = std::as_const(*poller_);
+  if (const auto* accepted = poller.accepted()) {
+    group.observed_sequence = accepted->sequence;
+  }
+  const auto* pending = poller.pending();
+  if (pending != nullptr && pending->status() == candidate_status::ready) {
+    group.state = group_state::ready;
+  } else if (pending != nullptr && pending->status() == candidate_status::rejected) {
+    group.state = group_state::failed;
+  } else {
+    group.state = group.enabled ? group_state::preparing : group_state::idle;
+  }
+  out.managed_groups.push_back(std::move(group));
+  return out;
 }
 
 std::shared_ptr<const prepared_module> reload_session::current() const noexcept {

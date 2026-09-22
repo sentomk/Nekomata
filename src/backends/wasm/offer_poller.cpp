@@ -128,6 +128,10 @@ candidate* offer_poller::pending() noexcept {
   return state_ ? state_->pending.get() : nullptr;
 }
 
+const candidate* offer_poller::pending() const noexcept {
+  return state_ ? state_->pending.get() : nullptr;
+}
+
 const ::neko::detail::wasm_offer* offer_poller::accepted() const noexcept {
   return state_ && state_->last.has_value() ? &*state_->last : nullptr;
 }

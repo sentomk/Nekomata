@@ -210,6 +210,8 @@ execution tests the lifecycle logic, not execution of WASM in a native host.
   committed on resume, exact world-state continuity and one incompatible
   generation rejection followed by continued old-code execution. Server gates
   establish download ordering; the fixture observes real loader completions.
+  Public observation snapshots expose the paused ready state and the accepted
+  cursor before activation; transaction counters follow consumed events only.
 
 The [`wasm` CI job](../.github/workflows/ci.yml) pins Emscripten 6.0.9, builds
 the main and side modules, and runs native lifecycle tests plus the browser
@@ -263,7 +265,32 @@ defined in [`include/neko/session.hpp`](../include/neko/session.hpp), including
 `group_id`, `generation_id`, `redirected_function_count` and `any_applied()`.
 No second WASM result type or conversion wrapper is exposed. `current()`
 still exposes the private active entry set.
-Public observation `snapshot()` and multi-group registration are not implemented.
+The private session also returns `neko::session_snapshot` by value through
+`snapshot() const`. Multi-group registration and the public backend are not
+implemented.
+
+Snapshot reads do not poll, consume a result or activate code. The one registered
+group is present from construction with `enabled=false`, sequence zero and no
+applied generation. Its cursor follows the newest accepted offer, including a
+manifest delivered while paused; stale, conflicting, wrong-group and malformed
+offers do not advance it. The newest candidate determines observation state:
+
+| Candidate state | Enabled group | Disabled group |
+| --- | --- | --- |
+| Ready, not consumed | `ready` | `ready` |
+| Rejected, before or after reporting | `failed` | `failed` |
+| Loading, activated, cancelled, or absent | `preparing` | `idle` |
+
+`preparing` describes enabled observation, not proof of an outstanding network
+request. A superseding offer replaces the candidate and may move `failed` back
+to `preparing`, but it does not erase transaction history. `applied`, `rejected`
+and `last_result` change only when `update()` consumes a transaction. A rejected
+event preserves `last_applied_generation`; a successful event replaces it and
+sets `last_result` to `applied generation '<id>': <count> function(s)`, matching
+the native managed result text. Preparation, pause/resume, duplicate delivery
+and superseded pending work do not change those counters. `watched_paths` is
+empty because this private session has no individual object watches. Saved
+snapshots own their values independently of later session activity.
 
 Candidate validation retains its private `candidate_error` vocabulary.
 [`session_error.hpp`](../src/backends/wasm/session_error.hpp) maps that typed
@@ -315,7 +342,8 @@ and world continuity; it is not evidence for the still-pending public backend.
 
 Browser observation uses asynchronous event-loop scheduling instead of a
 native worker thread. Public integration still requires page-side group
-registration, observation snapshots, and a stable behavior-call seam.
+registration and a stable behavior-call seam. Shared results and observation
+snapshots do not by themselves connect the private agent to the public session.
 Adding a factory alone does not provide these capabilities, and the private
 `current()->entry(...)` access pattern is not a new public session promise.
 

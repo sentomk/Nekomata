@@ -55,6 +55,7 @@ public:
 
   // The candidate for the newest accepted offer, or null.
   [[nodiscard]] candidate* pending() noexcept;
+  [[nodiscard]] const candidate* pending() const noexcept;
   // The last accepted offer, or null.
   [[nodiscard]] const ::neko::detail::wasm_offer* accepted() const noexcept;
 

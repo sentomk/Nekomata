@@ -14,12 +14,15 @@
 #include <vector>
 
 namespace {
+using neko::group_state;
 using neko::reload_error_code;
 using neko::update_status;
 using namespace neko::wasm;
 
 static_assert(std::is_same_v<decltype(std::declval<reload_session&>().update()),
                              decltype(std::declval<neko::reload_session&>().update())>);
+static_assert(std::is_same_v<decltype(std::declval<const reload_session&>().snapshot()),
+                             neko::session_snapshot>);
 
 constexpr std::string_view a_digest =
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -149,7 +152,188 @@ struct diagnostics_log {
   }
 };
 
+void check_group(const neko::session_snapshot& snapshot, bool enabled, group_state state,
+                 std::uint64_t sequence, std::string_view last_applied = {}) {
+  REQUIRE(snapshot.managed_groups.size() == 1);
+  const auto& group = snapshot.managed_groups.front();
+  CHECK(group.group_id == "game");
+  CHECK(group.enabled == enabled);
+  CHECK(group.state == state);
+  CHECK(group.observed_sequence == sequence);
+  CHECK(group.last_applied_generation == last_applied);
+  CHECK(snapshot.watched_paths.empty());
+}
+
 } // namespace
+
+TEST_CASE("snapshots are independent values and never start observation") {
+  test_loader loader;
+  scripted_fetcher fetcher;
+  manual_scheduler scheduler;
+  reload_session session{loader, fetcher, scheduler, "offers/latest", "game"};
+  auto initial = session.snapshot();
+  check_group(initial, false, group_state::idle, 0);
+  CHECK(initial.applied == 0);
+  CHECK(initial.rejected == 0);
+  CHECK(initial.last_result.empty());
+  session.watch();
+  const auto enabled = session.snapshot();
+  check_group(enabled, true, group_state::preparing, 0);
+  check_group(initial, false, group_state::idle, 0);
+  initial.managed_groups.front().group_id = "changed copy";
+  initial.managed_groups.front().last_applied_generation = "not applied";
+  initial.applied = 100;
+  initial.last_result = "not a transaction";
+  check_group(session.snapshot(), true, group_state::preparing, 0);
+  CHECK(session.snapshot().applied == 0);
+  CHECK(session.snapshot().last_result.empty());
+  session.unwatch();
+  check_group(session.snapshot(), false, group_state::idle, 0);
+  CHECK(session.update().events.empty());
+  CHECK(fetcher.fetches == 0);
+  CHECK(loader.opened_paths.empty());
+}
+
+TEST_CASE("snapshots distinguish paused preparation from consumed transactions") {
+  test_loader loader;
+  scripted_fetcher fetcher;
+  manual_scheduler scheduler;
+  reload_session session{loader, fetcher, scheduler, "offers/latest", "game"};
+  session.watch();
+  poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest));
+  check_group(session.snapshot(), true, group_state::preparing, 7);
+  loader.finish(std::make_unique<test_image>(behavior_a));
+  const auto ready_a = session.snapshot();
+  check_group(ready_a, true, group_state::ready, 7);
+  CHECK(ready_a.applied == 0);
+  CHECK(ready_a.last_result.empty());
+  REQUIRE(session.update().any_applied());
+  const auto active = session.current();
+  const auto applied_a = session.snapshot();
+  check_group(applied_a, true, group_state::preparing, 7, "gen-7");
+  CHECK(applied_a.applied == 1);
+  CHECK(applied_a.last_result == "applied generation 'gen-7': 2 function(s)");
+
+  scheduler.tick();
+  session.unwatch();
+  // The cursor advances on a late accepted manifest, not on activation.
+  fetcher.deliver_ok(offer_text(8, "gen-8", b_digest));
+  const auto loading_b = session.snapshot();
+  check_group(loading_b, false, group_state::idle, 8, "gen-7");
+  bool reject = false;
+  SUBCASE("ready while disabled") {
+    loader.finish(std::make_unique<test_image>(behavior_b));
+  }
+  SUBCASE("failed while disabled") {
+    reject = true;
+    loader.finish(nullptr, "bad digest", module_load_status::digest_mismatch);
+  }
+  const auto pending_state = reject ? group_state::failed : group_state::ready;
+  const auto pending_b = session.snapshot();
+  check_group(pending_b, false, pending_state, 8, "gen-7");
+  CHECK(pending_b.applied == 1);
+  CHECK(pending_b.rejected == 0);
+  CHECK(pending_b.last_result == applied_a.last_result);
+  CHECK(session.update().events.empty());
+  CHECK(session.current() == active);
+  CHECK(session.snapshot().rejected == 0);
+  CHECK(fetcher.fetches == 2);
+  CHECK(loader.opened_paths.size() == 2);
+
+  session.watch("game");
+  check_group(session.snapshot(), true, pending_state, 8, "gen-7");
+  REQUIRE(session.update().events.size() == 1);
+  const auto consumed = session.snapshot();
+  check_group(consumed, true, reject ? group_state::failed : group_state::preparing, 8,
+              reject ? "gen-7" : "gen-8");
+  CHECK(consumed.applied == (reject ? 1 : 2));
+  CHECK(consumed.rejected == (reject ? 1 : 0));
+  CHECK(consumed.last_result ==
+        (reject ? "bad digest" : "applied generation 'gen-8': 2 function(s)"));
+  CHECK(session.update().events.empty());
+  session.unwatch();
+  check_group(session.snapshot(), false, reject ? group_state::failed : group_state::idle, 8,
+              reject ? "gen-7" : "gen-8");
+  CHECK(session.snapshot().applied == consumed.applied);
+  CHECK(session.snapshot().rejected == consumed.rejected);
+  CHECK(session.snapshot().last_result == consumed.last_result);
+  // Old snapshots do not change as the live session advances.
+  check_group(ready_a, true, group_state::ready, 7);
+  CHECK(ready_a.applied == 0);
+  check_group(loading_b, false, group_state::idle, 8, "gen-7");
+  check_group(pending_b, false, pending_state, 8, "gen-7");
+}
+
+TEST_CASE("superseded pending results do not enter snapshot transaction counts") {
+  test_loader loader;
+  scripted_fetcher fetcher;
+  manual_scheduler scheduler;
+  reload_session session{loader, fetcher, scheduler, "offers/latest", "game"};
+  session.watch();
+  poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest));
+  SUBCASE("superseded ready generation") {
+    loader.finish(std::make_unique<test_image>(behavior_a));
+    check_group(session.snapshot(), true, group_state::ready, 7);
+  }
+  SUBCASE("superseded rejection") {
+    loader.finish(nullptr, "bad digest", module_load_status::digest_mismatch);
+    check_group(session.snapshot(), true, group_state::failed, 7);
+  }
+  poll(scheduler, fetcher, offer_text(8, "gen-8", b_digest));
+  check_group(session.snapshot(), true, group_state::preparing, 8);
+  CHECK(session.snapshot().applied == 0);
+  CHECK(session.snapshot().rejected == 0);
+  CHECK(session.snapshot().last_result.empty());
+  loader.finish(std::make_unique<test_image>(behavior_b));
+  check_group(session.snapshot(), true, group_state::ready, 8);
+  REQUIRE(session.update().any_applied());
+  check_group(session.snapshot(), true, group_state::preparing, 8, "gen-8");
+  CHECK(session.snapshot().applied == 1);
+  CHECK(session.snapshot().rejected == 0);
+}
+
+TEST_CASE("observation diagnostics preserve snapshot cursor and transaction history") {
+  test_loader loader;
+  scripted_fetcher fetcher;
+  manual_scheduler scheduler;
+  diagnostics_log log;
+  reload_session session{loader,    fetcher,
+                         scheduler, "offers/latest",
+                         "game",    [&log](const offer_event& event) { log.record(event); }};
+  session.watch();
+  poll(scheduler, fetcher, offer_text(8, "gen-8", b_digest));
+  loader.finish(nullptr, "bad digest", module_load_status::digest_mismatch);
+  REQUIRE(session.update().events.size() == 1);
+  const auto before = session.snapshot();
+  poll(scheduler, fetcher, offer_text(8, "gen-8", b_digest));
+  poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest));
+  poll(scheduler, fetcher, offer_text(8, "conflict", b_digest));
+  poll(scheduler, fetcher, offer_text(100, "other", b_digest, "other-game"));
+  poll(scheduler, fetcher, "not a manifest");
+  scheduler.tick();
+  auto complete = std::move(fetcher.pending);
+  complete({false, {}, "transport unavailable"});
+  CHECK(log.kinds.size() == 7);
+  CHECK(session.update().events.empty());
+  check_group(session.snapshot(), true, group_state::failed, 8);
+  CHECK(session.snapshot().applied == 0);
+  CHECK(session.snapshot().rejected == 1);
+  CHECK(session.snapshot().last_result == before.last_result);
+  CHECK(loader.opened_paths.size() == 1);
+  poll(scheduler, fetcher, offer_text(9, "gen-9", a_digest));
+  check_group(session.snapshot(), true, group_state::preparing, 9);
+  CHECK(session.snapshot().last_result == before.last_result);
+  loader.finish(std::make_unique<test_image>(behavior_a));
+  check_group(session.snapshot(), true, group_state::ready, 9);
+  CHECK(session.snapshot().applied == 0);
+  CHECK(session.snapshot().rejected == 1);
+  CHECK(session.snapshot().last_result == before.last_result);
+  REQUIRE(session.update().any_applied());
+  check_group(session.snapshot(), true, group_state::preparing, 9, "gen-9");
+  CHECK(session.snapshot().applied == 1);
+  CHECK(session.snapshot().rejected == 1);
+  CHECK(session.snapshot().last_result == "applied generation 'gen-9': 2 function(s)");
+}
 
 TEST_CASE("candidate error classification uses the public rejection vocabulary") {
   struct mapping {
@@ -556,10 +740,12 @@ TEST_CASE("failed scheduling leaves watch retryable") {
   reload_session session{loader, fetcher, scheduler, "offers/latest", "game"};
   scheduler.fail = true;
   REQUIRE_THROWS_WITH_AS(session.watch(), "fixture scheduler failed", std::runtime_error);
+  check_group(session.snapshot(), false, group_state::idle, 0);
   CHECK(session.update().events.empty());
   CHECK(fetcher.fetches == 0);
   scheduler.fail = false;
   session.watch();
+  check_group(session.snapshot(), true, group_state::preparing, 0);
   scheduler.tick();
   CHECK(fetcher.fetches == 1);
 }
