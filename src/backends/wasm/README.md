@@ -24,13 +24,20 @@ The loader owns its request path and callback until completion, independently
 of the candidate and loader object's lifetime. The loader interface permits
 synchronous completion; the browser fetch adapter completes asynchronously.
 
-The private `reload_session` registers one group, initially disabled.
-`watch()` or `watch(group_id)` starts scheduled polling; `unwatch()` or
-`unwatch(group_id)` stops new polling and consumption without discarding the
+The private `reload_session` takes a fixed list of `group_registration` values:
+group ID, manifest URL and optional per-group diagnostics callback. IDs must be
+nonempty and unique; every group starts disabled. `watch()` selects all groups,
+while `watch(group_id)` selects just one. Both start scheduled polling;
+`unwatch()` or `unwatch(group_id)` stops new polling and consumption without discarding the
 cursor, pending candidate or active code. In-flight requests may finish into
 retained state. `update()` only consumes prepared results while enabled.
 Repeated enable/disable calls are idempotent; an unknown group is a
 configuration error. Old scheduling callbacks cannot revive after re-enable.
+An empty registry has an empty snapshot and no update events; `watch()` rejects it.
+If scheduling one group fails, previously enabled groups remain enabled; retry
+does not duplicate their subscriptions. Each group owns its cursor, pending
+result and active entry set. `current(group_id)` returns only that group's
+owning entry snapshot and rejects unknown IDs.
 
 The session returns `neko::update_result` directly. Both applied and rejected
 events identify their group and generation; only applied events report a
@@ -40,6 +47,10 @@ text. Load/descriptor failures are `object_rejected`, digest mismatches are
 `integrity`, and ABI/layout mismatches are `incompatible`. No candidate failure
 claims a rolled-back entry write through `commit_failed`. Sharing result types
 does not connect this private session to the public backend yet.
+Events are returned in ascending group ID order. Every group is an independent
+transaction: a rejection or pause in one does not block another. There is no
+cross-group atomic activation promise. Event storage and bookkeeping for all
+ready results are prepared before the first activation.
 
 `snapshot() const` returns a value-owned `neko::session_snapshot` without polling
 or consuming work. Ready/rejected candidates remain `ready`/`failed` when
@@ -47,7 +58,9 @@ disabled; other candidates are `preparing` while enabled and `idle` otherwise.
 The observed sequence tracks accepted offers, while counters, `last_result`
 and the last applied generation describe transactions consumed by `update()`.
 Ignored offers and transport diagnostics never become transaction counts.
-The single registered group is always visible; object-watch paths stay empty.
+Every registered group is always visible, sorted by ID; object-watch paths stay
+empty. Counters sum consumed transactions across groups, and `last_result`
+describes the last event consumed in group order, not the last network completion.
 
 `poll_scheduler` separates observation from frame commits. Its owning
 subscription stops scheduling when destroyed; the browser implementation

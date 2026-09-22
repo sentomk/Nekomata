@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace {
 using neko::group_state;
@@ -110,10 +111,10 @@ std::uint32_t identify(const prepared_module& module) {
 
 neko::session_snapshot inspect() {
   const auto before = world;
-  const auto current = session->current();
+  const auto current = session->current("flock");
   const auto fetches = fetcher.started;
   auto snapshot = session->snapshot();
-  require(world == before && session->current() == current && fetcher.started == fetches,
+  require(world == before && session->current("flock") == current && fetcher.started == fetches,
           "snapshot mutated the world, activation or observation");
   require(snapshot.managed_groups.size() == 1 && snapshot.managed_groups[0].group_id == "flock" &&
               snapshot.watched_paths.empty(),
@@ -178,11 +179,12 @@ void pause() {
 void require_paused() {
   require(safe_update().events.empty(), "paused session consumed a transaction");
   require(fetcher.started == paused_fetches, "paused session started another manifest fetch");
-  require(session->current() == generation_a, "paused session replaced the active generation");
+  require(session->current("flock") == generation_a,
+          "paused session replaced the active generation");
 }
 
 void advance_world() {
-  const auto current = session->current();
+  const auto current = session->current("flock");
   const auto before = world;
   reinterpret_cast<update_fn>(current->entry("update_world"))(&world);
   require(&world == original_world && world.tick_count == before.tick_count + 1,
@@ -206,7 +208,7 @@ bool frame(double, void*) {
     require_group(false, group_state::idle, 0, "");
     require(inspect().applied == 0 && inspect().rejected == 0 && inspect().last_result.empty(),
             "constructed session has transaction history");
-    require(safe_update().events.empty() && !session->current() && fetcher.started == 0,
+    require(safe_update().events.empty() && !session->current("flock") && fetcher.started == 0,
             "constructed session observed or committed while disabled");
     if (pulses >= 3) {
       session->watch("flock");
@@ -222,7 +224,7 @@ bool frame(double, void*) {
     require_applied(result);
     applied_a = result.events.front().generation_id;
     require_group(true, group_state::preparing, 1, applied_a);
-    generation_a = session->current();
+    generation_a = session->current("flock");
     require(generation_a && identify(*generation_a) == 1 && world.tick_count == 0, "A baseline");
     progress = step::running_a;
     break;
@@ -248,7 +250,7 @@ bool frame(double, void*) {
     break;
   case step::loading_b:
     // No update() here: observation and preparation must progress on their own.
-    require(session->current() == generation_a && loader.completed == 1,
+    require(session->current("flock") == generation_a && loader.completed == 1,
             "B escaped its download gate or changed the active module");
     if (accepted == 2) {
       require_group(true, group_state::preparing, 2, applied_a);
@@ -277,7 +279,7 @@ bool frame(double, void*) {
                   retained_ready.managed_groups[0].state == group_state::ready &&
                   retained_ready.managed_groups[0].last_applied_generation == applied_a,
               "saved snapshot changed after resume and commit");
-      generation_b = session->current();
+      generation_b = session->current("flock");
       require(generation_b && generation_b != generation_a && identify(*generation_b) == 2 &&
                   applied_b != applied_a && fetcher.started == paused_fetches,
               "resume lost prepared B or replayed A");
@@ -313,14 +315,14 @@ bool frame(double, void*) {
       rejected_tick = world.tick_count;
       progress = step::rejected_c;
     }
-    require(session->current() == generation_b, "C changed the active generation");
+    require(session->current("flock") == generation_b, "C changed the active generation");
     break;
   }
   case step::rejected_c:
     require_group(true, group_state::failed, 3, applied_b);
     require(inspect().applied == 2 && inspect().rejected == 1,
             "repeated rejected offers changed transaction counts");
-    require(safe_update().events.empty() && session->current() == generation_b,
+    require(safe_update().events.empty() && session->current("flock") == generation_b,
             "rejected generation replayed or replaced B");
     if (control_done() && ignored >= rejected_ignored + 2 &&
         world.tick_count >= rejected_tick + 3) {
@@ -343,15 +345,16 @@ bool frame(double, void*) {
 
 int main() {
   session = std::make_unique<reload_session>(
-      loader, fetcher, scheduler, "offers/latest", "flock", [](const offer_event& event) {
-        if (event.kind == offer_event_kind::offer_accepted) {
-          ++accepted;
-        } else if (event.kind == offer_event_kind::offer_ignored) {
-          ++ignored;
-        } else {
-          require(false, event.message.c_str());
-        }
-      });
+      loader, fetcher, scheduler,
+      std::vector<group_registration>{{"flock", "offers/latest", [](const offer_event& event) {
+                                         if (event.kind == offer_event_kind::offer_accepted) {
+                                           ++accepted;
+                                         } else if (event.kind == offer_event_kind::offer_ignored) {
+                                           ++ignored;
+                                         } else {
+                                           require(false, event.message.c_str());
+                                         }
+                                       }}});
   pulse = scheduler.repeat([] { ++pulses; });
   emscripten_request_animation_frame_loop(frame, nullptr);
   emscripten_exit_with_live_runtime();

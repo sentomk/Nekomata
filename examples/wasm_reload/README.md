@@ -47,7 +47,7 @@ rejections with their classification.
 - The page links the backend sources directly and calls `session.watch()`
   to start event-loop polling. `session.update()` once per frame is the safe
   point: it activates a ready candidate without starting a fetch, and the
-  frame resolves every entry through the one `current()` snapshot.
+  frame resolves every entry through the one `current(demo::group_id)` snapshot.
   `unwatch()` pauses polling and activation while preserving the running
   behavior, pending candidate and consumer cursor; `watch()` resumes them.
 - Each artifact is verified against the manifest's SHA-256 before

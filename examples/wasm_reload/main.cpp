@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -82,7 +83,7 @@ bool frame(double, void*) {
     }
   }
 
-  const auto snapshot = session->current();
+  const auto snapshot = session->current(demo::group_id);
   if (snapshot) {
     // One snapshot per frame: identity and update entries come from the
     // same generation even if another one activates mid-frame.
@@ -110,8 +111,10 @@ bool frame(double, void*) {
 
 int main() {
   session = std::make_unique<neko::wasm::reload_session>(
-      loader, fetcher, scheduler, "offers/latest", demo::group_id,
-      [](const neko::wasm::offer_event& event) { note(1, describe(event).c_str()); });
+      loader, fetcher, scheduler,
+      std::vector<neko::wasm::group_registration>{
+          {demo::group_id, "offers/latest",
+           [](const neko::wasm::offer_event& event) { note(1, describe(event).c_str()); }}});
   session->watch();
   emscripten_request_animation_frame_loop(frame, nullptr);
   return 0;

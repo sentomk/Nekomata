@@ -1,10 +1,10 @@
 # Browser WASM hot-reload design
 
 Status: the private candidate lifecycle, HTTP-polling delivery with digest
-verification, the private browser reload session with watch/unwatch controls,
-and a local browser demo using CMake publication are implemented. Public
-backend integration and page-side group registration are planned. This document
-distinguishes those goals from the current code.
+verification, the private browser reload session with multi-group watch/unwatch
+controls, and a local browser demo using CMake publication are implemented.
+Public backend integration and build-generated page-side registration are
+planned. This document distinguishes those goals from the current code.
 
 ## Purpose and scope
 
@@ -245,14 +245,15 @@ artifact with an ordered entry set. Build-provenance rows are deliberately
 absent until a consumer exists. The codec touches neither network nor
 filesystem; ordering decisions are a pure comparison on the value.
 
-Still planned on top of the offer: the poller now exists —
 `offer_poller` fetches the manifest URL on the application event loop, orders
 offers through `compare_wasm_offers`, and hands superseding offers to the
 candidate lifecycle as observable events; its native suite drives it through
 mock fetchers. Session integration also exists in private form:
-`neko::wasm::reload_session` pins one group, initially disabled. Its `watch()`
-and `unwatch()` overloads control an observation subscription while preserving
-the poller and its consumer cursor. The browser scheduler polls every 100 ms
+`neko::wasm::reload_session` accepts a fixed list of private `group_registration`
+values carrying group ID, manifest URL and optional diagnostics callback.
+IDs must be nonempty and unique, and all groups start disabled. Its `watch()`
+and `unwatch()` overloads control all groups or one named group while preserving
+each poller and its consumer cursor. The browser scheduler polls every 100 ms
 on the event loop, without requiring `update()`. Each enable cycle has a fresh
 weak callback token, so a queued callback from an earlier cycle cannot start
 another poll after disable or re-enable.
@@ -263,13 +264,26 @@ cannot activate it. Destruction cancels scheduling and invalidates outstanding
 observation callbacks. Transactions return the same `neko::update_result`
 defined in [`include/neko/session.hpp`](../include/neko/session.hpp), including
 `group_id`, `generation_id`, `redirected_function_count` and `any_applied()`.
-No second WASM result type or conversion wrapper is exposed. `current()`
-still exposes the private active entry set.
+No second WASM result type or conversion wrapper is exposed. `current(group_id)`
+still exposes a private active entry set, scoped to one registered group.
 The private session also returns `neko::session_snapshot` by value through
-`snapshot() const`. Multi-group registration and the public backend are not
-implemented.
+`snapshot() const`. This private registration does not provide build-generated
+discovery or the public backend.
 
-Snapshot reads do not poll, consume a result or activate code. The one registered
+Groups keep separate subscriptions, candidates, consumer cursors, active code
+and reported-generation identities; identical sequence or generation IDs in
+different groups do not collide. `update()` consumes enabled groups in ascending
+group ID order. Each group is its own transaction, so one rejection does not
+prevent another group from applying. This is not a cross-group atomic switch.
+All event storage and bookkeeping are prepared before any activation, avoiding
+allocation failure after an earlier group has already switched.
+
+An empty registry has an empty snapshot and no update events; all-group `watch()`
+rejects it. Unknown IDs are configuration errors for named operations, including
+`current(group_id)`. If all-group `watch()` fails to schedule a group, previously
+enabled groups stay enabled and a retry only starts the remaining subscriptions.
+
+Snapshot reads do not poll, consume a result or activate code. Every registered
 group is present from construction with `enabled=false`, sequence zero and no
 applied generation. Its cursor follows the newest accepted offer, including a
 manifest delivered while paused; stale, conflicting, wrong-group and malformed
@@ -290,7 +304,9 @@ sets `last_result` to `applied generation '<id>': <count> function(s)`, matching
 the native managed result text. Preparation, pause/resume, duplicate delivery
 and superseded pending work do not change those counters. `watched_paths` is
 empty because this private session has no individual object watches. Saved
-snapshots own their values independently of later session activity.
+snapshots own their values independently of later session activity. Groups are
+sorted by ID; counters sum consumed transactions across groups and `last_result`
+describes the final event consumed in that order, not network-completion order.
 
 Candidate validation retains its private `candidate_error` vocabulary.
 [`session_error.hpp`](../src/backends/wasm/session_error.hpp) maps that typed
@@ -336,16 +352,21 @@ ordinary platform and sanitizer CI jobs. The WASM session unit suite drives
 observation separately from commits and covers pauses before and after
 completion, cursor retention, old ticks after resume, scheduling failure, and
 destruction with outstanding requests. The real browser scheduler is tested
-separately. `neko.e2e.wasm.session_lifecycle` covers the CMake publisher-to-HTTP
-pause/resume path with the private session, including late artifact completion
+separately. The same unit suite also covers multi-group selection, independent
+pause/resume and cursors, sorted events and snapshots, mixed success/rejection,
+scheduling failure and destruction with multiple outstanding requests. These
+tests run in the existing native and WASM CI jobs; real browser multi-group
+acceptance is not implemented yet. `neko.e2e.wasm.session_lifecycle` covers the
+single-group CMake publisher-to-HTTP pause/resume path with the private session,
+including late artifact completion
 and world continuity; it is not evidence for the still-pending public backend.
 
 Browser observation uses asynchronous event-loop scheduling instead of a
 native worker thread. Public integration still requires page-side group
-registration and a stable behavior-call seam. Shared results and observation
+discovery and a stable behavior-call seam. Shared results and observation
 snapshots do not by themselves connect the private agent to the public session.
 Adding a factory alone does not provide these capabilities, and the private
-`current()->entry(...)` access pattern is not a new public session promise.
+`current(group_id)->entry(...)` access pattern is not a new public session promise.
 
 ### Build integration and remaining work
 
@@ -358,8 +379,8 @@ lock, sequence, and atomic-release discipline. The request still describes
 build inputs; the published manifest differs per backend
 (`nekomata-generation/2` versus `nekomata-wasm/1`), and the browser flavor
 emits no embedded descriptor section. The demo is not registered in CI.
-What remains is public backend factories with the convergence of the two
-event vocabularies at that factory boundary.
+What remains is the public session integration and backend factory; the
+private session already uses the public transaction and snapshot types.
 
 Session integration must connect preparation and safe-point activation to the
 library's reload model without making the browser loader responsible for
