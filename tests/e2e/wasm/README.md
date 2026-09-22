@@ -103,3 +103,26 @@ elapsed-time guesses. Deadlines only turn a stalled test into a failure. The
 native session unit suite retains finer-grained coverage of stale scheduling
 callbacks, late manifests, destruction and scheduler failures. This browser
 case does not establish public API integration or multi-group support.
+
+`multi_group_session` separately exercises two CMake publication streams in one
+real browser session. Each stream has its own build and publication directory;
+the fixture parameterizes the group ID in the existing test project. It keeps
+the single-group test intact and is an explicit required test in WASM CI.
+
+The page registers `beta` before `alpha`, then checks sorted snapshots and
+events. Both groups apply a baseline and advance separate persistent worlds.
+While `alpha` is paused, `beta` applies its second generation and runs several
+frames; `alpha` neither fetches nor advances its cursor. After resuming `alpha`,
+the server gates its second artifact until the page pauses it again. The late
+completion stays ready and unconsumed while both worlds continue. Resuming and
+immediately updating consumes only `alpha`, without another fetch.
+
+Finally, CMake publishes an incompatible third `alpha` and a valid third
+`beta`. The page waits for both prepared outcomes, then checks that one
+`update()` returns `alpha` rejected followed by `beta` applied. It verifies
+independent cursors, per-group last-applied identities, aggregate statistics,
+duplicate suppression, and continued execution of the unaffected code.
+Every commit preserves both worlds exactly; each behavior tick mutates only
+its own world and uses generation-consistent entries. Saved entry snapshots
+remain callable. This proves cooperative multi-group browser delivery, not
+cross-group atomicity, public backend integration or build-generated discovery.

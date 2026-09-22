@@ -8,6 +8,29 @@ import tempfile
 import threading
 
 
+def publish_generation(args, build, offer_root, generation, interface_version, group_id="flock"):
+    commands = [
+        [args.emcmake, args.cmake,
+         "-S", str(pathlib.Path(__file__).parent / "session_project"),
+         "-B", str(build), "-G", "Ninja",
+         f"-DCMAKE_MAKE_PROGRAM={args.ninja}",
+         f"-DNEKOMATA_PUBLISHER_EXECUTABLE={args.publisher}",
+         f"-DOFFER_ROOT={offer_root}", f"-DGROUP_ID={group_id}",
+         f"-DGENERATION_ID={generation}", f"-DINTERFACE_VERSION={interface_version}"],
+        [args.cmake, "--build", str(build), "--target", "flock_reload"],
+    ]
+    for command in commands:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            raise RuntimeError(f"command failed: {command}\n{result.stdout}\n{result.stderr}")
+    # Read only generated fixture fields; production parsing stays in C++.
+    rows = [shlex.split(line) for line in (offer_root / "latest").read_text().splitlines()]
+    fields = {row[0]: row[1:] for row in rows if len(row) > 1}
+    if int(fields["sequence"][0]) != generation or fields["group_id"][0] != group_id:
+        raise RuntimeError(f"unexpected publication identity: {fields}")
+    return fields["artifact"][0]
+
+
 class session_fixture:
     def __init__(self, args):
         self.args = args
@@ -29,33 +52,13 @@ class session_fixture:
             self.close()
             raise
 
-    def run(self, command):
-        result = subprocess.run(command, capture_output=True, text=True, timeout=30)
-        if result.returncode:
-            raise RuntimeError(f"command failed: {command}\n{result.stdout}\n{result.stderr}")
-
     def publish(self, generation):
         with self.lock:
             if generation != self.generation + 1:
                 raise RuntimeError("unexpected publication order")
-            self.run([
-                self.args.emcmake, self.args.cmake,
-                "-S", str(pathlib.Path(__file__).parent / "session_project"),
-                "-B", str(self.build), "-G", "Ninja",
-                f"-DCMAKE_MAKE_PROGRAM={self.args.ninja}",
-                f"-DNEKOMATA_PUBLISHER_EXECUTABLE={self.args.publisher}",
-                f"-DOFFER_ROOT={self.public / 'offers'}",
-                f"-DGENERATION_ID={generation}",
-                f"-DINTERFACE_VERSION={2 if generation == 3 else 1}",
-            ])
-            self.run([self.args.cmake, "--build", str(self.build), "--target", "flock_reload"])
-            # Read only the fixture's generated fields; production parsing stays in C++.
-            rows = [shlex.split(line) for line in
-                    (self.public / "offers/latest").read_text().splitlines()]
-            sequence = next(row[1] for row in rows if row and row[0] == "sequence")
-            artifact = next(row[1] for row in rows if row and row[0] == "artifact")
-            if int(sequence) != generation:
-                raise RuntimeError(f"publisher sequence {sequence}, expected {generation}")
+            artifact = publish_generation(
+                self.args, self.build, self.public / "offers", generation,
+                2 if generation == 3 else 1)
             if generation == 2:
                 self.b_path = "/offers/" + artifact
             self.generation = generation

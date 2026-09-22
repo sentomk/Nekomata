@@ -43,10 +43,10 @@ add_custom_command(
   DEPENDS "${PROJECT_SOURCE_DIR}/src/base/c/neko_sha256.c" VERBATIM)
 set(session_sources "${wasm_backend}/offer_poller.cpp" "${wasm_backend}/session.cpp"
   "${PROJECT_SOURCE_DIR}/src/protocol/wasm_offer.cpp")
-foreach(runner IN ITEMS runner lifecycle scheduler session)
+foreach(runner IN ITEMS runner lifecycle scheduler session multi_session)
   set(runner_sources "")
   set(runner_flags "")
-  if(runner STREQUAL "session")
+  if(runner STREQUAL "session" OR runner STREQUAL "multi_session")
     set(runner_sources ${session_sources})
     # The offer codec throws on malformed input; the poller catches it.
     set(runner_flags -fexceptions -sDISABLE_EXCEPTION_CATCHING=0
@@ -101,6 +101,7 @@ add_custom_target(neko_wasm_fixtures ALL DEPENDS
   "${CMAKE_CURRENT_BINARY_DIR}/lifecycle.js" "${CMAKE_CURRENT_BINARY_DIR}/lifecycle.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/scheduler.js" "${CMAKE_CURRENT_BINARY_DIR}/scheduler.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/session.js" "${CMAKE_CURRENT_BINARY_DIR}/session.wasm"
+  "${CMAKE_CURRENT_BINARY_DIR}/multi_session.js" "${CMAKE_CURRENT_BINARY_DIR}/multi_session.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/late.wasm" "${CMAKE_CURRENT_BINARY_DIR}/abandoned.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/a.wasm" "${CMAKE_CURRENT_BINARY_DIR}/b.wasm"
   "${CMAKE_CURRENT_BINARY_DIR}/incompatible.wasm"
@@ -129,4 +130,10 @@ if(TARGET neko_publisher)
       --cmake "${CMAKE_COMMAND}" --emcmake "${NEKOMATA_EMCMAKE}"
       --ninja "${NEKOMATA_WASM_NINJA}" --publisher "$<TARGET_FILE:neko_publisher>")
   set_tests_properties(neko.e2e.wasm.session_lifecycle PROPERTIES TIMEOUT 180 LABELS "e2e;wasm")
+  add_test(NAME neko.e2e.wasm.multi_group_session
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_browser.py"
+      --browser "${NEKOMATA_WASM_BROWSER}" --root "${CMAKE_CURRENT_BINARY_DIR}" --runner multi_session
+      --cmake "${CMAKE_COMMAND}" --emcmake "${NEKOMATA_EMCMAKE}"
+      --ninja "${NEKOMATA_WASM_NINJA}" --publisher "$<TARGET_FILE:neko_publisher>")
+  set_tests_properties(neko.e2e.wasm.multi_group_session PROPERTIES TIMEOUT 180 LABELS "e2e;wasm")
 endif()

@@ -355,11 +355,18 @@ destruction with outstanding requests. The real browser scheduler is tested
 separately. The same unit suite also covers multi-group selection, independent
 pause/resume and cursors, sorted events and snapshots, mixed success/rejection,
 scheduling failure and destruction with multiple outstanding requests. These
-tests run in the existing native and WASM CI jobs; real browser multi-group
-acceptance is not implemented yet. `neko.e2e.wasm.session_lifecycle` covers the
-single-group CMake publisher-to-HTTP pause/resume path with the private session,
-including late artifact completion
-and world continuity; it is not evidence for the still-pending public backend.
+tests run in the existing native and WASM CI jobs.
+`neko.e2e.wasm.session_lifecycle` covers the single-group CMake publisher-to-HTTP
+pause/resume path with the private session,
+including late artifact completion and world continuity.
+`neko.e2e.wasm.multi_group_session` drives two independent CMake streams in
+one Chrome page: one group pauses while another applies, a gated artifact
+finishes into paused ready state, and a single update reports an incompatible
+group alongside a successfully applied group in sorted order. Both worlds
+retain identity and advance under their own active code. The test also checks
+cursor isolation, aggregate history and duplicate suppression. Both browser
+session tests are required explicitly by CI; neither establishes the
+still-pending public backend or cross-group atomicity.
 
 Browser observation uses asynchronous event-loop scheduling instead of a
 native worker thread. Public integration still requires page-side group

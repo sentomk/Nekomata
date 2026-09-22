@@ -34,17 +34,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--browser", required=True)
     parser.add_argument("--root", required=True, type=pathlib.Path)
-    parser.add_argument("--runner", choices=("runner", "lifecycle", "scheduler", "session"),
-                        default="runner")
+    parser.add_argument(
+        "--runner", choices=("runner", "lifecycle", "scheduler", "session", "multi_session"),
+        default="runner")
     for tool in ("cmake", "emcmake", "ninja", "publisher"):
         parser.add_argument("--" + tool)
     args = parser.parse_args()
     scenario = None
-    if args.runner == "session":
+    if args.runner in ("session", "multi_session"):
         if not all((args.cmake, args.emcmake, args.ninja, args.publisher)):
-            parser.error("session requires --cmake, --emcmake, --ninja and --publisher")
-        from session_fixture import session_fixture
-        scenario = session_fixture(args)
+            parser.error("session fixtures require --cmake, --emcmake, --ninja and --publisher")
+        if args.runner == "session":
+            from session_fixture import session_fixture
+            scenario = session_fixture(args)
+        else:
+            from multi_session_fixture import multi_session_fixture
+            scenario = multi_session_fixture(args)
         args.root = scenario.public
     completed = threading.Event()
     a_frame = threading.Event()
