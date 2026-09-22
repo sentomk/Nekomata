@@ -27,6 +27,7 @@ add_library(neko_runtime STATIC
   runtime/managed_worker.cpp
   runtime/prepare_generation.cpp
   runtime/reload_transaction.cpp
+  runtime/native_session.cpp
   runtime/session.cpp)
 target_link_libraries(neko_runtime PRIVATE neko_protocol neko_base_c)
 target_include_directories(neko_runtime

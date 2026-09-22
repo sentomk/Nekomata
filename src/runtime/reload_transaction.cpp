@@ -16,10 +16,10 @@
 
 namespace neko {
 
-std::unique_ptr<reload_session::impl::prepared_reload>
-reload_session::impl::prepare_object(const std::vector<std::uint8_t>& bytes, std::string watch_key,
-                                     const std::filesystem::path& source_path,
-                                     std::string build_information) {
+std::unique_ptr<native_session::prepared_reload>
+native_session::prepare_object(const std::vector<std::uint8_t>& bytes, std::string watch_key,
+                               const std::filesystem::path& source_path,
+                               std::string build_information) {
   auto prepared = std::make_unique<prepared_reload>();
   prepared->watch_key = std::move(watch_key);
   prepared->build_information = std::move(build_information);
@@ -43,7 +43,7 @@ reload_session::impl::prepare_object(const std::vector<std::uint8_t>& bytes, std
   return prepared;
 }
 
-void reload_session::impl::link_generation(prepared_generation& generation) {
+void native_session::link_generation(prepared_generation& generation) {
   std::vector<backend::loaded_image*> images;
   images.reserve(generation.reloads.size());
   for (const auto& reload : generation.reloads) {
@@ -52,7 +52,7 @@ void reload_session::impl::link_generation(prepared_generation& generation) {
   backends_.loader->link_generation(images);
 }
 
-void reload_session::impl::validate_generation(const prepared_generation& generation) const {
+void native_session::validate_generation(const prepared_generation& generation) const {
   std::unordered_map<std::uintptr_t, std::string> entries;
   for (const auto& prepared : generation.reloads) {
     for (const auto& replacement : prepared->image.replacements) {
@@ -65,7 +65,7 @@ void reload_session::impl::validate_generation(const prepared_generation& genera
   }
 }
 
-void reload_session::impl::commit(prepared_generation& generation) {
+void native_session::commit(prepared_generation& generation) {
   // Snapshot and patch only after the complete ready-object batch passed
   // preparation. The saved list spans every object, so rollback does too.
   struct saved_entry {

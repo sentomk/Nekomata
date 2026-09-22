@@ -41,8 +41,8 @@ private:
 
 } // namespace
 
-std::unique_ptr<reload_session::impl::prepared_reload>
-reload_session::impl::try_prepare(const watched_object& watched) {
+std::unique_ptr<native_session::prepared_reload>
+native_session::try_prepare(const watched_object& watched) {
   const auto& path = watched.object_path;
   std::error_code ec;
   if (!std::filesystem::is_regular_file(path, ec)) {

@@ -21,6 +21,7 @@ class symbol_provider;
 class state_manager;
 class code_substituter;
 class patch_planner;
+class session_driver;
 
 struct bundle;
 struct function_info;

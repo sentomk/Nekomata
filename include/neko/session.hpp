@@ -106,12 +106,14 @@ struct session_snapshot {
   std::vector<std::string> watched_paths;
 };
 
-/// The in-process reload agent. One session owns the watch registry, the
-/// background preparation worker, and the commit path; its interface carries
-/// none of that machinery — the implementation hides behind `impl`.
+/// The reload agent. One session exclusively owns its platform lifecycle:
+/// observation, preparation, and activation at the caller's safe point.
 class reload_session {
 public:
   explicit reload_session(backend::bundle backends);
+  /// Own a platform lifecycle implementation supplied by its backend factory.
+  /// A null driver is a configuration error.
+  explicit reload_session(std::unique_ptr<backend::session_driver> driver);
   ~reload_session();
 
   reload_session(reload_session&&) noexcept;
@@ -187,8 +189,7 @@ public:
   [[nodiscard]] session_snapshot snapshot() const;
 
 private:
-  class impl;
-  std::unique_ptr<impl> impl_;
+  std::unique_ptr<backend::session_driver> impl_;
 };
 
 } // namespace neko

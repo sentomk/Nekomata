@@ -1,13 +1,14 @@
 #pragma once
 
-// reload_session's implementation core. The public header carries none of
+// The native session implementation. The public header carries none of
 // this machinery; the four session TUs split it by responsibility:
-//   session.cpp            construction, watch surface, update() orchestration
+//   native_session.cpp     construction, watch surface, update() orchestration
 //   prepare_generation.cpp object watch claiming and preparation
 //   reload_transaction.cpp the zero-write/commit/rollback engine
 //   managed_worker.cpp     the managed-group state machine and its worker
 
 #include <neko/backend.hpp>
+#include <neko/backend/session_driver.hpp>
 #include <neko/session.hpp>
 
 #include "generation_stream.hpp"
@@ -64,13 +65,13 @@ public:
   std::vector<backend::patch_plan> plan(const backend::change_set& changes) const override;
 };
 
-class reload_session::impl {
+class native_session final : public backend::session_driver {
 public:
-  explicit impl(backend::bundle backends);
-  ~impl();
+  explicit native_session(backend::bundle backends);
+  ~native_session() override;
 
-  impl(const impl&) = delete;
-  impl& operator=(const impl&) = delete;
+  native_session(const native_session&) = delete;
+  native_session& operator=(const native_session&) = delete;
 
   struct watched_object {
     std::filesystem::path object_path;
@@ -104,14 +105,14 @@ public:
     std::string pending_rejection_id;
   };
 
-  void watch(std::filesystem::path object_path);
-  void watch(std::filesystem::path object_path, const std::filesystem::path& source_path);
-  void watch();
-  void watch(std::string_view group_id);
-  void unwatch();
-  void unwatch(std::string_view group_id);
-  [[nodiscard]] update_result update();
-  [[nodiscard]] session_snapshot snapshot() const;
+  void watch(std::filesystem::path object_path) override;
+  void watch(std::filesystem::path object_path, const std::filesystem::path& source_path) override;
+  void watch() override;
+  void watch(std::string_view group_id) override;
+  void unwatch() override;
+  void unwatch(std::string_view group_id) override;
+  [[nodiscard]] update_result update() override;
+  [[nodiscard]] session_snapshot snapshot() const override;
 
   // reload_transaction.cpp — the shared engine both watch surfaces drive.
   [[nodiscard]] std::unique_ptr<prepared_reload>

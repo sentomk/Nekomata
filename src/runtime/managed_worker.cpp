@@ -18,7 +18,7 @@
 
 namespace neko {
 
-void reload_session::impl::start_worker() {
+void native_session::start_worker() {
   std::lock_guard<std::mutex> lock(worker_mutex_);
   if (worker_running_ || worker_.joinable()) {
     return;
@@ -27,7 +27,7 @@ void reload_session::impl::start_worker() {
   worker_ = std::thread([this] { worker_loop(); });
 }
 
-void reload_session::impl::raise_fatal_worker_error(std::exception_ptr error) {
+void native_session::raise_fatal_worker_error(std::exception_ptr error) {
   std::lock_guard<std::mutex> lock(worker_mutex_);
   if (!fatal_worker_error_) {
     fatal_worker_error_ = std::move(error);
@@ -35,14 +35,14 @@ void reload_session::impl::raise_fatal_worker_error(std::exception_ptr error) {
   worker_running_ = false;
 }
 
-void reload_session::impl::check_fatal_worker_error() const {
+void native_session::check_fatal_worker_error() const {
   std::lock_guard<std::mutex> lock(worker_mutex_);
   if (fatal_worker_error_) {
     std::rethrow_exception(fatal_worker_error_);
   }
 }
 
-void reload_session::impl::worker_loop() {
+void native_session::worker_loop() {
   try {
     for (;;) {
       std::unique_lock<std::mutex> lock(worker_mutex_);
@@ -65,7 +65,7 @@ void reload_session::impl::worker_loop() {
   }
 }
 
-void reload_session::impl::prepare_managed_group(managed_group& group) {
+void native_session::prepare_managed_group(managed_group& group) {
   const auto observation = group.stream->poll();
   if (observation.status == detail::stream_status::idle) {
     return;
@@ -108,7 +108,7 @@ void reload_session::impl::prepare_managed_group(managed_group& group) {
   }
 }
 
-void reload_session::impl::enable_managed_group(managed_group& group) {
+void native_session::enable_managed_group(managed_group& group) {
   if (group.enabled) {
     return;
   }
@@ -127,8 +127,7 @@ void reload_session::impl::enable_managed_group(managed_group& group) {
   worker_wake_.notify_all();
 }
 
-reload_session::impl::managed_group&
-reload_session::impl::find_managed_group(std::string_view group_id) {
+native_session::managed_group& native_session::find_managed_group(std::string_view group_id) {
   const auto found = std::find_if(managed_groups_.begin(), managed_groups_.end(),
                                   [group_id](const std::unique_ptr<managed_group>& group) {
                                     return group->descriptor.group_id == group_id;

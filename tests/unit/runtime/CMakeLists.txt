@@ -1,4 +1,9 @@
 nekomata_add_unit_test(
+  NAME unit.runtime.session_driver
+  SOURCES session_driver.cpp
+  LIBRARIES nekomata::neko)
+
+nekomata_add_unit_test(
   NAME unit.runtime.generation_stream
   SOURCES generation_stream.cpp
   PRIVATE_INCLUDES "${PROJECT_SOURCE_DIR}/src"
