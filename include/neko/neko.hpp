@@ -14,7 +14,9 @@
 
 // One factory header per platform backend; branches without a backend yet
 // stay commented until the backend lands ("not supported yet").
-#if defined(__linux__)
+#if defined(__EMSCRIPTEN__)
+#include <neko/wasm.hpp>
+#elif defined(__linux__)
 #include <neko/elf.hpp>
 #elif defined(_WIN32)
 // #include <neko/pe.hpp>   // not supported yet

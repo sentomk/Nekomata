@@ -22,7 +22,7 @@ class multi_session_fixture:
         self.released = threading.Event()
         try:
             self.public.mkdir()
-            for name in ("index.html", "multi_session.js", "multi_session.wasm"):
+            for name in ("index.html", args.runner + ".js", args.runner + ".wasm"):
                 shutil.copy2(args.root / name, self.public / name)
             self.publish(1)
         except BaseException:

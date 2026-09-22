@@ -1,5 +1,7 @@
 #pragma once
 
+#include <neko/backend/session_driver.hpp>
+
 #include <memory>
 #include <string>
 #include <string_view>
@@ -46,4 +48,12 @@ private:
   friend class detail::group_binding;
   std::shared_ptr<detail::group_state> state_;
 };
+
+#if defined(__EMSCRIPTEN__)
+/// Browser-only factory. Owns transport, scheduling and preparation; groups
+/// start disabled. Pass the result to neko::reload_session. No native WASM host.
+/// Reusing a group after destruction starts a fresh observation cursor while
+/// retaining its last active code until a new generation applies.
+[[nodiscard]] std::unique_ptr<backend::session_driver> create_backend(std::vector<group> groups);
+#endif
 } // namespace neko::wasm

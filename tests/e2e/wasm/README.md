@@ -1,8 +1,8 @@
 # Browser generation fixtures
 
 These browser tests exercise `src/backends/wasm` candidate preparation,
-activation and private session delivery. They are not a demo or a public
-Nekomata WASM backend. The descriptor is private; application state and entry
+activation, private session delivery and the public backend factory. They are
+tests, not a demo. The descriptor is private; application state and entry
 signatures are test-specific.
 All persistent state belongs to the main module; side modules have no
 side-effecting constructors. Modules remain loaded until the page closes.
@@ -50,9 +50,9 @@ validation. The incompatible fixture deliberately retains the same descriptor
 prefix; the version check happens after loading, before accessing its
 function entries.
 
-No public `neko::reload_session` backend is introduced here. Pre-instantiation
-ABI metadata, authenticated publication and old-module reclamation remain
-separate work. The loopback server serves immutable artifacts and receives
+The public factory additionally pins offer ABI metadata before loading.
+Authenticated publication and old-module reclamation remain separate work.
+The loopback server serves immutable artifacts and receives
 test coordination signals and the browser's assertion result.
 
 The `wasm` CI job installs Emscripten 6.0.9 and runs these tests in the Ubuntu
@@ -126,3 +126,18 @@ Every commit preserves both worlds exactly; each behavior tick mutates only
 its own world and uses generation-consistent entries. Saved entry snapshots
 remain callable. This proves cooperative multi-group browser delivery, not
 cross-group atomicity, public backend integration or build-generated discovery.
+
+`public_factory` covers public backend integration separately without weakening
+the private tests. It cross-builds and installs the actual library, then builds
+`public_project` using `find_package(nekomata)` and `nekomata::neko`. The consumer
+includes only public Nekomata headers and the application's world contract;
+no source-tree backend include directory is supplied.
+
+Using explicit `neko::wasm::group` handles and `neko::wasm::create_backend`, it
+repeats the two-stream pause/resume and mixed-outcome scenario through public
+`neko::reload_session`. Every update preserves both world addresses and fields;
+owning `entry_set` snapshots provide generation-consistent calls. It also checks
+empty and duplicate registrations, unknown groups, both unsupported object-path
+watches, moving the session, immutable saved snapshots, and callable code after
+session destruction. CI requires this installed-consumer test explicitly.
+This does not generate registrations from CMake or migrate the existing demo.

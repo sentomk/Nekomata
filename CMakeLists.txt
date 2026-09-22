@@ -121,6 +121,9 @@ add_subdirectory(src)
 # backend (added inside src/) and the TUI (added below) join as they exist.
 add_library(neko_runtime_aggregate INTERFACE)
 target_link_libraries(neko_runtime_aggregate INTERFACE neko_runtime)
+if(EMSCRIPTEN)
+  target_link_libraries(neko_runtime_aggregate INTERFACE neko_wasm_candidate)
+endif()
 if(TARGET neko_backend_elf)
   target_link_libraries(neko_runtime_aggregate INTERFACE neko_backend_elf)
 endif()
@@ -156,8 +159,10 @@ endif()
 # is not exported yet: its Glyph dependency needs an install story first.
 include(CMakePackageConfigHelpers)
 
-find_package(Threads REQUIRED)
-target_link_libraries(neko_runtime PUBLIC Threads::Threads)
+if(NOT EMSCRIPTEN)
+  find_package(Threads REQUIRED)
+  target_link_libraries(neko_runtime PUBLIC Threads::Threads)
+endif()
 
 install(DIRECTORY include/neko
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
@@ -168,6 +173,10 @@ install(FILES
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/neko)
 
 set(neko_export_targets neko_runtime neko_protocol neko_base_c)
+if(EMSCRIPTEN)
+  list(APPEND neko_export_targets neko_wasm_candidate)
+  set_target_properties(neko_wasm_candidate PROPERTIES EXPORT_NAME wasm)
+endif()
 if(TARGET neko_backend_elf)
   list(APPEND neko_export_targets neko_backend_elf)
 endif()
@@ -227,7 +236,9 @@ install(FILES cmake/nekomata.cmake
 message(STATUS "nekomata ${PROJECT_VERSION}")
 message(STATUS "  compiler:   ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "  build type: ${CMAKE_BUILD_TYPE}")
-if(NEKOMATA_TARGET_LINUX)
+if(EMSCRIPTEN)
+  message(STATUS "  backends:   browser WASM")
+elseif(NEKOMATA_TARGET_LINUX)
   message(STATUS "  backends:   elf + dwarf (Linux)")
 elseif(NEKOMATA_TARGET_WINDOWS)
   message(STATUS "  backends:   pe + pdb (Windows)")

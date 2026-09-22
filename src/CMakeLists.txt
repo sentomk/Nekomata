@@ -22,13 +22,16 @@ nekomata_apply_clang_tidy(neko_protocol)
 add_library(neko_runtime STATIC
   core/log.cpp
   core/version.cpp
-  runtime/descriptor_discovery.cpp
-  runtime/generation_stream.cpp
-  runtime/managed_worker.cpp
-  runtime/prepare_generation.cpp
-  runtime/reload_transaction.cpp
-  runtime/native_session.cpp
   runtime/session.cpp)
+if(NOT EMSCRIPTEN)
+  target_sources(neko_runtime PRIVATE
+    runtime/descriptor_discovery.cpp
+    runtime/generation_stream.cpp
+    runtime/managed_worker.cpp
+    runtime/prepare_generation.cpp
+    runtime/reload_transaction.cpp
+    runtime/native_session.cpp)
+endif()
 target_link_libraries(neko_runtime PRIVATE neko_protocol neko_base_c)
 target_include_directories(neko_runtime
   PUBLIC

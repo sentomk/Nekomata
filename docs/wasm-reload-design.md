@@ -1,10 +1,10 @@
 # Browser WASM hot-reload design
 
-Status: the private candidate lifecycle, HTTP-polling delivery with digest
-verification, the private browser reload session with multi-group watch/unwatch
-controls, and a local browser demo using CMake publication are implemented.
-Public backend integration and build-generated page-side registration are
-planned. This document distinguishes those goals from the current code.
+Status: the public `neko::wasm::create_backend()` connects browser delivery and
+activation to `neko::reload_session`. Explicit groups, owning entry snapshots,
+host ABI validation and installed-library browser acceptance are implemented.
+Build-generated page-side registration and migration of the existing demo to
+the public API remain separate work.
 
 ## Purpose and scope
 
@@ -28,7 +28,7 @@ developer rebuilds C++ with emcc
               |
 browser receives and verifies artifacts
               |
-      prepares candidate                implemented private lifecycle
+      prepares candidate                backend-private lifecycle
               |
     ready, but not yet active
               |
@@ -42,12 +42,14 @@ application reaches a safe point
 The [managed reload design](managed-reload-design.md) describes the broader
 generation and publication model. This document describes the browser-specific
 mechanism; it does not imply that the existing native publication format or
-session implementation already supports WASM.
+native session implementation is used inside the browser.
 
 ## Component boundaries
 
 The implementation lives in [`src/backends/wasm`](../src/backends/wasm/).
 Its headers are private, not a supported application API.
+Applications include [`neko/wasm.hpp`](../include/neko/wasm.hpp) and
+[`neko/session.hpp`](../include/neko/session.hpp), without implementation headers.
 
 | Component | Responsibility |
 | --- | --- |
@@ -63,6 +65,75 @@ Its headers are private, not a supported application API.
 | `active_module` | Consume a ready candidate and replace the complete active entry set. |
 | `reload_session` | Own the poller and the active module; report generation transactions at the application's safe point. |
 | Application | Own persistent state, define entry signatures, and establish the safe point. |
+
+The public session exclusively owns a `backend::session_driver`. The native
+bundle constructor creates the unchanged native lifecycle; the browser factory
+creates a driver owning its loader, fetcher, scheduler and private session.
+The private session is destroyed before its adapters. Browser builds do not
+compile the native worker or machine-code transaction implementation.
+
+## Public usage and ownership
+
+Declare the group and host contract explicitly. This example assumes the
+published module implements `tick` with the declared signature and world layout:
+
+```cpp
+#include <neko/session.hpp>
+#include <neko/wasm.hpp>
+
+struct world_state { float position; float velocity; };
+world_state world{100.0f, 1.0f};
+neko::wasm::group behavior{"flock", "offers/latest", "flock-v1", {"tick"}};
+neko::reload_session session{neko::wasm::create_backend({behavior})};
+
+void start() { session.watch(); }
+void pause() { session.unwatch("flock"); }
+
+void frame() {
+    // No reloadable entry is executing at this safe point.
+    [[maybe_unused]] const auto outcomes = session.update();
+    if (const auto entries = behavior.acquire()) {
+        entries.get<void(world_state*)>("tick")(&world);
+    }
+}
+```
+
+`acquire()` is empty until the first successful activation. One `entry_set`
+pins one immutable generation: retain it for all entry calls in a frame.
+`get<signature>(name)` checks that an entry exists, not its actual C++ type;
+the caller must supply the signature covered by the group's ABI identity.
+An empty snapshot or an unknown entry throws a configuration error.
+
+Copies of a `group` share its active code. A registration belongs to at most
+one live session; duplicate claims and duplicate group IDs are rejected, and
+failed construction releases acquired claims. A session move transfers the
+same driver without changing handles. Destroying a session stops observation,
+not committed code. Saved entry snapshots and the group's latest entries remain
+callable. Reattaching that group to a new session starts fresh observation
+history and retains old active code until the new session applies a generation.
+
+Group IDs, manifest URLs and ABI IDs must be nonempty and contain no embedded
+NUL; entry names must additionally be nonempty and unique. Manifest URLs name
+stable files without query parameters. The host pins the exact ordered entry
+membership and ABI identity. A superseding offer that disagrees advances the
+observation cursor but becomes an `incompatible` rejection without downloading
+or instantiating its artifact. `update()` reports it once while retaining old
+code; pausing retains that unreported rejection like any other prepared result.
+
+Lifecycle semantics are shared with native reload: watch, pause, resume,
+safe-point update, results and snapshots. Activation is deliberately different:
+native reload redirects function entries; WASM replaces the registered entry
+set. Direct C++ calls are not transparently redirected. Object-path `watch`
+overloads reject on the browser backend. The existing
+`redirected_function_count` field counts activated WASM entries, not patched
+machine instructions.
+
+With an Emscripten-built installation, ordinary `find_package(nekomata CONFIG
+REQUIRED)` consumers link `nekomata::neko`. The aggregate includes the browser
+backend and its required PIC, main-module, fetch, memory-growth and exception flags.
+`nekomata::wasm` is also exported. This is library packaging, not automatic
+registration or a new build/publication workflow. The current browser contract
+uses the single application event loop, not pthreads or a native embedded runtime.
 
 The current browser fixtures compile a persistent Emscripten main module and
 reloadable side modules. The main module owns `world_state`; side-module
@@ -179,8 +250,9 @@ an automatic rollback to the previous module.
 
 Paths must name immutable contents because the underlying loader may cache
 them. Overwriting a URL is not a supported way to identify a new generation.
-Artifact digests are checked before instantiation. Publisher authentication
-and pre-instantiation descriptor compatibility checks are not implemented.
+Artifact digests and host offer metadata are checked before instantiation.
+Publisher authentication and inspection of the actual module descriptor before
+instantiation are not implemented.
 
 ## Verification and CI
 
@@ -212,6 +284,12 @@ execution tests the lifecycle logic, not execution of WASM in a native host.
   establish download ordering; the fixture observes real loader completions.
   Public observation snapshots expose the paused ready state and the accepted
   cursor before activation; transaction counters follow consumed events only.
+- `neko.e2e.wasm.public_factory` builds and installs the Emscripten library,
+  then compiles an ordinary package consumer using only public headers. Two
+  real publication streams exercise public watch/unwatch, paused completion,
+  resume, mixed rejection/application, sorted results and snapshots, persistent
+  worlds, session moves and entries surviving session destruction. Existing
+  private single- and multi-group tests retain their transport instrumentation.
 
 The [`wasm` CI job](../.github/workflows/ci.yml) pins Emscripten 6.0.9, builds
 the main and side modules, and runs native lifecycle tests plus the browser
@@ -225,7 +303,7 @@ use the commands in the [browser suite README](../tests/e2e/wasm/README.md).
 are opt-in with `NEKOMATA_TEST_WASM=ON`; configuration does not download the SDK.
 This CMake registration is test infrastructure, not application build integration.
 
-## Remaining design work
+## Delivery and session semantics
 
 Delivery is selected: HTTP polling. The page fetches a stable manifest URL
 on the application event loop; artifacts live at immutable paths and are
@@ -248,8 +326,8 @@ filesystem; ordering decisions are a pure comparison on the value.
 `offer_poller` fetches the manifest URL on the application event loop, orders
 offers through `compare_wasm_offers`, and hands superseding offers to the
 candidate lifecycle as observable events; its native suite drives it through
-mock fetchers. Session integration also exists in private form:
-`neko::wasm::reload_session` accepts a fixed list of private `group_registration`
+mock fetchers. The factory's private lifecycle implementation,
+`neko::wasm::reload_session`, accepts a fixed list of private `group_registration`
 values carrying group ID, manifest URL and optional diagnostics callback.
 IDs must be nonempty and unique, and all groups start disabled. Its `watch()`
 and `unwatch()` overloads control all groups or one named group while preserving
@@ -265,10 +343,10 @@ observation callbacks. Transactions return the same `neko::update_result`
 defined in [`include/neko/session.hpp`](../include/neko/session.hpp), including
 `group_id`, `generation_id`, `redirected_function_count` and `any_applied()`.
 No second WASM result type or conversion wrapper is exposed. `current(group_id)`
-still exposes a private active entry set, scoped to one registered group.
+remains private; public applications acquire entries through their group handles.
 The private session also returns `neko::session_snapshot` by value through
-`snapshot() const`. This private registration does not provide build-generated
-discovery or the public backend.
+`snapshot() const`. Public groups supply this private registration through the
+factory; build-generated discovery is not implemented.
 
 Groups keep separate subscriptions, candidates, consumer cursors, active code
 and reported-generation identities; identical sequence or generation IDs in
@@ -331,7 +409,7 @@ diagnostics, not generation transactions.
 
 ### Session lifecycle convergence
 
-The public backend must obey the existing
+The public backend obeys the existing
 [managed lifecycle contract](managed-reload-design.md), rather than expose
 the private browser session as a second public interface:
 
@@ -365,15 +443,14 @@ finishes into paused ready state, and a single update reports an incompatible
 group alongside a successfully applied group in sorted order. Both worlds
 retain identity and advance under their own active code. The test also checks
 cursor isolation, aggregate history and duplicate suppression. Both browser
-session tests are required explicitly by CI; neither establishes the
-still-pending public backend or cross-group atomicity.
+session tests are required explicitly by CI. The separate installed-consumer
+`public_factory` gate establishes public integration; none promises cross-group atomicity.
 
 Browser observation uses asynchronous event-loop scheduling instead of a
-native worker thread. Public integration still requires page-side group
-discovery and a stable behavior-call seam. Shared results and observation
-snapshots do not by themselves connect the private agent to the public session.
-Adding a factory alone does not provide these capabilities, and the private
-`current(group_id)->entry(...)` access pattern is not a new public session promise.
+native worker thread. Explicit public groups supply registration and the stable
+behavior-call seam. Shared lifecycle results and observation snapshots remain
+distinct from owning callable snapshots; the private `current(group_id)->entry(...)`
+access pattern is not a public session promise.
 
 ### Build integration and remaining work
 
@@ -386,15 +463,14 @@ lock, sequence, and atomic-release discipline. The request still describes
 build inputs; the published manifest differs per backend
 (`nekomata-generation/2` versus `nekomata-wasm/1`), and the browser flavor
 emits no embedded descriptor section. The demo is not registered in CI.
-What remains is the public session integration and backend factory; the
-private session already uses the public transaction and snapshot types.
+The demo still uses the private session. Migrating it to the public factory and
+generating its page-side registrations from CMake remain follow-up work.
 
-Session integration must connect preparation and safe-point activation to the
-library's reload model without making the browser loader responsible for
-building code or owning the world. Public backend factories remain a final
-integration step; the existing CMake publication path still needs consumer
-registration for that public interface. Neither native backend factories nor
-a native embedded WASM runtime are prerequisites for this browser path.
+The public integration connects preparation and safe-point activation without
+making the browser loader responsible for building code or owning the world.
+The existing CMake publication path still needs generated consumer registration.
+Neither native backend factories nor a native embedded WASM runtime are
+prerequisites for this browser path.
 
 A richer demo can still show boids acquiring new avoidance and vortex code
 while retaining identity, position, velocity, trail, and world age; the

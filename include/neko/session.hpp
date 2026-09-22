@@ -1,4 +1,4 @@
-// reload_session — the Live++-style in-process agent tick.
+// reload_session — shared reload lifecycle with platform-specific activation.
 //
 // Usage pattern:
 //
@@ -6,7 +6,7 @@
 //     session.watch("hot.new.o", "src/hot.cpp");
 //     ... session.update() once per frame / loop iteration ...
 //
-// Trigger model: compilation is the caller's business. An individual object
+// Trigger model: compilation is the caller's business. A native individual object
 // watch is claimed atomically when a complete file appears. Managed groups
 // apply a generation only when its publisher marks it ready, after the
 // complete immutable object set exists. Half-written or unpublished objects
@@ -16,7 +16,8 @@
 // caller must serialize all member calls and establish a quiescent point for
 // reloadable code before update(), keeping it quiescent until update() returns.
 // Every complete offer handled by one update() is committed all-or-nothing.
-// A failed commit restores entries already written for that transaction.
+// Native failed commits restore entries already written for that transaction;
+// browser activation replaces an explicitly registered behavior entry set.
 
 #pragma once
 
@@ -33,7 +34,7 @@ namespace neko {
 
 /// Outcome of one committed or rejected transaction inside an `update()` call.
 enum class update_status : std::uint8_t {
-  applied,  ///< the transaction redirected live entries
+  applied,  ///< the transaction activated the complete live entry set
   rejected, ///< the old code stayed active; `message` and `code` say why
 };
 
@@ -56,7 +57,7 @@ struct update_event {
   std::string group_id;
   std::string generation_id;
   std::string message;
-  std::size_t redirected_function_count = 0;
+  std::size_t redirected_function_count = 0; ///< patched native entries or activated WASM entries
 };
 
 /// The result of one `update()` call. An empty event list means nothing was
@@ -76,10 +77,9 @@ struct update_result {
   }
 };
 
-/// Observation state of one managed group. An enabled group is `preparing`
-/// while the background worker owns its observation, `ready` once a complete
-/// transaction waits for the next update(), `failed` after its last observed
-/// generation was rejected, and `idle` when disabled or nothing is enabled.
+/// Observation state of one managed group. A prepared outcome is `ready` or
+/// `failed` independently of whether observation is enabled. Otherwise an
+/// enabled observer is `preparing`, and a disabled observer is `idle`.
 enum class group_state : std::uint8_t {
   idle,
   preparing,
@@ -126,6 +126,7 @@ public:
   /// it is claimed and loaded on the next update(). This name-only form can
   /// reload exported functions, but refuses to guess which file-static
   /// function to patch when a live function has the same name.
+  /// Managed-only backends such as WASM reject object-path watches.
   void watch(std::filesystem::path object_path);
 
   /// Watch an object produced for `source_path`. The source identity is
@@ -136,10 +137,10 @@ public:
   /// or canonicalizing the source file).
   void watch(std::filesystem::path object_path, const std::filesystem::path& source_path);
 
-  /// Enable every managed reload group embedded in this program, discovered
-  /// from the linked descriptors at session construction. Throws a
-  /// configuration exception when the executable embeds no group descriptor,
-  /// or a group carries no generation-root hint. Idempotent.
+  /// Enable every registered managed reload group. Native backends discover
+  /// linked descriptors; WASM takes explicit groups at factory construction.
+  /// Throws a configuration exception when no groups exist or their platform
+  /// observation configuration is missing. Idempotent.
   void watch();
 
   /// Enable one managed reload group by its group ID. Throws a configuration
@@ -162,7 +163,7 @@ public:
   /// never replays generations already observed. Prepared work and unreported
   /// rejections survive the pause; after re-enabling, update() may consume
   /// them unless newer observations supersede them. Disabling never restores
-  /// applied machine code. An enabled flag and a ready/failed snapshot state
+  /// applied code. An enabled flag and a ready/failed snapshot state
   /// are independent: a disabled group can retain a pending result.
   void unwatch(std::string_view group_id);
 
@@ -174,8 +175,8 @@ public:
   /// Each managed group is its own all-or-nothing transaction; one group's
   /// rejection does not prevent the others from applying. Artifact problems
   /// are rejected events, not exceptions: no entry changed for a rejected
-  /// transaction remains modified. If an entry write fails and rollback
-  /// cannot restore every earlier write, `update()` throws `std::runtime_error`
+  /// transaction remains modified. For native activation, if an entry write
+  /// fails and rollback cannot restore every earlier write, `update()` throws `std::runtime_error`
   /// and the session becomes unusable; later member calls throw the same
   /// error. This fatal case is not represented as a rejected event.
   ///
