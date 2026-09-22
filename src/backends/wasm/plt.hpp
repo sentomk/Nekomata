@@ -53,6 +53,9 @@ public:
   /// The active generation's function; null before the first activation.
   Signature target = nullptr;
 
+  /// Whether a generation has been activated into this slot yet.
+  [[nodiscard]] explicit operator bool() const { return target != nullptr; }
+
   template <typename... Args>
   decltype(auto) operator()(Args&&... args) const {
     return target(std::forward<Args>(args)...);

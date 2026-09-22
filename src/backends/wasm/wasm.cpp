@@ -28,7 +28,7 @@ private:
   emscripten_manifest_fetcher fetcher_;
   emscripten_poll_scheduler scheduler_;
   // Destroy the lifecycle before the adapters it borrows.
-  reload_session session_;
+  managed_session session_;
 };
 } // namespace
 

@@ -20,12 +20,16 @@ inline neko::wasm::plt_slot<demo::identify_fn> identify{demo::group_id, "identif
 
 namespace demo {
 
+// Before the first generation applies, a slot is empty; the trampolines
+// treat that as a no-op warm-up rather than calling through null.
 inline void update_world(world_state* world) {
-  plt::update_world(world);
+  if (plt::update_world) {
+    plt::update_world(world);
+  }
 }
 
 inline std::uint32_t identify() {
-  return plt::identify();
+  return plt::identify ? plt::identify() : 0;
 }
 
 } // namespace demo

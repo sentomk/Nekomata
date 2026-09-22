@@ -30,17 +30,19 @@ add_executable(page
   "${neko_root}/src/backends/wasm/emscripten_scheduler.cpp"
   "${neko_root}/src/backends/wasm/entry_set.cpp"
   "${neko_root}/src/protocol/wasm_offer.cpp"
+  "${neko_root}/src/runtime/session.cpp"
   "${neko_root}/src/core/log.cpp"
   "${neko_root}/src/base/c/neko_sha256.c")
 target_include_directories(page PRIVATE
   "${neko_root}/src" "${neko_root}/include" "${CMAKE_CURRENT_LIST_DIR}")
 # Exceptions stay enabled for the page: the offer codec reports malformed
-# manifests by throwing. The side module keeps the fixture dialect.
+# manifests by throwing; RTTI too, for the acquire() driver lookup. The
+# side module keeps the fixture dialect.
 target_compile_options(page PRIVATE
-  $<$<COMPILE_LANGUAGE:CXX>:-std=c++20 -fno-rtti>
-  -O0 -g -Wall -Wextra -Werror)
+  $<$<COMPILE_LANGUAGE:CXX>:-std=c++20>
+  -O0 -g -Wall -Wextra -Werror -fPIC -sMAIN_MODULE=2 -fexceptions)
 target_link_options(page PRIVATE -sMAIN_MODULE=1 -sENVIRONMENT=web
-  -sALLOW_MEMORY_GROWTH=1 -sFETCH=1 -sASSERTIONS=2)
+  -sALLOW_MEMORY_GROWTH=1 -sFETCH=1 -sASSERTIONS=2 -fexceptions)
 set_target_properties(page PROPERTIES OUTPUT_NAME "main" RUNTIME_OUTPUT_DIRECTORY "${public}")
 
 # The reloadable group: `ball_reload` republishes whenever hot.cpp changes.

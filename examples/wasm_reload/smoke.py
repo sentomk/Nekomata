@@ -37,7 +37,8 @@ def main():
     browser = None
     profile = tempfile.mkdtemp(prefix="neko-demo-smoke-")
     try:
-        candidates = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        candidates = ["C:/Program Files/Google/Chrome/Application/chrome.exe",
+                      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
                       "google-chrome", "chromium", "chromium-browser"]
         browser_path = None
         for candidate in candidates:
