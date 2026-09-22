@@ -133,11 +133,17 @@ the private tests. It cross-builds and installs the actual library, then builds
 includes only public Nekomata headers and the application's world contract;
 no source-tree backend include directory is supplied.
 
-Using explicit `neko::wasm::group` handles and `neko::wasm::create_backend`, it
+The linked `alpha` and `beta` CMake targets generate their page registrations;
+the same declarations publish the tested generations using `SOURCES` and
+`UNITS`, respectively. No hot object is linked into the page. Using no-argument
+`neko::wasm::create_backend()` and `neko::wasm::acquire(session, group_id)`, it
 repeats the two-stream pause/resume and mixed-outcome scenario through public
 `neko::reload_session`. Every update preserves both world addresses and fields;
 owning `entry_set` snapshots provide generation-consistent calls. It also checks
-empty and duplicate registrations, unknown groups, both unsupported object-path
+global initialization order, independent sessions, unknown groups, both unsupported object-path
 watches, moving the session, immutable saved snapshots, and callable code after
 session destruction. CI requires this installed-consumer test explicitly.
-This does not generate registrations from CMake or migrate the existing demo.
+`empty_registry` separately links no group targets and checks empty snapshots,
+updates and the exact watch rejection. Native registration tests reject missing
+metadata, duplicate IDs and invalid entry membership. Both browser tests are
+required by CI. This does not migrate the existing demo.

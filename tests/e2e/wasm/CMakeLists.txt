@@ -41,7 +41,7 @@ add_custom_command(
     "${PROJECT_SOURCE_DIR}/src/base/c/neko_sha256.c"
     -o "${CMAKE_CURRENT_BINARY_DIR}/neko_sha256.o"
   DEPENDS "${PROJECT_SOURCE_DIR}/src/base/c/neko_sha256.c" VERBATIM)
-set(session_sources "${wasm_backend}/offer_poller.cpp" "${wasm_backend}/session.cpp" "${wasm_backend}/group.cpp"
+set(session_sources "${wasm_backend}/offer_poller.cpp" "${wasm_backend}/session.cpp" "${wasm_backend}/entry_set.cpp"
   "${PROJECT_SOURCE_DIR}/src/protocol/wasm_offer.cpp")
 foreach(runner IN ITEMS runner lifecycle scheduler session multi_session)
   set(runner_sources "")
@@ -69,7 +69,7 @@ foreach(runner IN ITEMS runner lifecycle scheduler session multi_session)
       "${wasm_backend}/emscripten_scheduler.cpp" "${wasm_backend}/emscripten_scheduler.hpp"
       "${wasm_backend}/poll_scheduler.hpp"
       ${runner_sources} "${wasm_backend}/session.hpp" "${wasm_backend}/offer_poller.hpp"
-      "${wasm_backend}/group.hpp" "${PROJECT_SOURCE_DIR}/include/neko/wasm.hpp"
+      "${PROJECT_SOURCE_DIR}/include/neko/wasm.hpp"
       "${PROJECT_SOURCE_DIR}/include/neko/backend/session_driver.hpp"
       "${wasm_backend}/session_error.hpp" "${PROJECT_SOURCE_DIR}/include/neko/session.hpp"
       "${PROJECT_SOURCE_DIR}/include/neko/fwd.hpp"
@@ -132,13 +132,16 @@ if(TARGET neko_publisher)
     "${PROJECT_SOURCE_DIR}/src/*/CMakeLists.txt" "${PROJECT_SOURCE_DIR}/cmake/*")
   add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/public_session.js" "${CMAKE_CURRENT_BINARY_DIR}/public_session.wasm"
+      "${CMAKE_CURRENT_BINARY_DIR}/public_empty.js" "${CMAKE_CURRENT_BINARY_DIR}/public_empty.wasm"
     COMMAND "${CMAKE_COMMAND}" "-DSOURCE_ROOT=${PROJECT_SOURCE_DIR}"
       "-DBINARY_ROOT=${CMAKE_CURRENT_BINARY_DIR}" "-DEMCMAKE=${NEKOMATA_EMCMAKE}"
-      "-DNINJA=${NEKOMATA_WASM_NINJA}" -P "${CMAKE_CURRENT_SOURCE_DIR}/build_public.cmake"
+      "-DNINJA=${NEKOMATA_WASM_NINJA}" "-DPUBLISHER=$<TARGET_FILE:neko_publisher>" -P "${CMAKE_CURRENT_SOURCE_DIR}/build_public.cmake"
     DEPENDS ${public_library_inputs} "${PROJECT_SOURCE_DIR}/CMakeLists.txt"
-      build_public.cmake public_project/CMakeLists.txt public_session.cpp world.hpp VERBATIM)
+      build_public.cmake public_project/CMakeLists.txt public_session.cpp public_empty.cpp world.hpp VERBATIM)
   add_custom_target(neko_wasm_public_fixture DEPENDS
-    "${CMAKE_CURRENT_BINARY_DIR}/public_session.js" "${CMAKE_CURRENT_BINARY_DIR}/public_session.wasm")
+    "${CMAKE_CURRENT_BINARY_DIR}/public_session.js" "${CMAKE_CURRENT_BINARY_DIR}/public_session.wasm"
+    "${CMAKE_CURRENT_BINARY_DIR}/public_empty.js" "${CMAKE_CURRENT_BINARY_DIR}/public_empty.wasm")
+  add_dependencies(neko_wasm_public_fixture neko_publisher)
   add_dependencies(neko_wasm_fixtures neko_wasm_public_fixture)
   add_dependencies(neko_wasm_fixtures neko_publisher)
   add_test(NAME neko.e2e.wasm.session_lifecycle
@@ -159,4 +162,8 @@ if(TARGET neko_publisher)
       --cmake "${CMAKE_COMMAND}" --emcmake "${NEKOMATA_EMCMAKE}"
       --ninja "${NEKOMATA_WASM_NINJA}" --publisher "$<TARGET_FILE:neko_publisher>")
   set_tests_properties(neko.e2e.wasm.public_factory PROPERTIES TIMEOUT 180 LABELS "e2e;wasm")
+  add_test(NAME neko.e2e.wasm.empty_registry
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_browser.py"
+      --browser "${NEKOMATA_WASM_BROWSER}" --root "${CMAKE_CURRENT_BINARY_DIR}" --runner public_empty)
+  set_tests_properties(neko.e2e.wasm.empty_registry PROPERTIES TIMEOUT 60 LABELS "e2e;wasm")
 endif()

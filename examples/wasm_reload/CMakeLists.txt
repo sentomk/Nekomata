@@ -44,6 +44,7 @@ target_compile_definitions(ball_hot PRIVATE BEHAVIOR=${DEMO_BEHAVIOR})
 nekomata_add_reload_group(ball UNITS ball_hot
   GROUP_ID "demo-ball"
   ABI_ID "demo-ball-v1"
+  MANIFEST_URL "offers/latest"
   ENTRIES identify update_world
   OFFER_ROOT "${public}/offers")
 

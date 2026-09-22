@@ -5,13 +5,15 @@ import shutil
 import subprocess
 import tempfile
 import threading
+from copy import copy
 
 from session_fixture import publish_generation
 
 
 class multi_session_fixture:
     def __init__(self, args):
-        self.args = args
+        # The runner later changes its HTTP root; retain the installed package root.
+        self.args = copy(args)
         self.storage = tempfile.TemporaryDirectory(prefix="neko-wasm-multi-session-")
         self.root = pathlib.Path(self.storage.name)
         self.public = self.root / "public"

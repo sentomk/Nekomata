@@ -138,7 +138,7 @@ public:
   void watch(std::filesystem::path object_path, const std::filesystem::path& source_path);
 
   /// Enable every registered managed reload group. Native backends discover
-  /// linked descriptors; WASM takes explicit groups at factory construction.
+  /// linked descriptors; WASM discovers build-generated registrations.
   /// Throws a configuration exception when no groups exist or their platform
   /// observation configuration is missing. Idempotent.
   void watch();
@@ -190,6 +190,7 @@ public:
   [[nodiscard]] session_snapshot snapshot() const;
 
 private:
+  friend class backend::session_access;
   std::unique_ptr<backend::session_driver> impl_;
 };
 

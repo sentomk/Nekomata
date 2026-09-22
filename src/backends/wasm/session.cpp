@@ -7,24 +7,12 @@
 
 namespace neko::wasm {
 
-std::vector<group_registration> bind_groups(const std::vector<group>& groups) {
-  std::vector<group_registration> out;
-  out.reserve(groups.size());
-  for (const auto& value : groups) {
-    auto binding = std::make_shared<detail::group_binding>(value);
-    const auto& config = binding->config();
-    out.push_back({config.id, config.url, {}, std::move(binding)});
-  }
-  return out;
-}
-
 struct reload_session::group {
   struct observation {
     std::shared_ptr<offer_poller> poller;
   };
 
   std::string id;
-  std::shared_ptr<detail::group_binding> binding;
   std::shared_ptr<offer_poller> poller;
   std::shared_ptr<observation> observed;
   std::unique_ptr<poll_subscription> subscription;
@@ -56,11 +44,10 @@ reload_session::reload_session(module_loader& loader, manifest_fetcher& fetcher,
   for (auto& registration : groups) {
     auto value = std::make_unique<group>();
     value->id = std::move(registration.group_id);
-    value->binding = std::move(registration.binding);
-    value->poller = std::make_shared<offer_poller>(
-        loader, fetcher, std::move(registration.manifest_url),
-        std::move(registration.on_diagnostics), value->id,
-        value->binding ? value->binding->config().contract : module_contract{});
+    value->poller =
+        std::make_shared<offer_poller>(loader, fetcher, std::move(registration.manifest_url),
+                                       std::move(registration.on_diagnostics), value->id,
+                                       std::move(registration.expected_contract));
     groups_.push_back(std::move(value));
   }
 }
@@ -178,9 +165,6 @@ void reload_session::unwatch(std::string_view group_id) {
     if (next.pending->status() == candidate_status::ready) {
       // The caller keeps reloadable code quiescent; activation does not allocate.
       if (value.active.activate(*next.pending)) {
-        if (value.binding) {
-          value.binding->publish(value.active.current());
-        }
         next.event.status = update_status::applied;
         next.event.code = reload_error_code::none;
         next.event.message.clear();

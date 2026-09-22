@@ -13,4 +13,5 @@ target_compile_definitions(flock_hot PRIVATE
   GENERATION_ID=${GENERATION_ID} INTERFACE_VERSION=${INTERFACE_VERSION} MISSING_UPDATE=0)
 nekomata_add_reload_group(flock UNITS flock_hot
   GROUP_ID "${GROUP_ID}" ABI_ID "flock-test-v1" ENTRIES identify update_world
+  MANIFEST_URL "${GROUP_ID}/latest"
   OFFER_ROOT "${OFFER_ROOT}")

@@ -9,15 +9,22 @@ import threading
 
 
 def publish_generation(args, build, offer_root, generation, interface_version, group_id="flock"):
+    public_consumer = args.runner == "public_session"
+    project = "public_project" if public_consumer else "session_project"
+    target = f"{group_id}_reload" if public_consumer else "flock_reload"
+    project_options = (
+        [f"-Dnekomata_DIR={args.root / 'public-install/lib/cmake/nekomata'}",
+         f"-DFIXTURE_OUTPUT={offer_root.parent}"] if public_consumer else
+        [f"-DOFFER_ROOT={offer_root}", f"-DGROUP_ID={group_id}"])
     commands = [
         [args.emcmake, args.cmake,
-         "-S", str(pathlib.Path(__file__).parent / "session_project"),
+         "-S", str(pathlib.Path(__file__).parent / project),
          "-B", str(build), "-G", "Ninja",
          f"-DCMAKE_MAKE_PROGRAM={args.ninja}",
          f"-DNEKOMATA_PUBLISHER_EXECUTABLE={args.publisher}",
-         f"-DOFFER_ROOT={offer_root}", f"-DGROUP_ID={group_id}",
+         *project_options,
          f"-DGENERATION_ID={generation}", f"-DINTERFACE_VERSION={interface_version}"],
-        [args.cmake, "--build", str(build), "--target", "flock_reload"],
+        [args.cmake, "--build", str(build), "--target", target],
     ]
     for command in commands:
         result = subprocess.run(command, capture_output=True, text=True, timeout=30)

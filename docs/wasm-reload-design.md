@@ -1,10 +1,10 @@
 # Browser WASM hot-reload design
 
 Status: the public `neko::wasm::create_backend()` connects browser delivery and
-activation to `neko::reload_session`. Explicit groups, owning entry snapshots,
-host ABI validation and installed-library browser acceptance are implemented.
-Build-generated page-side registration and migration of the existing demo to
-the public API remain separate work.
+activation to `neko::reload_session`. CMake-generated group registration,
+owning entry snapshots, host ABI validation and installed-library browser
+acceptance are implemented. Migrating the existing demo to the public API
+remains separate work.
 
 ## Purpose and scope
 
@@ -74,8 +74,25 @@ compile the native worker or machine-code transaction implementation.
 
 ## Public usage and ownership
 
-Declare the group and host contract explicitly. This example assumes the
-published module implements `tick` with the declared signature and world layout:
+Declare groups in the build system, then link their targets into the page.
+`MANIFEST_URL` names the served manifest, not the local publication directory:
+
+```cmake
+find_package(nekomata CONFIG REQUIRED)
+include("${nekomata_DIR}/nekomata.cmake")
+
+nekomata_add_reload_group(behavior SOURCES behavior.cpp
+  GROUP_ID flock ABI_ID flock-v1 ENTRIES tick
+  MANIFEST_URL offers/latest OFFER_ROOT "${CMAKE_BINARY_DIR}/offers")
+add_executable(page main.cpp)
+target_link_libraries(page PRIVATE nekomata::neko behavior)
+```
+
+The cross-build also needs `NEKOMATA_PUBLISHER_EXECUTABLE` pointing to a native
+host publisher. The group target adds only generated registration to the page;
+`behavior_reload` builds and publishes its side module. The application does
+not repeat the URL, ABI identity or entry membership in C++. This example
+assumes the module implements `tick` with the agreed signature and world layout:
 
 ```cpp
 #include <neko/session.hpp>
@@ -83,8 +100,7 @@ published module implements `tick` with the declared signature and world layout:
 
 struct world_state { float position; float velocity; };
 world_state world{100.0f, 1.0f};
-neko::wasm::group behavior{"flock", "offers/latest", "flock-v1", {"tick"}};
-neko::reload_session session{neko::wasm::create_backend({behavior})};
+neko::reload_session session{neko::wasm::create_backend()};
 
 void start() { session.watch(); }
 void pause() { session.unwatch("flock"); }
@@ -92,7 +108,7 @@ void pause() { session.unwatch("flock"); }
 void frame() {
     // No reloadable entry is executing at this safe point.
     [[maybe_unused]] const auto outcomes = session.update();
-    if (const auto entries = behavior.acquire()) {
+    if (const auto entries = neko::wasm::acquire(session, "flock")) {
         entries.get<void(world_state*)>("tick")(&world);
     }
 }
@@ -104,13 +120,18 @@ pins one immutable generation: retain it for all entry calls in a frame.
 the caller must supply the signature covered by the group's ABI identity.
 An empty snapshot or an unknown entry throws a configuration error.
 
-Copies of a `group` share its active code. A registration belongs to at most
-one live session; duplicate claims and duplicate group IDs are rejected, and
-failed construction releases acquired claims. A session move transfers the
-same driver without changing handles. Destroying a session stops observation,
-not committed code. Saved entry snapshots and the group's latest entries remain
-callable. Reattaching that group to a new session starts fresh observation
-history and retains old active code until the new session applies a generation.
+`acquire(session, group_id)` selects an already registered group; it never
+registers one. Each factory copies the build-generated metadata into an
+independent session, with its own observation history and active code. A session
+move transfers that state; acquisition from a moved-from or non-browser session
+throws. Destroying a session stops observation; saved entry snapshots remain
+callable. A new session starts with no active generation, even if an older
+session consumed the same stream.
+
+Generated records are installed before ordinary application global constructors,
+so a global session can discover them. Factory construction validates all
+records and rejects duplicate IDs. The installed `neko/detail` registration
+header is an internal build/runtime contract, not an application registration API.
 
 Group IDs, manifest URLs and ABI IDs must be nonempty and contain no embedded
 NUL; entry names must additionally be nonempty and unique. Manifest URLs name
@@ -131,8 +152,8 @@ machine instructions.
 With an Emscripten-built installation, ordinary `find_package(nekomata CONFIG
 REQUIRED)` consumers link `nekomata::neko`. The aggregate includes the browser
 backend and its required PIC, main-module, fetch, memory-growth and exception flags.
-`nekomata::wasm` is also exported. This is library packaging, not automatic
-registration or a new build/publication workflow. The current browser contract
+`nekomata::wasm` is also exported. Linking declared group targets adds their
+registration through the existing CMake adapter. The current browser contract
 uses the single application event loop, not pthreads or a native embedded runtime.
 
 The current browser fixtures compile a persistent Emscripten main module and
@@ -288,8 +309,13 @@ execution tests the lifecycle logic, not execution of WASM in a native host.
   then compiles an ordinary package consumer using only public headers. Two
   real publication streams exercise public watch/unwatch, paused completion,
   resume, mixed rejection/application, sorted results and snapshots, persistent
-  worlds, session moves and entries surviving session destruction. Existing
+  worlds, session moves and entries surviving session destruction. Both the
+  `SOURCES` and `UNITS` CMake forms generate registration and publish the real
+  generations from the same declarations. Global session construction checks
+  registration initialization order. Existing
   private single- and multi-group tests retain their transport instrumentation.
+- `neko.e2e.wasm.empty_registry` links no group targets and checks empty factory
+  construction, snapshots, updates and the exact all-group watch rejection.
 
 The [`wasm` CI job](../.github/workflows/ci.yml) pins Emscripten 6.0.9, builds
 the main and side modules, and runs native lifecycle tests plus the browser
@@ -301,7 +327,8 @@ For local reproduction, install Emscripten, Python 3, and Chrome/Chromium, then
 use the commands in the [browser suite README](../tests/e2e/wasm/README.md).
 `bash scripts/check.sh debug` runs the full configured checks. Browser fixtures
 are opt-in with `NEKOMATA_TEST_WASM=ON`; configuration does not download the SDK.
-This CMake registration is test infrastructure, not application build integration.
+The fixtures exercise the installed application build adapter; the test runners
+and HTTP gates themselves remain test infrastructure.
 
 ## Delivery and session semantics
 
@@ -343,10 +370,10 @@ observation callbacks. Transactions return the same `neko::update_result`
 defined in [`include/neko/session.hpp`](../include/neko/session.hpp), including
 `group_id`, `generation_id`, `redirected_function_count` and `any_applied()`.
 No second WASM result type or conversion wrapper is exposed. `current(group_id)`
-remains private; public applications acquire entries through their group handles.
+remains private; public applications use `neko::wasm::acquire(session, group_id)`.
 The private session also returns `neko::session_snapshot` by value through
-`snapshot() const`. Public groups supply this private registration through the
-factory; build-generated discovery is not implemented.
+`snapshot() const`. The factory discovers build-generated registrations and
+passes their expected host contracts to the private session.
 
 Groups keep separate subscriptions, candidates, consumer cursors, active code
 and reported-generation identities; identical sequence or generation IDs in
@@ -447,8 +474,8 @@ session tests are required explicitly by CI. The separate installed-consumer
 `public_factory` gate establishes public integration; none promises cross-group atomicity.
 
 Browser observation uses asynchronous event-loop scheduling instead of a
-native worker thread. Explicit public groups supply registration and the stable
-behavior-call seam. Shared lifecycle results and observation snapshots remain
+native worker thread. Build targets supply registration; owning entry snapshots
+provide the behavior-call seam. Shared lifecycle results and observation snapshots remain
 distinct from owning callable snapshots; the private `current(group_id)->entry(...)`
 access pattern is not a public session promise.
 
@@ -456,19 +483,20 @@ access pattern is not a public session promise.
 
 The demo at [`examples/wasm_reload`](../examples/wasm_reload/) consumes the
 same CMake registration as native groups: under the Emscripten toolchain,
-`nekomata_add_reload_group` gains `ABI_ID`, `ENTRIES`, and `OFFER_ROOT`
+`nekomata_add_reload_group` accepts `ABI_ID`, `ENTRIES`, `MANIFEST_URL`, and `OFFER_ROOT`
 arguments, links its units into one side module, and drives the host
 publisher's `wasm` mode — reusing the request pipeline and the publisher's
 lock, sequence, and atomic-release discipline. The request still describes
 build inputs; the published manifest differs per backend
 (`nekomata-generation/2` versus `nekomata-wasm/1`), and the browser flavor
-emits no embedded descriptor section. The demo is not registered in CI.
-The demo still uses the private session. Migrating it to the public factory and
-generating its page-side registrations from CMake remain follow-up work.
+emits no native embedded descriptor section. Linking a browser group target
+adds generated host registration without linking its hot objects into the page.
+The demo is not registered in CI and still uses the private session. Migrating
+it to the public factory remains follow-up work.
 
 The public integration connects preparation and safe-point activation without
 making the browser loader responsible for building code or owning the world.
-The existing CMake publication path still needs generated consumer registration.
+The existing CMake publication path supplies the consumer registration as well.
 Neither native backend factories nor a native embedded WASM runtime are
 prerequisites for this browser path.
 

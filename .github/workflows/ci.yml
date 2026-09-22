@@ -78,14 +78,16 @@ jobs:
             neko_unit_backends_wasm_candidate \
             neko_unit_backends_wasm_offer_poller \
             neko_unit_backends_wasm_session \
+            neko_unit_backends_wasm_registration \
             neko_unit_runtime_session_driver \
             neko_integration_session_lifecycle
           bash scripts/test.sh debug -R '^neko\.((unit\.backends|e2e)\.wasm\.|unit\.runtime\.session_driver$|integration\.session\.lifecycle$)' \
-            -E '^neko\.e2e\.wasm\.(session_lifecycle|multi_group_session|public_factory)$' --no-tests=error
+            -E '^neko\.e2e\.wasm\.(session_lifecycle|multi_group_session|public_factory|empty_registry)$' --no-tests=error
           # Keep the CMake publisher-to-browser acceptance gate explicit.
           bash scripts/test.sh debug -R '^neko\.e2e\.wasm\.session_lifecycle$' --no-tests=error
           bash scripts/test.sh debug -R '^neko\.e2e\.wasm\.multi_group_session$' --no-tests=error
           bash scripts/test.sh debug -R '^neko\.e2e\.wasm\.public_factory$' --no-tests=error
+          bash scripts/test.sh debug -R '^neko\.e2e\.wasm\.empty_registry$' --no-tests=error
 
       - name: Preserve test diagnostics
         if: failure()

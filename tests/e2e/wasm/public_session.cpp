@@ -15,18 +15,16 @@
 namespace {
 using neko::group_state;
 using neko::update_status;
+using neko::wasm::acquire;
 using neko::wasm::entry_set;
-using neko::wasm::group;
 
-std::array<group, 2> groups{{
-    {"alpha", "alpha/latest", "flock-test-v1", {"identify", "update_world"}},
-    {"beta", "beta/latest", "flock-test-v1", {"identify", "update_world"}},
-}};
+constexpr std::array<std::string_view, 2> ids{"alpha", "beta"};
 std::array<world_state, 2> worlds{{{0, 100.0f, 1.0f, 0}, {0, 200.0f, 2.0f, 0}}};
 const auto* const original_worlds = worlds.data();
 std::array<entry_set, 2> baseline;
 std::array<std::uint32_t, 2> identities{1, 1};
-std::unique_ptr<neko::reload_session> session;
+// Discovery must work even before main, independently of TU link order.
+auto session = std::make_unique<neko::reload_session>(neko::wasm::create_backend());
 neko::session_snapshot saved_ready;
 unsigned frames = 0;
 unsigned stage = 0;
@@ -67,13 +65,13 @@ std::uint32_t identity(const entry_set& entries) {
 
 neko::session_snapshot inspect() {
   const auto before = worlds;
-  const std::array active{identity(groups[0].acquire()), identity(groups[1].acquire())};
+  const std::array active{identity(acquire(*session, ids[0])), identity(acquire(*session, ids[1]))};
   auto result = session->snapshot();
   require(result.managed_groups.size() == 2 && result.managed_groups[0].group_id == "alpha" &&
               result.managed_groups[1].group_id == "beta" && result.watched_paths.empty(),
           "public snapshot lost the sorted group registry");
-  require(worlds == before && active[0] == identity(groups[0].acquire()) &&
-              active[1] == identity(groups[1].acquire()),
+  require(worlds == before && active[0] == identity(acquire(*session, ids[0])) &&
+              active[1] == identity(acquire(*session, ids[1])),
           "snapshot changed state or active code");
   return result;
 }
@@ -82,7 +80,7 @@ neko::update_result safe_update() {
   const auto before = worlds;
   const auto previous = inspect();
   auto expected = previous;
-  const std::array active{identity(groups[0].acquire()), identity(groups[1].acquire())};
+  const std::array active{identity(acquire(*session, ids[0])), identity(acquire(*session, ids[1]))};
   const auto result = session->update();
   require(worlds == before && worlds.data() == original_worlds, "update changed persistent worlds");
   std::array<bool, 2> applied{};
@@ -116,21 +114,22 @@ neko::update_result safe_update() {
               after.last_result == expected.last_result &&
               result.any_applied() == (applied[0] || applied[1]),
           "history disagrees with events");
-  for (std::size_t i = 0; i < groups.size(); ++i) {
+  for (std::size_t i = 0; i < ids.size(); ++i) {
     require(after.managed_groups[i].observed_sequence ==
                     previous.managed_groups[i].observed_sequence &&
                 after.managed_groups[i].enabled == previous.managed_groups[i].enabled &&
                 after.managed_groups[i].last_applied_generation ==
                     expected.managed_groups[i].last_applied_generation,
             "update changed observation or another group's history");
-    require(applied[i] || identity(groups[i].acquire()) == active[i], "non-applied code changed");
+    require(applied[i] || identity(acquire(*session, ids[i])) == active[i],
+            "non-applied code changed");
   }
   return result;
 }
 
 void advance_worlds() {
-  for (std::size_t i = 0; i < groups.size(); ++i) {
-    const auto entries = groups[i].acquire();
+  for (std::size_t i = 0; i < ids.size(); ++i) {
+    const auto entries = acquire(*session, ids[i]);
     require(identity(entries) == identities[i], "wrong active generation");
     const auto before = worlds;
     entries.get<void(world_state*)>("update_world")(&worlds[i]);
@@ -164,12 +163,21 @@ EM_BOOL frame(double, void*) {
     }
     break;
   case 1:
-    require(!groups[0].acquire() && !groups[1].acquire(), "preparation activated code");
+    require(!acquire(*session, ids[0]) && !acquire(*session, ids[1]), "preparation activated code");
     if (alpha.state == group_state::ready && beta.state == group_state::ready) {
       require(safe_update().events.size() == 2, "baseline did not apply both groups");
-      baseline = {groups[0].acquire(), groups[1].acquire()};
-      // Moving the public facade must preserve its live driver and group handles.
+      baseline = {acquire(*session, ids[0]), acquire(*session, ids[1])};
+      expect_error([] { static_cast<void>(baseline[0].get<void()>("missing")); },
+                   "wasm entry_set: unknown entry 'missing'");
+      {
+        neko::reload_session other{neko::wasm::create_backend()};
+        require(!acquire(other, "alpha") && !acquire(other, "beta"),
+                "a new session inherited another session's active generation");
+      }
+      // Moving the public facade must preserve its live driver and active code.
       auto moved = std::move(*session);
+      expect_error([] { static_cast<void>(acquire(*session, "alpha")); },
+                   "wasm acquire: session does not own a browser backend");
       *session = std::move(moved);
       frames = 0;
       stage = 2;
@@ -185,7 +193,7 @@ EM_BOOL frame(double, void*) {
     break;
   case 3:
     // A manifest already in flight at unwatch may advance the paused cursor.
-    require(!alpha.enabled && identity(groups[0].acquire()) == 1,
+    require(!alpha.enabled && identity(acquire(*session, ids[0])) == 1,
             "paused alpha activated a generation");
     if (control_done() && beta.observed_sequence == 2 && beta.state == group_state::ready) {
       require_single(safe_update(), "beta");
@@ -236,8 +244,14 @@ EM_BOOL frame(double, void*) {
       require(saved_ready.managed_groups[0].state == group_state::ready &&
                   !saved_ready.managed_groups[0].enabled && saved_ready.applied == 3,
               "saved observation snapshot changed");
+      const std::array latest{acquire(*session, ids[0]), acquire(*session, ids[1])};
       session.reset();
-      advance_worlds();
+      for (std::size_t i = 0; i < latest.size(); ++i) {
+        const auto ticks = worlds[i].tick_count;
+        latest[i].get<void(world_state*)>("update_world")(&worlds[i]);
+        require(worlds[i].tick_count == ticks + 1 && worlds[i].last_generation == identities[i],
+                "saved entries lost session-independent lifetime");
+      }
       require(identity(baseline[0]) == 1 && identity(baseline[1]) == 1,
               "old entries did not survive session destruction");
       report(1, "installed public factory: two streams, pause/resume, mixed rejection, persistent "
@@ -246,7 +260,7 @@ EM_BOOL frame(double, void*) {
     }
     break;
   }
-  if (groups[0].acquire() && groups[1].acquire()) {
+  if (acquire(*session, ids[0]) && acquire(*session, ids[1])) {
     advance_worlds();
   }
   return EM_TRUE;
@@ -254,17 +268,15 @@ EM_BOOL frame(double, void*) {
 } // namespace
 
 int main() {
-  expect_error([] { static_cast<void>(neko::wasm::create_backend({groups[0], groups[0]})); },
-               "wasm group: registration already belongs to a session");
   {
-    neko::reload_session empty{neko::wasm::create_backend({})};
-    require(empty.snapshot().managed_groups.empty() && empty.update().events.empty(),
-            "empty registry not empty");
-    expect_error([&] { empty.watch(); },
-                 "reload_session: no registered reload groups; nothing to watch");
+    neko::reload_session other{neko::wasm::create_backend()};
+    require(other.snapshot().managed_groups.size() == 2 && !acquire(other, "alpha"),
+            "factory did not create independent session state from generated records");
   }
-  session =
-      std::make_unique<neko::reload_session>(neko::wasm::create_backend({groups[1], groups[0]}));
+  expect_error([] { static_cast<void>(acquire(*session, "unknown")); },
+               "reload_session: unknown reload group 'unknown'");
+  expect_error([] { static_cast<void>(acquire(*session, "alpha").get<void()>("identify")); },
+               "wasm entry_set: no active generation");
   expect_error([] { session->watch("unknown"); }, "reload_session: unknown reload group 'unknown'");
   expect_error([] { session->unwatch("unknown"); },
                "reload_session: unknown reload group 'unknown'");

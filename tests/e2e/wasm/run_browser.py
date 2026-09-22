@@ -35,7 +35,7 @@ def main():
     parser.add_argument("--browser", required=True)
     parser.add_argument("--root", required=True, type=pathlib.Path)
     parser.add_argument(
-        "--runner", choices=("runner", "lifecycle", "scheduler", "session", "multi_session", "public_session"),
+        "--runner", choices=("runner", "lifecycle", "scheduler", "session", "multi_session", "public_session", "public_empty"),
         default="runner")
     for tool in ("cmake", "emcmake", "ninja", "publisher"):
         parser.add_argument("--" + tool)

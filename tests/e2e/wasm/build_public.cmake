@@ -14,5 +14,6 @@ run("${EMCMAKE}" "${CMAKE_COMMAND}" -S "${SOURCE_ROOT}" -B "${BINARY_ROOT}/publi
 run("${CMAKE_COMMAND}" --build "${BINARY_ROOT}/public-library" --target install --parallel 2)
 run("${EMCMAKE}" "${CMAKE_COMMAND}" -S "${SOURCE_ROOT}/tests/e2e/wasm/public_project"
   -B "${BINARY_ROOT}/public-consumer" -G Ninja "-DCMAKE_MAKE_PROGRAM=${NINJA}"
-  -DCMAKE_BUILD_TYPE=Debug "-Dnekomata_DIR=${prefix}/lib/cmake/nekomata" "-DFIXTURE_OUTPUT=${BINARY_ROOT}")
+  -DCMAKE_BUILD_TYPE=Debug "-Dnekomata_DIR=${prefix}/lib/cmake/nekomata" "-DFIXTURE_OUTPUT=${BINARY_ROOT}"
+  "-DNEKOMATA_PUBLISHER_EXECUTABLE=${PUBLISHER}")
 run("${CMAKE_COMMAND}" --build "${BINARY_ROOT}/public-consumer" --parallel 2)
