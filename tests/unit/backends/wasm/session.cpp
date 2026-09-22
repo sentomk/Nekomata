@@ -1142,6 +1142,142 @@ TEST_CASE("an already rejected candidate remains reportable after pause") {
   CHECK(loader.opened_paths.size() == 1);
 }
 
+TEST_CASE("public group validates its host contract") {
+  CHECK_THROWS_AS((group{"", "latest", "abi", {"tick"}}), std::invalid_argument);
+  CHECK_THROWS_AS((group{"game", "", "abi", {"tick"}}), std::invalid_argument);
+  CHECK_THROWS_AS((group{"game", "latest", "", {"tick"}}), std::invalid_argument);
+  CHECK_THROWS_AS((group{"game", "latest", "abi", {}}), std::invalid_argument);
+  CHECK_THROWS_AS((group{"game", "latest", "abi", {"tick", "tick"}}), std::invalid_argument);
+  CHECK_THROWS_AS((group{"game", "latest", "abi", {""}}), std::invalid_argument);
+  CHECK_THROWS_AS((group{"game", "latest", std::string{"ab\0i", 4}, {"tick"}}),
+                  std::invalid_argument);
+  CHECK_THROWS_AS((group{"game", "latest", "abi", {std::string{"ti\0ck", 5}}}),
+                  std::invalid_argument);
+  group value{"game", "latest", "test-v1", {"tick", "identity"}};
+  CHECK_FALSE(value.acquire());
+  CHECK_THROWS_WITH(static_cast<void>(value.acquire().get<void()>("tick")),
+                    "wasm entry_set: no active generation");
+}
+
+TEST_CASE("public entry snapshots pin generations beyond session lifetime") {
+  test_loader loader;
+  scripted_fetcher fetcher;
+  manual_scheduler scheduler;
+  group value{"game", "offers/latest", "test-v1", {"tick", "identity"}};
+  const auto alias = value;
+  entry_set first;
+  bool released = false;
+  {
+    reload_session session{loader, fetcher, scheduler, bind_groups({value})};
+    session.watch();
+    poll(scheduler, fetcher, offer_text(1, "a", a_digest));
+    loader.finish(std::make_unique<test_image>(behavior_a, &released));
+    CHECK_FALSE(value.acquire());
+    REQUIRE(session.update().any_applied());
+    first = value.acquire();
+    CHECK(first.get<void()>("tick") == behavior_a);
+    CHECK(alias.acquire().get<void()>("identity") == behavior_a);
+    CHECK_THROWS_WITH(static_cast<void>(first.get<void()>("missing")),
+                      "wasm entry_set: unknown entry 'missing'");
+    poll(scheduler, fetcher, offer_text(2, "b", b_digest));
+    loader.finish(std::make_unique<test_image>(behavior_b));
+    REQUIRE(session.update().any_applied());
+    CHECK(value.acquire().get<void()>("tick") == behavior_b);
+    CHECK(first.get<void()>("identity") == behavior_a);
+    session.unwatch();
+  }
+  CHECK_FALSE(released);
+  first.get<void()>("tick")();
+  alias.acquire().get<void()>("tick")();
+  first = {};
+  CHECK(released);
+}
+
+TEST_CASE("public registration pins ABI and exact entry membership before loading") {
+  test_loader loader;
+  scripted_fetcher fetcher;
+  manual_scheduler scheduler;
+  group value{"game", "offers/latest", "test-v1", {"tick", "identity"}};
+  reload_session session{loader, fetcher, scheduler, bind_groups({value})};
+  session.watch();
+  poll(scheduler, fetcher, offer_text(1, "a", a_digest));
+  loader.finish(std::make_unique<test_image>(behavior_a));
+  REQUIRE(session.update().any_applied());
+  auto incompatible = offer_text(2, "b", b_digest);
+  SUBCASE("ABI changed by publisher") {
+    incompatible.replace(incompatible.find("test-v1"), 7, "test-v2");
+  }
+  SUBCASE("entries reordered") {
+    incompatible.replace(incompatible.find("entry \"tick\""), std::string::npos,
+                         "entry \"identity\"\nentry \"tick\"\n");
+  }
+  SUBCASE("entry removed") {
+    incompatible.erase(incompatible.find("entry \"identity\""));
+  }
+  SUBCASE("entry added") {
+    incompatible += "entry \"extra\"\n";
+  }
+  poll(scheduler, fetcher, incompatible);
+  REQUIRE(loader.opened_paths.size() == 1);
+  CHECK(session.snapshot().managed_groups[0].observed_sequence == 2);
+  session.unwatch();
+  CHECK(session.update().events.empty());
+  session.watch();
+  const auto result = session.update();
+  REQUIRE(result.events.size() == 1);
+  CHECK(result.events[0].code == reload_error_code::incompatible);
+  CHECK(result.events[0].message ==
+        "offer ABI or entry membership does not match the registered host contract");
+  CHECK(value.acquire().get<void()>("tick") == behavior_a);
+  CHECK(session.update().events.empty());
+  poll(scheduler, fetcher, incompatible);
+  CHECK(session.update().events.empty());
+  CHECK(loader.opened_paths.size() == 1);
+}
+
+TEST_CASE("public group claims are exclusive and construction failures release them") {
+  test_loader loader;
+  scripted_fetcher fetcher;
+  manual_scheduler scheduler;
+  group a{"a", "a/latest", "test-v1", {"tick", "identity"}};
+  group b{"b", "b/latest", "test-v1", {"tick", "identity"}};
+  {
+    reload_session first{loader, fetcher, scheduler, bind_groups({b})};
+    CHECK_THROWS_WITH(static_cast<void>(bind_groups({a, b})),
+                      "wasm group: registration already belongs to a session");
+    CHECK_NOTHROW(static_cast<void>(bind_groups({a})));
+  }
+  CHECK_NOTHROW(static_cast<void>(bind_groups({b})));
+  CHECK_THROWS_WITH(static_cast<void>(bind_groups({a, a})),
+                    "wasm group: registration already belongs to a session");
+  group duplicate{"a", "other/latest", "test-v1", {"tick", "identity"}};
+  CHECK_THROWS_WITH((reload_session{loader, fetcher, scheduler, bind_groups({a, duplicate})}),
+                    "reload_session: duplicate reload group 'a'");
+  CHECK_NOTHROW(static_cast<void>(bind_groups({a, duplicate})));
+  auto moved = std::move(a);
+  CHECK_FALSE(a.acquire());
+  CHECK_THROWS_WITH(static_cast<void>(bind_groups({a})), "wasm group: moved-from registration");
+  CHECK_NOTHROW(static_cast<void>(bind_groups({moved})));
+}
+
+TEST_CASE("destroyed public binding ignores a late completion after reattachment") {
+  test_loader loader;
+  scripted_fetcher fetcher;
+  manual_scheduler scheduler;
+  group value{"game", "offers/latest", "test-v1", {"tick", "identity"}};
+  {
+    reload_session first{loader, fetcher, scheduler, bind_groups({value})};
+    first.watch();
+    poll(scheduler, fetcher, offer_text(1, "a", a_digest));
+  }
+  reload_session next{loader, fetcher, scheduler, bind_groups({value})};
+  bool released = false;
+  loader.finish(std::make_unique<test_image>(behavior_a, &released));
+  CHECK(released);
+  CHECK_FALSE(value.acquire());
+  CHECK(next.update().events.empty());
+}
+
 TEST_CASE("destruction discards an outstanding artifact completion") {
   test_loader loader;
   scripted_fetcher fetcher;

@@ -46,7 +46,8 @@ public:
   using event_callback = std::function<void(const offer_event&)>;
 
   offer_poller(module_loader& loader, manifest_fetcher& fetcher, std::string manifest_url,
-               event_callback on_event = {}, std::string expected_group = {});
+               event_callback on_event = {}, std::string expected_group = {},
+               module_contract expected_contract = {});
   ~offer_poller();
   offer_poller(const offer_poller&) = delete;
   offer_poller& operator=(const offer_poller&) = delete;

@@ -47,6 +47,11 @@ module_function prepared_module::entry(std::string_view name) const noexcept {
   return nullptr;
 }
 
+candidate::candidate(candidate_error error, std::string message)
+    : state_(std::make_shared<state>()) {
+  state_->reject(error, std::move(message));
+}
+
 candidate::candidate(module_loader& loader, std::string path, module_contract contract)
     : state_(std::make_shared<state>()) {
   state_->contract = std::move(contract);

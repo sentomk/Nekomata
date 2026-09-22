@@ -41,7 +41,7 @@ add_custom_command(
     "${PROJECT_SOURCE_DIR}/src/base/c/neko_sha256.c"
     -o "${CMAKE_CURRENT_BINARY_DIR}/neko_sha256.o"
   DEPENDS "${PROJECT_SOURCE_DIR}/src/base/c/neko_sha256.c" VERBATIM)
-set(session_sources "${wasm_backend}/offer_poller.cpp" "${wasm_backend}/session.cpp"
+set(session_sources "${wasm_backend}/offer_poller.cpp" "${wasm_backend}/session.cpp" "${wasm_backend}/group.cpp"
   "${PROJECT_SOURCE_DIR}/src/protocol/wasm_offer.cpp")
 foreach(runner IN ITEMS runner lifecycle scheduler session multi_session)
   set(runner_sources "")

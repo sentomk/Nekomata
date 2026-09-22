@@ -1,6 +1,7 @@
 #pragma once
 
 #include "candidate.hpp"
+#include "group.hpp"
 #include "manifest_fetcher.hpp"
 #include "offer_poller.hpp"
 #include "poll_scheduler.hpp"
@@ -20,7 +21,10 @@ struct group_registration {
   std::string group_id;
   std::string manifest_url;
   offer_poller::event_callback on_diagnostics;
+  std::shared_ptr<detail::group_binding> binding = {};
 };
+
+[[nodiscard]] std::vector<group_registration> bind_groups(const std::vector<group>& groups);
 
 // The browser reload agent: each group owns a poller, pending candidate and
 // active module on the application event loop. watch() starts preparation;

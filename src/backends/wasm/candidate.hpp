@@ -83,6 +83,7 @@ private:
 class candidate {
 public:
   candidate(module_loader& loader, std::string path, module_contract contract);
+  candidate(candidate_error error, std::string message);
   ~candidate();
   candidate(candidate&&) noexcept;
   candidate& operator=(candidate&&) noexcept;

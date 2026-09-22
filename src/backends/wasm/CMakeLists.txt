@@ -1,6 +1,6 @@
 # Candidate ownership, descriptor validation, offer delivery, and the
 # browser reload session are testable without a browser.
-add_library(neko_wasm_candidate STATIC candidate.cpp offer_poller.cpp session.cpp)
+add_library(neko_wasm_candidate STATIC candidate.cpp group.cpp offer_poller.cpp session.cpp)
 target_include_directories(neko_wasm_candidate PUBLIC
   "${PROJECT_SOURCE_DIR}/src" "${PROJECT_SOURCE_DIR}/include")
 target_link_libraries(neko_wasm_candidate PUBLIC neko_protocol)

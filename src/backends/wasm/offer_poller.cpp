@@ -22,6 +22,7 @@ struct offer_poller::state {
   std::string manifest_url;
   event_callback on_event;
   std::string expected_group;
+  module_contract expected_contract;
   bool fetching = false;
   std::optional<::neko::detail::wasm_offer> last;
   std::unique_ptr<candidate> pending;
@@ -77,7 +78,14 @@ struct offer_poller::state {
 
     // Replacing the pending candidate discards a late completion for the
     // superseded offer through ordinary candidate ownership.
-    pending = std::make_unique<candidate>(*loader, artifact_url, std::move(contract));
+    if (!expected_contract.abi_id.empty() && (contract.abi_id != expected_contract.abi_id ||
+                                              contract.entries != expected_contract.entries)) {
+      pending = std::make_unique<candidate>(
+          candidate_error::incompatible,
+          "offer ABI or entry membership does not match the registered host contract");
+    } else {
+      pending = std::make_unique<candidate>(*loader, artifact_url, std::move(contract));
+    }
     last = std::move(offer);
     deliver_event(on_event, offer_event_kind::offer_accepted,
                   "generation '" + accepted_id + "' at sequence " +
@@ -94,13 +102,14 @@ std::string resolve_artifact_url(std::string_view manifest_url, std::string_view
 
 offer_poller::offer_poller(module_loader& loader, manifest_fetcher& fetcher,
                            std::string manifest_url, event_callback on_event,
-                           std::string expected_group)
+                           std::string expected_group, module_contract expected_contract)
     : state_(std::make_shared<state>()) {
   state_->loader = &loader;
   state_->fetcher = &fetcher;
   state_->manifest_url = std::move(manifest_url);
   state_->on_event = std::move(on_event);
   state_->expected_group = std::move(expected_group);
+  state_->expected_contract = std::move(expected_contract);
   if (state_->manifest_url.empty()) {
     throw std::runtime_error("offer_poller: manifest URL must not be empty");
   }
