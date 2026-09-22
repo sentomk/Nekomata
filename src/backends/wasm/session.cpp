@@ -1,6 +1,8 @@
 #include "session.hpp"
 #include "session_error.hpp"
 
+#include "registration.hpp"
+
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
@@ -165,6 +167,10 @@ void managed_session::unwatch(std::string_view group_id) {
     if (next.pending->status() == candidate_status::ready) {
       // The caller keeps reloadable code quiescent; activation does not allocate.
       if (value.active.activate(*next.pending)) {
+        // Transparent redirection: the PLT slots registered for this group
+        // now point at the new generation, so ordinary call sites in the
+        // main module reach the fresh code without any application plumbing.
+        detail::apply_plt_slots(value.id, *value.active.current());
         next.event.status = update_status::applied;
         next.event.code = reload_error_code::none;
         next.event.message.clear();

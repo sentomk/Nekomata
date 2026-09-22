@@ -108,17 +108,27 @@ void pause() { session.unwatch("flock"); }
 void frame() {
     // No reloadable entry is executing at this safe point.
     [[maybe_unused]] const auto outcomes = session.update();
-    if (const auto entries = neko::wasm::acquire(session, "flock")) {
-        entries.get<void(world_state*)>("tick")(&world);
-    }
+    tick(&world); // an ordinary direct call through the backend PLT
 }
 ```
 
-`acquire()` is empty until the first successful activation. One `entry_set`
-pins one immutable generation: retain it for all entry calls in a frame.
-`get<signature>(name)` checks that an entry exists, not its actual C++ type;
-the caller must supply the signature covered by the group's ABI identity.
-An empty snapshot or an unknown entry throws a configuration error.
+Ordinary calls stay ordinary because each reloadable entry also gets a PLT
+slot in the main module: a typed function pointer plus a forwarding
+trampoline with the application-facing name, declared once per entry in a
+small application header the build adapter compiles into the main module
+(`PLT_HEADER`). Activation rewrites the slots at the safe point, exactly
+where native reload patches entry bytes — the survey that established this:
+side-module code is immutable once instantiated, undefined-symbol imports
+are fixed at instantiation, so a compile-time indirect call is the only
+re-pointable seam. Entry signatures are application knowledge and stay in
+plain code; slots register themselves, and committed generations remain
+resident so pointers callers already hold keep answering.
+
+`acquire()` remains an explicit alternative: it hands out an owning
+`entry_set` snapshot of the active generation. It is empty until the first
+successful activation; `get<signature>(name)` checks that an entry exists,
+not its actual C++ type — the caller must supply the signature covered by
+the group's ABI identity. An unknown entry throws a configuration error.
 
 `acquire(session, group_id)` selects an already registered group; it never
 registers one. Each factory copies the build-generated metadata into an
@@ -142,9 +152,10 @@ or instantiating its artifact. `update()` reports it once while retaining old
 code; pausing retains that unreported rejection like any other prepared result.
 
 Lifecycle semantics are shared with native reload: watch, pause, resume,
-safe-point update, results and snapshots. Activation is deliberately different:
-native reload redirects function entries; WASM replaces the registered entry
-set. Direct C++ calls are not transparently redirected. Object-path `watch`
+safe-point update, results and snapshots. Activation redirects through the
+PLT — the wasm analogue of patching entry bytes — so direct C++ calls reach
+the new generation without application-side indirection; `acquire()` covers
+consumers that prefer explicit entry snapshots. Object-path `watch`
 overloads reject on the browser backend. The existing
 `redirected_function_count` field counts activated WASM entries, not patched
 machine instructions.

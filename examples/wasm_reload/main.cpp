@@ -1,8 +1,8 @@
 // The browser hot-reload demo as a real consumer of the public API: one
 // reload_session over the build-discovered groups, the same shape as the
-// native backends. The one browser-specific step is acquiring the active
-// entry set — there is no entry patching to redirect calls for us.
-#include "contract.hpp"
+// native backends. Entry calls are ordinary direct calls — the backend PLT
+// rewrites its slots at the safe point, exactly like native entry patching.
+#include "plt.hpp"
 
 #include <neko/wasm.hpp>
 
@@ -59,13 +59,9 @@ bool frame(double, void*) {
     }
   }
 
-  // One entry set per frame: identity and update entries come from the
-  // same generation even if another one applies mid-frame.
-  const auto page = neko::wasm::acquire(*session, demo::group_id);
-  if (page) {
-    page.get<demo::update_fn>("update_world")(the_world);
-    draw_tick(world.x, world.y, static_cast<int>(page.get<demo::identify_fn>("identify")()));
-  }
+  // Ordinary calls; the active generation answers through the PLT.
+  demo::update_world(the_world);
+  draw_tick(world.x, world.y, static_cast<int>(demo::identify()));
 
   const auto observed = session->snapshot();
   show_hud(static_cast<int>(world.behavior), world.tick_count, static_cast<int>(observed.applied),

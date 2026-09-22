@@ -52,6 +52,7 @@ nekomata_add_reload_group(ball UNITS ball_hot
   ABI_ID "demo-ball-v1"
   MANIFEST_URL "offers/latest"
   ENTRIES identify update_world
+  PLT_HEADER "plt.hpp"
   OFFER_ROOT "${public}/offers")
 
 add_custom_command(

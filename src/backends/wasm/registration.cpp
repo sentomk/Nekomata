@@ -1,5 +1,7 @@
 #include "registration.hpp"
 
+#include "plt.hpp"
+
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
@@ -7,6 +9,7 @@
 namespace neko::wasm::detail {
 namespace {
 group_record* first_record = nullptr;
+plt_slot_record* first_plt_slot = nullptr;
 
 bool valid_text(std::string_view value) {
   return !value.empty() && value.find('\0') == std::string_view::npos;
@@ -21,6 +24,27 @@ void register_group(group_record& record) noexcept {
   }
   record.next = first_record;
   first_record = &record;
+}
+
+void register_plt_slot(plt_slot_record& record) noexcept {
+  for (auto* current = first_plt_slot; current; current = current->next) {
+    if (current == &record) {
+      return;
+    }
+  }
+  record.next = first_plt_slot;
+  first_plt_slot = &record;
+}
+
+void apply_plt_slots(std::string_view group, const prepared_module& module) noexcept {
+  for (auto* record = first_plt_slot; record; record = record->next) {
+    if (record->group != group) {
+      continue;
+    }
+    if (const module_function entry = module.entry(record->entry); entry != nullptr) {
+      *record->target = entry;
+    }
+  }
 }
 
 std::vector<group_registration> read_group_records(const group_record* first) {
