@@ -1,13 +1,15 @@
 # Browser hot-reload demo
 
-A minimal visible loop over the private WASM backend through the real CMake
-integration: a page owns a world, `neko::wasm::reload_session` polls
-`offers/latest`, and every `ball_reload` build publishes a new behavior
-generation on the existing world. The trail color marks each generation and
+A minimal visible loop over the public `neko::reload_session` through the real
+CMake integration — the same shape as the native backends. A page owns a
+world, the build-discovered groups poll `offers/latest`, and every
+`ball_reload` build publishes a new behavior generation on the existing
+world; `neko::wasm::acquire` resolves the active entry set each frame. The trail color marks each generation and
 the tick counter never restarts — that is the whole point.
 
-This is a development demo, not a supported application API and not test
-infrastructure; the headers under `src/backends/wasm` stay private.
+This is a development demo, not test infrastructure. The page drives the
+public session and entry acquisition; the headers under `src/backends/wasm`
+stay private to the backend sources the page compiles in.
 
 ## Run it
 

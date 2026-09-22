@@ -16,15 +16,21 @@ endif()
 
 set(public "${CMAKE_BINARY_DIR}/public")
 
-# The persistent page: owns the world, drives the reload session.
+# The persistent page: owns the world, drives the public reload session.
+# The backend sources compile in (there is no installed Emscripten library);
+# main.cpp itself uses only the public headers.
 add_executable(page
   main.cpp
+  "${neko_root}/src/backends/wasm/wasm.cpp"
+  "${neko_root}/src/backends/wasm/registration.cpp"
   "${neko_root}/src/backends/wasm/candidate.cpp"
   "${neko_root}/src/backends/wasm/offer_poller.cpp"
   "${neko_root}/src/backends/wasm/session.cpp"
   "${neko_root}/src/backends/wasm/emscripten_loader.cpp"
   "${neko_root}/src/backends/wasm/emscripten_scheduler.cpp"
+  "${neko_root}/src/backends/wasm/entry_set.cpp"
   "${neko_root}/src/protocol/wasm_offer.cpp"
+  "${neko_root}/src/core/log.cpp"
   "${neko_root}/src/base/c/neko_sha256.c")
 target_include_directories(page PRIVATE
   "${neko_root}/src" "${neko_root}/include" "${CMAKE_CURRENT_LIST_DIR}")

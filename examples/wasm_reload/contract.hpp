@@ -1,11 +1,12 @@
 #pragma once
 
-#include <backends/wasm/candidate.hpp>
 #include <cstdint>
 
 // Shared between the persistent main module and every reloadable side
 // module. The `abi_id` pins this layout plus both entry signatures: a
 // behavior change ships under the same identity, an ABI change does not.
+// The build integration registers the group and its entry names; nothing
+// here needs the backend's private headers.
 namespace demo {
 
 inline constexpr char abi_id[] = "demo-ball-v1";
@@ -27,9 +28,5 @@ struct world_state {
 
 using identify_fn = std::uint32_t (*)();
 using update_fn = void (*)(world_state*);
-
-inline neko::wasm::module_contract contract(std::string_view sha256) {
-  return {abi_id, {"identify", "update_world"}, std::string{sha256}};
-}
 
 } // namespace demo

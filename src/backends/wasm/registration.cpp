@@ -39,10 +39,8 @@ std::vector<group_registration> read_group_records(const group_record* first) {
       }
       contract.entries.emplace_back(name);
     }
-    result.push_back({std::string{record->group_id},
-                      std::string{record->manifest_url},
-                      {},
-                      std::move(contract)});
+    result.push_back({std::string{record->group_id}, std::string{record->manifest_url},
+                      &log_offer_event, std::move(contract)});
   }
   std::sort(result.begin(), result.end(),
             [](const auto& a, const auto& b) { return a.group_id < b.group_id; });

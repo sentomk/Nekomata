@@ -20,9 +20,9 @@ using neko::reload_error_code;
 using neko::update_status;
 using namespace neko::wasm;
 
-static_assert(std::is_same_v<decltype(std::declval<reload_session&>().update()),
+static_assert(std::is_same_v<decltype(std::declval<managed_session&>().update()),
                              decltype(std::declval<neko::reload_session&>().update())>);
-static_assert(std::is_same_v<decltype(std::declval<const reload_session&>().snapshot()),
+static_assert(std::is_same_v<decltype(std::declval<const managed_session&>().snapshot()),
                              neko::session_snapshot>);
 
 constexpr std::string_view a_digest =
@@ -205,19 +205,19 @@ TEST_CASE("group registration rejects empty and duplicate identities before obse
   routed_fetcher fetcher;
   manual_scheduler scheduler;
   REQUIRE_THROWS_WITH_AS(
-      (reload_session{loader, fetcher, scheduler, {{"b", "b/latest", {}}, {"", "a/latest", {}}}}),
+      (managed_session{loader, fetcher, scheduler, {{"b", "b/latest", {}}, {"", "a/latest", {}}}}),
       "reload_session: expected group must not be empty", std::runtime_error);
   REQUIRE_THROWS_WITH_AS(
-      (reload_session{loader,
-                      fetcher,
-                      scheduler,
-                      {{"b", "b/latest", {}}, {"a", "a/latest", {}}, {"b", "other/latest", {}}}}),
+      (managed_session{loader,
+                       fetcher,
+                       scheduler,
+                       {{"b", "b/latest", {}}, {"a", "a/latest", {}}, {"b", "other/latest", {}}}}),
       "reload_session: duplicate reload group 'b'", std::runtime_error);
   CHECK(scheduler.tasks.empty());
   CHECK(fetcher.fetches.empty());
   CHECK(loader.digests.empty());
 
-  reload_session empty{loader, fetcher, scheduler, {}};
+  managed_session empty{loader, fetcher, scheduler, {}};
   CHECK(empty.snapshot().managed_groups.empty());
   CHECK(empty.update().events.empty());
   CHECK_NOTHROW(empty.unwatch());
@@ -232,7 +232,7 @@ TEST_CASE("group selection is independent and registration and result order are 
   routed_loader loader;
   routed_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{
+  managed_session session{
       loader, fetcher, scheduler, {{"b", "b/latest", {}}, {"a", "a/latest", {}}}};
   const auto initial = session.snapshot();
   REQUIRE(initial.managed_groups.size() == 2);
@@ -315,7 +315,7 @@ TEST_CASE("a paused group retains late work while another continues to apply") {
   routed_loader loader;
   routed_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{
+  managed_session session{
       loader, fetcher, scheduler, {{"b", "b/latest", {}}, {"a", "a/latest", {}}}};
   session.watch();
   scheduler.tick();
@@ -386,7 +386,7 @@ TEST_CASE("a group rejection never blocks another group's transaction") {
   routed_loader loader;
   routed_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{
+  managed_session session{
       loader, fetcher, scheduler, {{"b", "b/latest", {}}, {"a", "a/latest", {}}}};
   session.watch();
   scheduler.tick();
@@ -438,7 +438,7 @@ TEST_CASE("per-group diagnostics and incomplete work cannot contaminate another 
   manual_scheduler scheduler;
   diagnostics_log a_log;
   diagnostics_log b_log;
-  reload_session session{
+  managed_session session{
       loader,
       fetcher,
       scheduler,
@@ -490,7 +490,7 @@ TEST_CASE("all-group scheduling failure preserves enabled groups and remains ret
   routed_loader loader;
   routed_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{
+  managed_session session{
       loader, fetcher, scheduler, {{"b", "b/latest", {}}, {"a", "a/latest", {}}}};
   scheduler.fail_after = 1;
   REQUIRE_THROWS_WITH_AS(session.watch(), "fixture scheduler failed", std::runtime_error);
@@ -515,7 +515,7 @@ TEST_CASE("destroying multiple groups invalidates all pending callbacks") {
   routed_fetcher fetcher;
   manual_scheduler scheduler;
   {
-    reload_session session{
+    managed_session session{
         loader, fetcher, scheduler, {{"b", "b/latest", {}}, {"a", "a/latest", {}}}};
     session.watch();
     scheduler.tick();
@@ -539,7 +539,7 @@ TEST_CASE("snapshots are independent values and never start observation") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   auto initial = session.snapshot();
   check_group(initial, false, group_state::idle, 0);
   CHECK(initial.applied == 0);
@@ -567,7 +567,7 @@ TEST_CASE("snapshots distinguish paused preparation from consumed transactions")
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   session.watch();
   poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest));
   check_group(session.snapshot(), true, group_state::preparing, 7);
@@ -637,7 +637,7 @@ TEST_CASE("superseded pending results do not enter snapshot transaction counts")
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   session.watch();
   poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest));
   SUBCASE("superseded ready generation") {
@@ -666,7 +666,7 @@ TEST_CASE("observation diagnostics preserve snapshot cursor and transaction hist
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
   diagnostics_log log;
-  reload_session session{
+  managed_session session{
       loader, fetcher, scheduler, {{"game", "offers/latest", [&log](const offer_event& event) {
                                       log.record(event);
                                     }}}};
@@ -730,7 +730,7 @@ TEST_CASE("session rejection preserves identity, diagnostics and the previous en
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"physics", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"physics", "offers/latest", {}}}};
   session.watch();
   poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest, "physics"));
   loader.finish(std::make_unique<test_image>(behavior_a));
@@ -799,7 +799,7 @@ TEST_CASE("an empty expected group is a configuration error") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  REQUIRE_THROWS_AS((reload_session{loader, fetcher, scheduler, {{"", "offers/latest", {}}}}),
+  REQUIRE_THROWS_AS((managed_session{loader, fetcher, scheduler, {{"", "offers/latest", {}}}}),
                     std::runtime_error);
 }
 
@@ -807,7 +807,7 @@ TEST_CASE("a ready generation applies at the update safe point") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   session.watch();
   REQUIRE(session.current("game") == nullptr);
   CHECK(session.update().events.empty());
@@ -844,7 +844,7 @@ TEST_CASE("a rejected generation reports once and the active set survives") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   session.watch();
 
   poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest));
@@ -878,7 +878,7 @@ TEST_CASE("a superseding generation activates after an applied one") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   session.watch();
 
   poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest));
@@ -902,7 +902,7 @@ TEST_CASE("offers for another group are diagnostics, not transactions") {
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
   diagnostics_log log;
-  reload_session session{
+  managed_session session{
       loader, fetcher, scheduler, {{"game", "offers/latest", [&log](const offer_event& event) {
                                       log.record(event);
                                     }}}};
@@ -925,7 +925,7 @@ TEST_CASE("candidate replacement between updates reports only the newest") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   session.watch();
 
   poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest));
@@ -948,7 +948,7 @@ TEST_CASE("watch controls observation independently of update") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   CHECK(session.update().events.empty());
   scheduler.tick();
   CHECK(scheduler.tasks.empty());
@@ -972,7 +972,7 @@ TEST_CASE("unknown watch and unwatch groups leave the subscription unchanged") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   REQUIRE_THROWS_WITH_AS(session.watch("missing"), "reload_session: unknown reload group 'missing'",
                          std::runtime_error);
   CHECK(scheduler.tasks.empty());
@@ -989,7 +989,7 @@ TEST_CASE("a paused ready candidate survives until a resumed update") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   session.watch();
   poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest));
   loader.finish(std::make_unique<test_image>(behavior_a));
@@ -1030,7 +1030,7 @@ TEST_CASE("manifest and artifact completions may finish while paused without act
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   session.watch();
   scheduler.tick();
   REQUIRE(fetcher.fetches == 1);
@@ -1067,7 +1067,7 @@ TEST_CASE("old observation ticks stay invalid after unwatch and rewatch") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   session.watch();
   const auto queued = scheduler.tasks[0]->callback;
   session.unwatch();
@@ -1092,7 +1092,7 @@ TEST_CASE("destruction invalidates scheduled ticks and outstanding manifest call
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
   {
-    reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+    managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
     session.watch();
     scheduler.tick();
   }
@@ -1108,7 +1108,7 @@ TEST_CASE("failed scheduling leaves watch retryable") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   scheduler.fail = true;
   REQUIRE_THROWS_WITH_AS(session.watch(), "fixture scheduler failed", std::runtime_error);
   check_group(session.snapshot(), false, group_state::idle, 0);
@@ -1125,7 +1125,7 @@ TEST_CASE("an already rejected candidate remains reportable after pause") {
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+  managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
   session.watch();
   poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest));
   loader.finish(nullptr, "bad digest", module_load_status::digest_mismatch);
@@ -1150,10 +1150,10 @@ TEST_CASE("entry snapshots pin generations beyond session lifetime") {
   std::shared_ptr<const prepared_module> last;
   bool released = false;
   {
-    reload_session session{loader,
-                           fetcher,
-                           scheduler,
-                           {{"game", "offers/latest", {}, {"test-v1", {"tick", "identity"}, {}}}}};
+    managed_session session{loader,
+                            fetcher,
+                            scheduler,
+                            {{"game", "offers/latest", {}, {"test-v1", {"tick", "identity"}, {}}}}};
     session.watch();
     poll(scheduler, fetcher, offer_text(1, "a", a_digest));
     loader.finish(std::make_unique<test_image>(behavior_a, &released));
@@ -1181,10 +1181,10 @@ TEST_CASE("registered host contract pins ABI and exact entry membership before l
   test_loader loader;
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
-  reload_session session{loader,
-                         fetcher,
-                         scheduler,
-                         {{"game", "offers/latest", {}, {"test-v1", {"tick", "identity"}, {}}}}};
+  managed_session session{loader,
+                          fetcher,
+                          scheduler,
+                          {{"game", "offers/latest", {}, {"test-v1", {"tick", "identity"}, {}}}}};
   session.watch();
   poll(scheduler, fetcher, offer_text(1, "a", a_digest));
   loader.finish(std::make_unique<test_image>(behavior_a));
@@ -1226,7 +1226,7 @@ TEST_CASE("destruction discards an outstanding artifact completion") {
   scripted_fetcher fetcher;
   manual_scheduler scheduler;
   {
-    reload_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
+    managed_session session{loader, fetcher, scheduler, {{"game", "offers/latest", {}}}};
     session.watch();
     poll(scheduler, fetcher, offer_text(7, "gen-7", a_digest));
   }

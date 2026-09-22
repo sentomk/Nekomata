@@ -1,5 +1,7 @@
 #include "contract.hpp"
 
+#include <backends/wasm/module_descriptor.hpp>
+
 // One reloadable behavior generation. BEHAVIOR selects the physics; every
 // variant shares the descriptor contract, so a publish swaps behavior on
 // the existing world without any state migration.

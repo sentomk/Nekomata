@@ -7,7 +7,7 @@
 
 namespace neko::wasm {
 
-struct reload_session::group {
+struct managed_session::group {
   struct observation {
     std::shared_ptr<offer_poller> poller;
   };
@@ -27,8 +27,8 @@ struct reload_session::group {
   }
 };
 
-reload_session::reload_session(module_loader& loader, manifest_fetcher& fetcher,
-                               poll_scheduler& scheduler, std::vector<group_registration> groups)
+managed_session::managed_session(module_loader& loader, manifest_fetcher& fetcher,
+                                 poll_scheduler& scheduler, std::vector<group_registration> groups)
     : scheduler_(scheduler) {
   std::sort(groups.begin(), groups.end(),
             [](const auto& a, const auto& b) { return a.group_id < b.group_id; });
@@ -52,11 +52,11 @@ reload_session::reload_session(module_loader& loader, manifest_fetcher& fetcher,
   }
 }
 
-reload_session::~reload_session() {
+managed_session::~managed_session() {
   unwatch();
 }
 
-void reload_session::enable(group& value) {
+void managed_session::enable(group& value) {
   if (value.observed) {
     return;
   }
@@ -73,7 +73,7 @@ void reload_session::enable(group& value) {
   value.subscription = std::move(subscription);
 }
 
-void reload_session::watch() {
+void managed_session::watch() {
   if (groups_.empty()) {
     throw std::runtime_error("reload_session: no registered reload groups; nothing to watch");
   }
@@ -82,7 +82,7 @@ void reload_session::watch() {
   }
 }
 
-const reload_session::group& reload_session::find_group(std::string_view group_id) const {
+const managed_session::group& managed_session::find_group(std::string_view group_id) const {
   const auto found = std::lower_bound(groups_.begin(), groups_.end(), group_id,
                                       [](const auto& value, auto id) { return value->id < id; });
   if (found == groups_.end() || (*found)->id != group_id) {
@@ -92,25 +92,25 @@ const reload_session::group& reload_session::find_group(std::string_view group_i
   return **found;
 }
 
-reload_session::group& reload_session::find_group(std::string_view group_id) {
+managed_session::group& managed_session::find_group(std::string_view group_id) {
   return const_cast<group&>(std::as_const(*this).find_group(group_id));
 }
 
-void reload_session::watch(std::string_view group_id) {
+void managed_session::watch(std::string_view group_id) {
   enable(find_group(group_id));
 }
 
-void reload_session::unwatch() {
+void managed_session::unwatch() {
   for (auto& value : groups_) {
     value->disable();
   }
 }
 
-void reload_session::unwatch(std::string_view group_id) {
+void managed_session::unwatch(std::string_view group_id) {
   find_group(group_id).disable();
 }
 
-::neko::update_result reload_session::update() {
+::neko::update_result managed_session::update() {
   struct transaction {
     group* target;
     candidate* pending;
@@ -186,7 +186,7 @@ void reload_session::unwatch(std::string_view group_id) {
   return result;
 }
 
-::neko::session_snapshot reload_session::snapshot() const {
+::neko::session_snapshot managed_session::snapshot() const {
   session_snapshot out;
   out.applied = applied_;
   out.rejected = rejected_;
@@ -213,7 +213,7 @@ void reload_session::unwatch(std::string_view group_id) {
   return out;
 }
 
-std::shared_ptr<const prepared_module> reload_session::current(std::string_view group_id) const {
+std::shared_ptr<const prepared_module> managed_session::current(std::string_view group_id) const {
   return find_group(group_id).active.current();
 }
 

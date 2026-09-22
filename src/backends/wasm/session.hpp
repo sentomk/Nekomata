@@ -23,21 +23,22 @@ struct group_registration {
   module_contract expected_contract = {};
 };
 
-// The browser reload agent: each group owns a poller, pending candidate and
-// active module on the application event loop. watch() starts preparation;
-// update() only consumes prepared results at the application's safe point.
-// The application owns the world and keeps reloadable code quiescent during
-// update(). Transactions use the public session result vocabulary; candidate
-// validation and the callable entry snapshot remain backend-private.
-class reload_session {
+// The browser reload lifecycle behind the public `neko::reload_session` and
+// its driver: each group owns a poller, pending candidate and active module
+// on the application event loop. watch() starts preparation; update() only
+// consumes prepared results at the application's safe point. The application
+// owns the world and keeps reloadable code quiescent during update().
+// Transactions use the public session result vocabulary; candidate validation
+// and the callable entry snapshot remain backend-private.
+class managed_session {
 public:
   // Group IDs must be nonempty and unique. All groups start disabled;
   // dependencies must outlive this session. Registration is fixed at construction.
-  reload_session(module_loader& loader, manifest_fetcher& fetcher, poll_scheduler& scheduler,
-                 std::vector<group_registration> groups);
-  ~reload_session();
-  reload_session(const reload_session&) = delete;
-  reload_session& operator=(const reload_session&) = delete;
+  managed_session(module_loader& loader, manifest_fetcher& fetcher, poll_scheduler& scheduler,
+                  std::vector<group_registration> groups);
+  ~managed_session();
+  managed_session(const managed_session&) = delete;
+  managed_session& operator=(const managed_session&) = delete;
 
   // Known-group operations are idempotent; unknown IDs are configuration errors.
   // watch() requires at least one registration. If scheduling a group fails,

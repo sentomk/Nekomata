@@ -1,5 +1,7 @@
 #include "offer_poller.hpp"
 
+#include <neko/log.hpp>
+
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -143,6 +145,14 @@ const candidate* offer_poller::pending() const noexcept {
 
 const ::neko::detail::wasm_offer* offer_poller::accepted() const noexcept {
   return state_ && state_->last.has_value() ? &*state_->last : nullptr;
+}
+
+void log_offer_event(const offer_event& event) {
+  const auto level = event.kind == offer_event_kind::offer_accepted ||
+                             event.kind == offer_event_kind::offer_ignored
+                         ? neko::log_level::info
+                         : neko::log_level::warn;
+  neko::log(level, "%s\n", event.message.c_str());
 }
 
 } // namespace neko::wasm

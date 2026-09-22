@@ -24,7 +24,8 @@ The loader owns its request path and callback until completion, independently
 of the candidate and loader object's lifetime. The loader interface permits
 synchronous completion; the browser fetch adapter completes asynchronously.
 
-The private `reload_session` takes a fixed list of `group_registration` values:
+The private `managed_session` (behind the public driver) takes a fixed list of
+`group_registration` values:
 group ID, manifest URL and optional per-group diagnostics callback. IDs must be
 nonempty and unique; every group starts disabled. `watch()` selects all groups,
 while `watch(group_id)` selects just one. Both start scheduled polling;

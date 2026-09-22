@@ -32,6 +32,12 @@ struct offer_event {
   std::string message;
 };
 
+/// Report one preparation event through `neko::log` — the default callback
+/// for build-discovered groups, whose registrations carry no page-side
+/// observer. Accepted and ignored offers log as info; conflicts and
+/// manifest problems as warnings.
+void log_offer_event(const offer_event& event);
+
 // Polls one stable manifest URL and turns superseding offers into loading
 // candidates. Single-event-loop object with at most one manifest fetch
 // outstanding; poll() is a no-op while one is pending, so the caller owns

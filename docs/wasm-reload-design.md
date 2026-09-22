@@ -63,7 +63,7 @@ Applications include [`neko/wasm.hpp`](../include/neko/wasm.hpp) and
 | `candidate` | Validate a requested contract and own the prepared result until activation or discard. |
 | `prepared_module` | Own a copied entry set and its image; provide immutable lookup to callers. |
 | `active_module` | Consume a ready candidate and replace the complete active entry set. |
-| `reload_session` | Own the poller and the active module; report generation transactions at the application's safe point. |
+| `managed_session` | The private lifecycle behind the public driver: own the poller and the active module; report generation transactions at the application's safe point. |
 | Application | Own persistent state, define entry signatures, and establish the safe point. |
 
 The public session exclusively owns a `backend::session_driver`. The native
@@ -354,8 +354,10 @@ filesystem; ordering decisions are a pure comparison on the value.
 offers through `compare_wasm_offers`, and hands superseding offers to the
 candidate lifecycle as observable events; its native suite drives it through
 mock fetchers. The factory's private lifecycle implementation,
-`neko::wasm::reload_session`, accepts a fixed list of private `group_registration`
-values carrying group ID, manifest URL and optional diagnostics callback.
+`neko::wasm::managed_session`, accepts a fixed list of private
+`group_registration` values carrying group ID, manifest URL and an optional
+diagnostics callback; build-discovered groups default that callback to
+`neko::log`.
 IDs must be nonempty and unique, and all groups start disabled. Its `watch()`
 and `unwatch()` overloads control all groups or one named group while preserving
 each poller and its consumer cursor. The browser scheduler polls every 100 ms
