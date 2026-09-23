@@ -79,6 +79,7 @@ jobs:
             neko_unit_backends_wasm_offer_poller \
             neko_unit_backends_wasm_session \
             neko_unit_backends_wasm_registration \
+            neko_unit_backends_wasm_plt \
             neko_unit_runtime_session_driver \
             neko_integration_session_lifecycle
           bash scripts/test.sh debug -R '^neko\.((unit\.backends|e2e)\.wasm\.|unit\.runtime\.session_driver$|integration\.session\.lifecycle$)' \
