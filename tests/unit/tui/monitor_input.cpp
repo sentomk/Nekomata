@@ -441,7 +441,7 @@ private:
     bundle.state = sym;
     bundle.substituter = std::make_shared<null_substituter>();
 
-    neko::reload_session session{std::move(bundle)};
+    neko::reload_session session{neko::backend::make_handle(std::move(bundle))};
     {
       neko::tui::monitor tui{
           session,
@@ -528,7 +528,7 @@ TEST_CASE("monitor: terminal mode sizes its own pty from the host terminal") {
     bundle.symbols = sym;
     bundle.state = sym;
     bundle.substituter = std::make_shared<null_substituter>();
-    neko::reload_session session{std::move(bundle)};
+    neko::reload_session session{neko::backend::make_handle(std::move(bundle))};
     neko::tui::monitor tui{
         session, {.title = "test", .render_mode = neko::tui::mode::terminal, .show_app_log = true}};
     for (int i = 0; i < 10; ++i) {

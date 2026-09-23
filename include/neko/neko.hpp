@@ -7,7 +7,6 @@
 
 #include <neko/config.hpp>
 
-#include <neko/backend.hpp>
 #include <neko/log.hpp>
 #include <neko/session.hpp>
 #include <neko/version.hpp>

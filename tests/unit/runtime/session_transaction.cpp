@@ -266,7 +266,7 @@ TEST_CASE("one update rolls back entries patched for earlier watched objects") {
   offer(a_offer);
   offer(b_offer);
 
-  neko::reload_session session{std::move(backends)};
+  neko::reload_session session{neko::backend::make_handle(std::move(backends))};
   session.watch(a_offer);
   session.watch(b_offer);
 
@@ -327,7 +327,7 @@ TEST_CASE("an incomplete rollback poisons the session and retains candidate code
   offer(b_offer);
 
   {
-    neko::reload_session session{std::move(backends)};
+    neko::reload_session session{neko::backend::make_handle(std::move(backends))};
     session.watch(a_offer);
     session.watch(b_offer);
 
@@ -376,7 +376,7 @@ TEST_CASE("one update rejects objects that replace the same live entry") {
   offer(first_offer);
   offer(second_offer);
 
-  neko::reload_session session{std::move(backends)};
+  neko::reload_session session{neko::backend::make_handle(std::move(backends))};
   session.watch(first_offer);
   session.watch(second_offer);
 
@@ -426,7 +426,7 @@ TEST_CASE("rejected candidate state is reclaimed with its code") {
   const auto object = temporary.path() / "rejected.new.o";
   offer(object);
 
-  neko::reload_session session{std::move(backends)};
+  neko::reload_session session{neko::backend::make_handle(std::move(backends))};
   session.watch(object);
   const auto result = session.update();
   REQUIRE(result.events.size() == 1);
@@ -462,7 +462,7 @@ TEST_CASE("committed state follows redirects into process lifetime") {
   const auto object = temporary.path() / "committed.new.o";
   offer(object);
   {
-    neko::reload_session session{std::move(backends)};
+    neko::reload_session session{neko::backend::make_handle(std::move(backends))};
     session.watch(object);
     CHECK(session.update().any_applied());
     CHECK(state_allocations->reclaimed == 0);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <neko/backend/session_driver.hpp>
+#include <neko/session.hpp>
 
 #include <memory>
 #include <string_view>
@@ -26,7 +26,7 @@ namespace neko::wasm {
 /// Discover build-generated groups, initially disabled, and own their browser
 /// transport, scheduling and preparation. Pass the result to reload_session.
 /// Only one browser backend may exist per page because PLT slots are global.
-[[nodiscard]] std::unique_ptr<backend::session_driver> create_backend();
+[[nodiscard]] backend_handle create_backend();
 #endif
 
 /// A static-duration function pointer rewritten when a generation activates.

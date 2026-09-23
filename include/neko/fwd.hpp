@@ -6,6 +6,7 @@
 namespace neko {
 
 class reload_session;
+class backend_handle;
 
 enum class log_level : std::uint8_t;
 

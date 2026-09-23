@@ -25,6 +25,7 @@ static_assert(!complete_type<neko::backend::patch_planner>);
 static_assert(!complete_type<neko::backend::state_manager>);
 static_assert(!complete_type<neko::backend::symbol_provider>);
 static_assert(!complete_type<neko::reload_session>);
+static_assert(!complete_type<neko::backend_handle>);
 static_assert(!complete_type<neko::backend::function_replacement>);
 static_assert(!complete_type<neko::backend::generation_symbol>);
 static_assert(!complete_type<neko::backend::generation_fixup>);

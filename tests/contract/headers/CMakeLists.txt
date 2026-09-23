@@ -5,7 +5,7 @@ file(GLOB_RECURSE neko_public_headers CONFIGURE_DEPENDS
   "${PROJECT_SOURCE_DIR}/include/neko/*.hpp")
 list(APPEND neko_public_headers "neko/version.hpp")
 
-set(neko_header_sources fwd.cpp)
+set(neko_header_sources fwd.cpp app_surface.cpp)
 foreach(header IN LISTS neko_public_headers)
   string(REPLACE "/" "_" source_name "${header}")
   set(source "${CMAKE_CURRENT_BINARY_DIR}/${source_name}.cpp")

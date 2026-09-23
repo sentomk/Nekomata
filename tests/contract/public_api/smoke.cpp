@@ -7,6 +7,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include <neko/backend.hpp>
 #include <neko/neko.hpp>
 
 #include <string>
@@ -75,5 +76,6 @@ TEST_CASE("generation linkage metadata keeps target and encoding distinct") {
 TEST_CASE("reload_session rejects incomplete backend bundles") {
   neko::backend::bundle incomplete;
   incomplete.symbols = std::make_shared<null_symbol_provider>();
-  CHECK_THROWS_AS(neko::reload_session{std::move(incomplete)}, std::runtime_error);
+  CHECK_THROWS_AS(neko::reload_session{neko::backend::make_handle(std::move(incomplete))},
+                  std::runtime_error);
 }

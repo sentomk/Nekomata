@@ -44,7 +44,11 @@ TEST_CASE("public session delegates lifecycle and owns the driver across moves")
   {
     auto driver = std::make_unique<recording_driver>(destroyed);
     auto* recorded = driver.get();
-    neko::reload_session original{std::move(driver)};
+    auto handle = neko::backend::make_handle(std::move(driver));
+    auto transferred = std::move(handle);
+    CHECK_THROWS_WITH_AS((neko::reload_session{std::move(handle)}),
+                         "reload_session: null session driver", std::runtime_error);
+    neko::reload_session original{std::move(transferred)};
     original.watch();
     original.watch("test");
     original.watch(std::string_view{"other"});
@@ -52,7 +56,8 @@ TEST_CASE("public session delegates lifecycle and owns the driver across moves")
     original.unwatch(std::string_view{"other"});
     original.unwatch();
     neko::reload_session moved{std::move(original)};
-    neko::reload_session target{std::make_unique<recording_driver>(replaced_destroyed)};
+    neko::reload_session target{
+        neko::backend::make_handle(std::make_unique<recording_driver>(replaced_destroyed))};
     target = std::move(moved);
     CHECK(replaced_destroyed);
     CHECK_FALSE(destroyed);
@@ -81,6 +86,7 @@ TEST_CASE("public session delegates lifecycle and owns the driver across moves")
 }
 
 TEST_CASE("public session refuses a null lifecycle driver") {
-  CHECK_THROWS_WITH_AS((neko::reload_session{std::unique_ptr<neko::backend::session_driver>{}}),
+  CHECK_THROWS_WITH_AS((neko::reload_session{neko::backend::make_handle(
+                           std::unique_ptr<neko::backend::session_driver>{})}),
                        "reload_session: null session driver", std::runtime_error);
 }

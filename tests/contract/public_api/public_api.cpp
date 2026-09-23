@@ -19,10 +19,9 @@ int main() {
     return 2;
   }
 
-  // The public session header must support construction/destruction even
-  // though it only forward-declares the backend interface classes.
+  // The extension header can assemble a backend without private includes.
   try {
-    neko::reload_session session{neko::backend::bundle{}};
+    neko::reload_session session{neko::backend::make_handle(neko::backend::bundle{})};
     return 3;
   } catch (const std::runtime_error&) {
     // Missing backend components are intentionally rejected.

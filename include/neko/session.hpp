@@ -32,6 +32,33 @@
 
 namespace neko {
 
+class backend_handle;
+
+namespace backend {
+backend_handle make_handle(bundle backends);
+backend_handle make_handle(std::unique_ptr<session_driver> driver);
+} // namespace backend
+
+/// Move-only ownership of a platform backend, consumed by reload_session.
+/// Ordinary applications receive one from their platform's create_backend().
+class backend_handle {
+public:
+  backend_handle(backend_handle&&) noexcept;
+  backend_handle& operator=(backend_handle&&) noexcept;
+  ~backend_handle();
+
+  backend_handle(const backend_handle&) = delete;
+  backend_handle& operator=(const backend_handle&) = delete;
+
+private:
+  friend class reload_session;
+  friend backend_handle backend::make_handle(backend::bundle backends);
+  friend backend_handle backend::make_handle(std::unique_ptr<backend::session_driver> driver);
+
+  explicit backend_handle(std::unique_ptr<backend::session_driver> driver);
+  std::unique_ptr<backend::session_driver> driver_;
+};
+
 /// Outcome of one committed or rejected transaction inside an `update()` call.
 enum class update_status : std::uint8_t {
   applied,  ///< the transaction activated the complete live entry set
@@ -110,10 +137,9 @@ struct session_snapshot {
 /// observation, preparation, and activation at the caller's safe point.
 class reload_session {
 public:
-  explicit reload_session(backend::bundle backends);
-  /// Own a platform lifecycle implementation supplied by its backend factory.
-  /// A null driver is a configuration error.
-  explicit reload_session(std::unique_ptr<backend::session_driver> driver);
+  /// Own the backend returned by a platform factory. A consumed or empty
+  /// handle is a configuration error.
+  explicit reload_session(backend_handle handle);
   ~reload_session();
 
   reload_session(reload_session&&) noexcept;

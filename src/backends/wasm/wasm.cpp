@@ -1,3 +1,4 @@
+#include <neko/backend/session_driver.hpp>
 #include <neko/wasm.hpp>
 
 #include "emscripten_loader.hpp"
@@ -37,7 +38,7 @@ private:
 };
 } // namespace
 
-std::unique_ptr<backend::session_driver> create_backend() {
-  return std::make_unique<browser_session>();
+backend_handle create_backend() {
+  return backend::make_handle(std::make_unique<browser_session>());
 }
 } // namespace neko::wasm

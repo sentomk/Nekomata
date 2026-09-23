@@ -130,7 +130,7 @@ public:
     bundle.symbols = backend;
     bundle.state = backend;
     bundle.substituter = backend;
-    session = std::make_unique<neko::reload_session>(std::move(bundle));
+    session = std::make_unique<neko::reload_session>(neko::backend::make_handle(std::move(bundle)));
   }
   ~fixture() {
     session.reset(); // Join the worker before deleting its input files.

@@ -79,7 +79,7 @@ neko::reload_session make_session() {
   backends.symbols = process;
   backends.state = process;
   backends.substituter = std::make_shared<stub_substituter>();
-  return neko::reload_session{std::move(backends)};
+  return neko::reload_session{neko::backend::make_handle(std::move(backends))};
 }
 
 } // namespace

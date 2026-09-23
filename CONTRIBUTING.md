@@ -70,19 +70,19 @@ have short entry points; extension APIs are grouped by module:
 
 ```text
 include/neko/
-  neko.hpp             # convenience umbrella for core + runtime
-  fwd.hpp              # public forward-declaration umbrella
-  log.hpp              # diagnostic API declarations
-  session.hpp          # reload session API
+  neko.hpp             # application convenience include
+  fwd.hpp              # lightweight forward declarations
+  session.hpp          # reload session and opaque backend handle
+  elf.hpp, wasm.hpp    # platform factories
+  log.hpp, tui.hpp     # diagnostics and optional monitor
+  backend.hpp          # explicit backend extension interface
+  backend/             # backend implementation contracts
+  detail/              # installed build-adapter contracts, not application APIs
   version.hpp          # configured by CMake into the build include directory
-  core/                # shared public types and forward declarations
-  runtime/             # backend and reload-planning extension interfaces
-  tui/                 # optional TUI API
-  platforms/elf.hpp    # public Linux backend factory
 src/
   core/                # compiled core implementation
   runtime/             # compiled runtime implementation
-  platforms/           # platform implementations and private headers
+  backends/            # platform implementations and private headers
   tui/                 # optional TUI implementation
 tests/                 # unit, platform, transaction and acceptance suites
 examples/              # runnable consumers
@@ -90,21 +90,22 @@ scripts/               # configure, build, test and formatting entrypoints
 tools/                 # environment setup and development-only utilities
 ```
 
-Use `<neko/session.hpp>` and `<neko/platforms/elf.hpp>` for the Linux reload
-entry point, and `<neko/log.hpp>` for diagnostics. With
-`-DNEKOMATA_TUI=ON`, `<neko/tui/tui.hpp>` exposes the optional TUI API.
+Use `<neko/session.hpp>` with `<neko/elf.hpp>` on Linux or `<neko/wasm.hpp>`
+in the browser, and `<neko/log.hpp>` for diagnostics. Both platform factories
+return `neko::backend_handle`; `neko::reload_session` consumes it. Include
+`<neko/backend.hpp>` only when implementing a backend. With
+`-DNEKOMATA_TUI=ON`, `<neko/tui.hpp>` exposes the optional TUI API.
 `<neko/neko.hpp>` remains the convenience include, but is not an amalgamated
-single-file distribution and still requires linking the library. CMake target
-names remain `nekomata::neko`, `nekomata::backends::elf` and, when enabled,
-`nekomata::tui`; directory names do not change those aliases or the
-`neko::elf` namespace. The supported product surface is these library APIs;
+single-file distribution and still requires linking the library. Applications
+link `nekomata::neko`; the optional TUI is an in-tree target. The supported
+product surface is this library interface;
 programs under `tools/` are development utilities, not a public driver CLI.
 
 The common headers declare the API directly instead of forwarding to private
 implementation headers. For example, logging is implemented in
 `src/core/log.cpp`; terminal detection and formatting code are not included by
-consumers. The public `core/` and `runtime/` headers describe shared types and
-extension contracts, not the private ELF parser, loader, or code-page machinery.
+consumers. The public `backend/` headers describe extension contracts, not the
+private ELF parser, loader, or code-page machinery.
 Private source directories need not mirror the public API layout.
 
 Module `fwd.hpp` files hold forward declarations and lightweight type aliases.

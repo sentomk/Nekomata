@@ -68,8 +68,9 @@ descriptor through the installed internal `neko/detail` build contract.
 | `managed_session` | The private lifecycle behind the public driver: own the poller and the active module; report generation transactions at the application's safe point. |
 | Application | Own persistent state, define entry signatures, and establish the safe point. |
 
-The public session exclusively owns a `backend::session_driver`. The native
-bundle constructor creates the unchanged native lifecycle; the browser factory
+The public session consumes an opaque `backend_handle` from either platform
+factory. Internally, it exclusively owns a `backend::session_driver`. The native
+bundle adapter creates the native lifecycle; the browser factory
 creates a driver owning its loader, fetcher, scheduler and private session.
 The private session is destroyed before its adapters. Browser builds do not
 compile the native worker or machine-code transaction implementation.
