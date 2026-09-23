@@ -1,5 +1,5 @@
 # Reject decorative ruler comments in project-owned sources. Vendored sources
-# retain their upstream style and are excluded explicitly.
+# and generated build trees retain their own style and are excluded.
 set(errors "")
 set(cpp_files "")
 foreach(root IN ITEMS include src examples tests tools)
@@ -15,6 +15,7 @@ foreach(root IN ITEMS include src examples tests tools)
   list(APPEND cpp_files ${found})
 endforeach()
 list(FILTER cpp_files EXCLUDE REGEX "/tests/support/doctest/")
+list(FILTER cpp_files EXCLUDE REGEX "/build/")
 list(REMOVE_DUPLICATES cpp_files)
 
 foreach(path IN LISTS cpp_files)
@@ -35,6 +36,7 @@ foreach(root IN ITEMS cmake examples scripts src tests tools)
   list(APPEND script_files ${found})
 endforeach()
 list(REMOVE_DUPLICATES script_files)
+list(FILTER script_files EXCLUDE REGEX "/build/")
 
 foreach(path IN LISTS script_files)
   file(STRINGS "${path}" bad_lines REGEX "^[ \t]*#[ \t]*.*(----|====|——|────)")
