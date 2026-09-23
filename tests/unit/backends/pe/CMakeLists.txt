@@ -3,11 +3,14 @@
 # suites stay Windows-gated. Fixture flags stay explicit here — they are test
 # inputs (see nekomata_test.cmake).
 #
-# Hot objects and the suites that run them compile without runtime checks:
-# /RTC injects calls to CRT helpers that hot code must not depend on, and
-# the deterministic fake symbol table does not impersonate them.
-set(CMAKE_C_FLAGS_DEBUG "/Zi /Ob0 /Od")
-set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Ob0 /Od")
+# MSVC hot objects and the suites that run them compile without runtime
+# checks: /RTC injects calls to CRT helpers that hot code must not depend
+# on, and the deterministic fake symbol table does not impersonate them.
+# Other drivers keep their default debug dialect.
+if(MSVC)
+  set(CMAKE_C_FLAGS_DEBUG "/Zi /Ob0 /Od")
+  set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Ob0 /Od")
+endif()
 
 if(NEKOMATA_TARGET_WINDOWS)
   # clang-cl delivers hardware exceptions into __except only under /EHa
