@@ -96,7 +96,7 @@ private:
 observed_fetcher fetcher;
 observed_loader loader;
 emscripten_poll_scheduler scheduler;
-std::unique_ptr<reload_session> session;
+std::unique_ptr<managed_session> session;
 std::unique_ptr<poll_subscription> pulse;
 unsigned pulses = 0;
 unsigned paused_pulse = 0;
@@ -390,7 +390,7 @@ void diagnose(std::size_t index, const offer_event& event) {
 
 int main() {
   // Deliberately reverse registration order; results and snapshots must still sort.
-  session = std::make_unique<reload_session>(
+  session = std::make_unique<managed_session>(
       loader, fetcher, scheduler,
       std::vector<group_registration>{
           {"beta", "beta/latest", [](const offer_event& event) { diagnose(1, event); }},

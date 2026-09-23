@@ -69,7 +69,7 @@ world_state* const original_world = &world;
 observed_loader loader;
 observed_fetcher fetcher;
 emscripten_poll_scheduler scheduler;
-std::unique_ptr<reload_session> session;
+std::unique_ptr<managed_session> session;
 std::unique_ptr<poll_subscription> pulse;
 std::shared_ptr<const prepared_module> generation_a;
 std::shared_ptr<const prepared_module> generation_b;
@@ -344,7 +344,7 @@ bool frame(double, void*) {
 } // namespace
 
 int main() {
-  session = std::make_unique<reload_session>(
+  session = std::make_unique<managed_session>(
       loader, fetcher, scheduler,
       std::vector<group_registration>{{"flock", "offers/latest", [](const offer_event& event) {
                                          if (event.kind == offer_event_kind::offer_accepted) {
