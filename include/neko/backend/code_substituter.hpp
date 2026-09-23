@@ -112,6 +112,18 @@ public:
                 static_cast<std::size_t>(size));
     return true;
   }
+
+  /// Attach a notification the backend runs when the reservation is
+  /// reclaimed through its owning handle; `release_to_process` drops it
+  /// silently, since released pages outlive every registration. Backends
+  /// use this for process-wide registrations tied to an allocation's
+  /// lifetime, such as unwind tables.
+  virtual void on_reclaim(executable_allocation& reservation, void (*notify)(void*),
+                          void* context) {
+    static_cast<void>(reservation);
+    static_cast<void>(notify);
+    static_cast<void>(context);
+  }
 };
 
 } // namespace neko::backend

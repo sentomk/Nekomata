@@ -11,3 +11,8 @@ nekomata_add_unit_test(
 
 set_target_properties(neko_unit_backends_pdb_process_symbols PROPERTIES
   LINK_OPTIONS "/INCREMENTAL:NO")
+
+nekomata_add_unit_test(
+  NAME unit.backends.pdb.backend_factory
+  SOURCES backend_factory.cpp
+  LIBRARIES neko_backend_pe)

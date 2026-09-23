@@ -114,3 +114,10 @@ if(NEKOMATA_TARGET_WINDOWS)
     add_library(nekomata::backends::pdb ALIAS neko_backend_pdb)
   endif()
 endif()
+
+# The factory joins when the DIA symbol library exists: a PE backend
+# without live-process symbols cannot assemble a session.
+if(TARGET neko_backend_pdb AND NOT neko_backend_pdb_TYPE MATCHES "INTERFACE")
+  target_sources(neko_backend_pe PRIVATE pe.cpp)
+  target_link_libraries(neko_backend_pe PRIVATE neko_backend_pdb)
+endif()

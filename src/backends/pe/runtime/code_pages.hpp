@@ -69,6 +69,8 @@ public:
   bool rewrite_reservation(backend::executable_allocation& reservation, std::uint64_t offset,
                            const void* bytes, std::uint64_t size) override;
   bool restore_entry(std::uintptr_t entry, const std::uint8_t original[5]) override;
+  void on_reclaim(backend::executable_allocation& reservation, void (*notify)(void*),
+                  void* context) override;
 
 private:
   bool patchable_entry(std::uintptr_t entry, void* target) const;

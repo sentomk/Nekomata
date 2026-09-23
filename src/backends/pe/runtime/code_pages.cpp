@@ -335,6 +335,9 @@ public:
 
   ~allocation() override {
     if (owns_mapping_) {
+      if (reclaim_notify != nullptr) {
+        reclaim_notify(reclaim_context);
+      }
       state_->reclaim(begin_);
     }
   }
@@ -347,6 +350,7 @@ public:
     if (!owns_mapping_) {
       return;
     }
+    reclaim_notify = nullptr; // released pages outlive every registration
     state_->release_to_process(begin_);
     owns_mapping_ = false;
   }
@@ -356,6 +360,11 @@ private:
   std::uintptr_t begin_;
   std::uint64_t size_;
   bool owns_mapping_ = true;
+
+public:
+  /// Fires when this handle reclaims the reservation (see on_reclaim()).
+  void* reclaim_context = nullptr;
+  void (*reclaim_notify)(void*) = nullptr;
 };
 
 code_pages::code_pages() : state_(std::make_shared<allocation_state>()) {}
@@ -608,6 +617,13 @@ bool code_pages::rewrite_reservation(backend::executable_allocation& reservation
   FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(at),
                         static_cast<SIZE_T>(size));
   return true;
+}
+
+void code_pages::on_reclaim(backend::executable_allocation& reservation, void (*notify)(void*),
+                            void* context) {
+  auto& owned = static_cast<allocation&>(reservation);
+  owned.reclaim_context = context;
+  owned.reclaim_notify = notify;
 }
 
 bool code_pages::restore_entry(std::uintptr_t entry, const std::uint8_t original[5]) {

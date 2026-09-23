@@ -95,6 +95,13 @@ section_class classify(const std::string& name, std::uint32_t flags) {
   if (name.empty() || (flags & (flag_link_info | flag_link_remove)) != 0 || never_loaded(name)) {
     return section_class::other;
   }
+  if (name == ".data$r") {
+    // MSVC's catchable-type metadata for C++ exceptions: writable-flagged
+    // by the driver, but constant once its one ADDR64 — a pointer to a
+    // live process type_info vtable — is applied. Image-placed like
+    // read-only data; the runtime only reads it.
+    return section_class::rodata;
+  }
   if ((flags & flag_cnt_code) != 0 && (flags & flag_mem_execute) != 0) {
     return section_class::text;
   }
@@ -420,6 +427,37 @@ object_file parse_object(const std::uint8_t* data, std::size_t size) {
       require(out.unwind_offset < obj.sections[out.xdata_section].size,
               ".pdata unwind offset leaves its .xdata section");
       obj.unwind_table.push_back(out);
+    }
+  }
+
+  // A writable section that carries relocations but defines no variable is
+  // the drivers' exception metadata (MSVC parks type descriptors in
+  // `.data$r`, clang-cl in plain `.data`): bytes the runtime only reads,
+  // not application state. Reclassify those as read-only so the image
+  // places them; sections that hold user variables keep the strict
+  // mutable-initializer refusals downstream.
+  for (auto& sec : obj.sections) {
+    if (sec.cls != section_class::data || sec.bytes.empty()) {
+      continue;
+    }
+    const bool carries_relocations =
+        std::any_of(obj.relocations.begin(), obj.relocations.end(),
+                    [&](const relocation& rel) { return rel.target_section == sec.index; });
+    if (!carries_relocations) {
+      continue;
+    }
+    // RTTI objects (`??_R…`) are compiler metadata even when they are
+    // named external definitions: the runtime reads them and no reload
+    // path writes them.
+    const bool hosts_variables =
+        std::any_of(obj.symbols.begin(), obj.symbols.end(), [&](const symbol& sym) {
+          return !sym.auxiliary && (sym.storage_class == 2 || sym.storage_class == 3) &&
+                 !sym.is_function() && !sym.is_common() && sym.name != sec.name &&
+                 sym.name.rfind("??_R", 0) != 0 &&
+                 sym.section_number == static_cast<std::int16_t>(sec.index + 1);
+        });
+    if (!hosts_variables) {
+      sec.cls = section_class::rodata;
     }
   }
 

@@ -2,6 +2,12 @@
 # compiler output (no linking or executing of fixtures); the VirtualAlloc
 # suites stay Windows-gated. Fixture flags stay explicit here — they are test
 # inputs (see nekomata_test.cmake).
+#
+# Hot objects and the suites that run them compile without runtime checks:
+# /RTC injects calls to CRT helpers that hot code must not depend on, and
+# the deterministic fake symbol table does not impersonate them.
+set(CMAKE_C_FLAGS_DEBUG "/Zi /Ob0 /Od")
+set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Ob0 /Od")
 
 if(NEKOMATA_TARGET_WINDOWS)
   # clang-cl delivers hardware exceptions into __except only under /EHa
@@ -97,6 +103,29 @@ if(WIN32 OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     neko_pe_object_relocs neko_pe_object_shapes neko_pe_object_debug)
 endif()
 
+# State, cross-object and unwind fixtures for the loader suite.
+  add_library(neko_pe_object_state OBJECT fixtures/state.c)
+  target_compile_options(neko_pe_object_state PRIVATE ${neko_coff_cross})
+  nekomata_apply_warnings(neko_pe_object_state)
+
+  foreach(neko_pair IN ITEMS root sibling)
+    add_library(neko_pe_object_${neko_pair} OBJECT fixtures/${neko_pair}.cpp)
+    if(MSVC)
+      target_compile_options(neko_pe_object_${neko_pair} PRIVATE /EHsc)
+    else()
+      target_compile_options(neko_pe_object_${neko_pair} PRIVATE ${neko_coff_cross} -nostdinc++)
+    endif()
+    nekomata_apply_warnings(neko_pe_object_${neko_pair})
+  endforeach()
+
+  add_library(neko_pe_object_unwind OBJECT fixtures/unwind.cpp)
+  if(MSVC)
+    target_compile_options(neko_pe_object_unwind PRIVATE /EHsc)
+  else()
+    target_compile_options(neko_pe_object_unwind PRIVATE ${neko_coff_cross} -nostdinc++)
+  endif()
+  nekomata_apply_warnings(neko_pe_object_unwind)
+
 # The loader suite loads the exec fixture and runs it; the relocs fixture
 # feeds the mutable-initializer rejection. Both need targets from the
 # fixture block above, so this stays at the file's end.
@@ -111,6 +140,10 @@ if(NEKOMATA_TARGET_WINDOWS AND TARGET neko_pe_object_relocs)
     PRIVATE_INCLUDES "${PROJECT_SOURCE_DIR}/src/backends/pe"
     LIBRARIES neko_backend_pe
     COMMAND_EXPAND_LISTS
-    TEST_ARGS $<TARGET_OBJECTS:neko_pe_object_exec> $<TARGET_OBJECTS:neko_pe_object_relocs>)
-  add_dependencies(neko_unit_backends_pe_loader neko_pe_object_exec neko_pe_object_relocs)
+    TEST_ARGS $<TARGET_OBJECTS:neko_pe_object_exec> $<TARGET_OBJECTS:neko_pe_object_relocs>
+               $<TARGET_OBJECTS:neko_pe_object_state> $<TARGET_OBJECTS:neko_pe_object_root>
+               $<TARGET_OBJECTS:neko_pe_object_sibling> $<TARGET_OBJECTS:neko_pe_object_unwind>)
+  add_dependencies(neko_unit_backends_pe_loader
+    neko_pe_object_exec neko_pe_object_relocs neko_pe_object_state neko_pe_object_root
+    neko_pe_object_sibling neko_pe_object_unwind)
 endif()
