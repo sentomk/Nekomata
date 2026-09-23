@@ -24,6 +24,7 @@ static_assert(!complete_type<neko::backend::object_loader>);
 static_assert(!complete_type<neko::backend::patch_planner>);
 static_assert(!complete_type<neko::backend::state_manager>);
 static_assert(!complete_type<neko::backend::symbol_provider>);
+static_assert(!complete_type<neko::backend::handle_factory>);
 static_assert(!complete_type<neko::reload_session>);
 static_assert(!complete_type<neko::backend_handle>);
 static_assert(!complete_type<neko::backend::function_replacement>);

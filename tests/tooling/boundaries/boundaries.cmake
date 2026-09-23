@@ -1,10 +1,15 @@
 # Architecture boundaries, asserted on the source tree and the build's
 # compile database. These encode the module rules from the refactoring
 # design: what may include what, and which compiler owns which layer.
+# Script mode keeps the pre-3.3 if() grammar unless this policy is set.
+cmake_policy(SET CMP0057 NEW)
 set(errors "")
 
-# Public headers never reach into the source tree.
+# Public headers never reach into the source tree, and only the backend
+# extension headers expose backend assembly entry points.
 file(GLOB_RECURSE public_headers "${SOURCE_DIR}/include/neko/*.hpp")
+file(GLOB spi_headers "${SOURCE_DIR}/include/neko/backend.hpp"
+  "${SOURCE_DIR}/include/neko/backend/*.hpp")
 foreach(header IN LISTS public_headers)
   file(READ "${header}" text)
   if(text MATCHES "#include[^\\n]*(\"|<)[^\\n]*(src/|\\.\\./)")
@@ -12,6 +17,15 @@ foreach(header IN LISTS public_headers)
   endif()
   if(text MATCHES "process_symbols|binary_file|code_pages|dwarf_inspect")
     list(APPEND errors "${header}: mentions a private backend type")
+  endif()
+  set(is_extension_header FALSE)
+  if(header IN_LIST spi_headers)
+    set(is_extension_header TRUE)
+  endif()
+  if(NOT is_extension_header)
+    if(text MATCHES "make_handle")
+      list(APPEND errors "${header}: exposes a backend assembly entry point; it belongs in <neko/backend.hpp>")
+    endif()
   endif()
 endforeach()
 

@@ -271,8 +271,8 @@ update_result native_session::update() {
   return result;
 }
 
-backend_handle backend::make_handle(bundle backends) {
-  return make_handle(std::make_unique<native_session>(std::move(backends)));
+backend_handle backend::handle_factory::wrap(bundle backends) {
+  return wrap(std::make_unique<native_session>(std::move(backends)));
 }
 
 } // namespace neko

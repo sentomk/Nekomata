@@ -1,3 +1,4 @@
+#include <neko/backend.hpp>
 #include <neko/backend/session_driver.hpp>
 #include <neko/wasm.hpp>
 

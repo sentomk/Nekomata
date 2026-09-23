@@ -32,15 +32,9 @@
 
 namespace neko {
 
-class backend_handle;
-
-namespace backend {
-backend_handle make_handle(bundle backends);
-backend_handle make_handle(std::unique_ptr<session_driver> driver);
-} // namespace backend
-
 /// Move-only ownership of a platform backend, consumed by reload_session.
-/// Ordinary applications receive one from their platform's create_backend().
+/// Ordinary applications receive one from their platform's create_backend();
+/// backend extensions assemble one through <neko/backend.hpp>.
 class backend_handle {
 public:
   backend_handle(backend_handle&&) noexcept;
@@ -52,8 +46,9 @@ public:
 
 private:
   friend class reload_session;
-  friend backend_handle backend::make_handle(backend::bundle backends);
-  friend backend_handle backend::make_handle(std::unique_ptr<backend::session_driver> driver);
+  // handle_factory is the sole construction authority, so this header
+  // declares no backend assembly entry points.
+  friend class backend::handle_factory;
 
   explicit backend_handle(std::unique_ptr<backend::session_driver> driver);
   std::unique_ptr<backend::session_driver> driver_;

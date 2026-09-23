@@ -93,7 +93,9 @@ tools/                 # environment setup and development-only utilities
 Use `<neko/session.hpp>` with `<neko/elf.hpp>` on Linux or `<neko/wasm.hpp>`
 in the browser, and `<neko/log.hpp>` for diagnostics. Both platform factories
 return `neko::backend_handle`; `neko::reload_session` consumes it. Include
-`<neko/backend.hpp>` only when implementing a backend. With
+`<neko/backend.hpp>` only when implementing a backend: extensions wrap their
+assembled pieces with `neko::backend::make_handle`, and the application
+headers stay free of backend assembly declarations. With
 `-DNEKOMATA_TUI=ON`, `<neko/tui.hpp>` exposes the optional TUI API.
 `<neko/neko.hpp>` remains the convenience include, but is not an amalgamated
 single-file distribution and still requires linking the library. Applications

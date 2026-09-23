@@ -30,10 +30,6 @@ backend_handle::backend_handle(backend_handle&&) noexcept = default;
 backend_handle& backend_handle::operator=(backend_handle&&) noexcept = default;
 backend_handle::~backend_handle() = default;
 
-backend_handle backend::make_handle(std::unique_ptr<session_driver> driver) {
-  return backend_handle{std::move(driver)};
-}
-
 reload_session::reload_session(backend_handle handle) : impl_(std::move(handle.driver_)) {
   if (!impl_) {
     throw std::runtime_error("reload_session: null session driver");

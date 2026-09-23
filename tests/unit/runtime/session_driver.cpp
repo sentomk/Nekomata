@@ -1,5 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
+#include <neko/backend.hpp>
 #include <neko/backend/session_driver.hpp>
 
 #include <memory>
