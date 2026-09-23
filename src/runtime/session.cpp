@@ -5,11 +5,13 @@
 
 namespace neko::backend {
 
-void session_driver::watch(std::filesystem::path) {
+// The native override consumes the path by value; this fallback rejects it.
+void session_driver::watch(std::filesystem::path) { // NOLINT(performance-unnecessary-value-param)
   throw std::runtime_error("reload_session: object watches are not supported by this backend");
 }
 
-void session_driver::watch(std::filesystem::path, const std::filesystem::path&) {
+void session_driver::watch(std::filesystem::path, // NOLINT(performance-unnecessary-value-param)
+                           const std::filesystem::path&) {
   throw std::runtime_error("reload_session: object watches are not supported by this backend");
 }
 
