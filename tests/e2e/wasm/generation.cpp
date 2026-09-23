@@ -1,4 +1,6 @@
-#include "contract.hpp"
+#include "world.hpp"
+
+#include <neko/detail/wasm_module_descriptor.hpp>
 
 namespace {
 

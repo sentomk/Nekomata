@@ -1,3 +1,4 @@
+#include "public_project/plt.hpp"
 #include "world.hpp"
 
 #include <emscripten.h>
@@ -132,7 +133,12 @@ void advance_worlds() {
     const auto entries = acquire(*session, ids[i]);
     require(identity(entries) == identities[i], "wrong active generation");
     const auto before = worlds;
-    entries.get<void(world_state*)>("update_world")(&worlds[i]);
+    if (i == 0) {
+      require(static_cast<bool>(public_plt::alpha_update), "public PLT entry was not activated");
+      public_plt::update_world(&worlds[i]);
+    } else {
+      entries.get<void(world_state*)>("update_world")(&worlds[i]);
+    }
     const auto velocity =
         identities[i] == 2 && before[i].position > 10.0f ? -1.0f : before[i].velocity;
     require(worlds[i] == world_state{before[i].tick_count + 1, before[i].position + velocity,

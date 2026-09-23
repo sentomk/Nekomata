@@ -1,6 +1,6 @@
 #pragma once
 
-#include "module_descriptor.hpp"
+#include <neko/detail/wasm_module_descriptor.hpp>
 
 #include <cstdint>
 #include <functional>

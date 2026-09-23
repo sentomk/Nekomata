@@ -12,7 +12,8 @@ if(NOT NEKOMATA_WASM_BROWSER)
 endif()
 
 set(wasm_flags -std=c++20 -O0 -g -Wall -Wextra -Werror
-  -fno-exceptions -fno-rtti -sASSERTIONS=2 "-I${PROJECT_SOURCE_DIR}/src")
+  -fno-exceptions -fno-rtti -sASSERTIONS=2 "-I${PROJECT_SOURCE_DIR}/src"
+  "-I${PROJECT_SOURCE_DIR}/include")
 set(wasm_backend "${PROJECT_SOURCE_DIR}/src/backends/wasm")
 foreach(generation IN ITEMS a b incompatible incomplete)
   set(generation_defines -DINTERFACE_VERSION=1 -DMISSING_UPDATE=0)
@@ -32,8 +33,8 @@ foreach(generation IN ITEMS a b incompatible incomplete)
       "-DGENERATION_ID=${generation_id}" ${generation_defines}
       "${CMAKE_CURRENT_SOURCE_DIR}/generation.cpp"
       -o "${CMAKE_CURRENT_BINARY_DIR}/${generation}.wasm"
-    DEPENDS generation.cpp contract.hpp world.hpp
-      "${wasm_backend}/module_descriptor.hpp" "${wasm_backend}/candidate.hpp" VERBATIM)
+    DEPENDS generation.cpp world.hpp
+      "${PROJECT_SOURCE_DIR}/include/neko/detail/wasm_module_descriptor.hpp" VERBATIM)
 endforeach()
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/neko_sha256.o"
@@ -76,7 +77,7 @@ foreach(runner IN ITEMS runner lifecycle scheduler session multi_session)
       "${PROJECT_SOURCE_DIR}/include/neko/fwd.hpp"
       "${wasm_backend}/manifest_fetcher.hpp" "${PROJECT_SOURCE_DIR}/src/protocol/wasm_offer.hpp"
       "${PROJECT_SOURCE_DIR}/src/protocol/scanner.hpp"
-      "${wasm_backend}/module_descriptor.hpp"
+      "${PROJECT_SOURCE_DIR}/include/neko/detail/wasm_module_descriptor.hpp"
       "${CMAKE_CURRENT_BINARY_DIR}/neko_sha256.o" VERBATIM)
 endforeach()
 add_custom_command(
@@ -138,7 +139,8 @@ if(TARGET neko_publisher)
       "-DBINARY_ROOT=${CMAKE_CURRENT_BINARY_DIR}" "-DEMCMAKE=${NEKOMATA_EMCMAKE}"
       "-DNINJA=${NEKOMATA_WASM_NINJA}" "-DPUBLISHER=$<TARGET_FILE:neko_publisher>" -P "${CMAKE_CURRENT_SOURCE_DIR}/build_public.cmake"
     DEPENDS ${public_library_inputs} "${PROJECT_SOURCE_DIR}/CMakeLists.txt"
-      build_public.cmake public_project/CMakeLists.txt public_session.cpp public_empty.cpp world.hpp VERBATIM)
+      build_public.cmake public_project/CMakeLists.txt public_project/plt.hpp public_session.cpp
+      public_empty.cpp world.hpp VERBATIM)
   add_custom_target(neko_wasm_public_fixture DEPENDS
     "${CMAKE_CURRENT_BINARY_DIR}/public_session.js" "${CMAKE_CURRENT_BINARY_DIR}/public_session.wasm"
     "${CMAKE_CURRENT_BINARY_DIR}/public_empty.js" "${CMAKE_CURRENT_BINARY_DIR}/public_empty.wasm")

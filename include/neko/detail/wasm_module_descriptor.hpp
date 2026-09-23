@@ -4,8 +4,9 @@
 
 namespace neko::wasm {
 
-// Private, cooperative module contract. All participants use the same toolchain
-// and ABI; descriptor pointers are trusted, not a parser for hostile memory.
+// Installed build contract for cooperative side modules. This is an internal
+// ABI between the publisher, module and browser backend, not an application
+// reload-session API. All participants use the same toolchain and ABI.
 inline constexpr std::uint32_t module_interface_version = 1;
 inline constexpr const char* descriptor_export = "neko_wasm_descriptor";
 

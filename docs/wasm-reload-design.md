@@ -3,8 +3,8 @@
 Status: the public `neko::wasm::create_backend()` connects browser delivery and
 activation to `neko::reload_session`. CMake-generated group registration,
 owning entry snapshots, host ABI validation and installed-library browser
-acceptance are implemented. Migrating the existing demo to the public API
-remains separate work.
+acceptance are implemented. The demo uses the public session API and links the
+installed Emscripten library.
 
 ## Purpose and scope
 
@@ -47,9 +47,10 @@ native session implementation is used inside the browser.
 ## Component boundaries
 
 The implementation lives in [`src/backends/wasm`](../src/backends/wasm/).
-Its headers are private, not a supported application API.
-Applications include [`neko/wasm.hpp`](../include/neko/wasm.hpp) and
-[`neko/session.hpp`](../include/neko/session.hpp), without implementation headers.
+Its implementation headers are private. Applications include
+[`neko/wasm.hpp`](../include/neko/wasm.hpp) and
+[`neko/session.hpp`](../include/neko/session.hpp); side modules use the
+installed `neko/detail` descriptor as an internal build contract.
 
 | Component | Responsibility |
 | --- | --- |
@@ -116,7 +117,8 @@ Ordinary calls stay ordinary because each reloadable entry also gets a PLT
 slot in the main module: a typed function pointer plus a forwarding
 trampoline with the application-facing name, declared once per entry in a
 small application header the build adapter compiles into the main module
-(`PLT_HEADER`). Activation rewrites the slots at the safe point, exactly
+(`PLT_HEADER`). The slot type lives in the installed
+[`neko/wasm/plt.hpp`](../include/neko/wasm/plt.hpp). Activation rewrites the slots at the safe point, exactly
 where native reload patches entry bytes — the survey that established this:
 side-module code is immutable once instantiated, undefined-symbol imports
 are fixed at instantiation, so a compile-time indirect call is the only
@@ -175,8 +177,9 @@ not automatic preservation of arbitrary C++ globals, objects, or vtables.
 
 ## Descriptor and compatibility
 
-[`module_descriptor.hpp`](../src/backends/wasm/module_descriptor.hpp) defines
-the cooperative, same-toolchain contract. A module exports
+[`wasm_module_descriptor.hpp`](../include/neko/detail/wasm_module_descriptor.hpp)
+defines the installed internal build contract for cooperative modules using
+the same toolchain. A module exports
 `neko_wasm_descriptor`, returning a pointer to a descriptor header. The full
 descriptor carries a layout version and size, an ABI identity, and an ordered
 list of named function addresses.
@@ -254,9 +257,12 @@ and update functions belong to the same module. Separately fetching the active
 module across a switch would not provide that guarantee.
 
 Here, atomic activation means replacing one complete entry set on the event
-loop, not a hardware-atomic operation across threads. It also does not redirect
-arbitrary existing direct C++ calls or function pointers. Calls must go through
-the selected entry set. A saved old entry still refers to old code.
+loop, not a hardware-atomic operation across threads. Direct calls through a
+registered PLT trampoline follow the latest activated generation for its group;
+arbitrary preexisting function pointers do not change. A saved entry snapshot
+still refers to its original generation. PLT slots are global to a page, so
+applications with multiple sessions for the same group use `acquire()` when
+they need each session's independent active generation.
 
 Committed images remain resident even after every C++ owner is destroyed.
 This deliberately favors valid old code pointers over reclamation. Repeated
@@ -504,8 +510,11 @@ build inputs; the published manifest differs per backend
 (`nekomata-generation/2` versus `nekomata-wasm/1`), and the browser flavor
 emits no native embedded descriptor section. Linking a browser group target
 adds generated host registration without linking its hot objects into the page.
-The demo is not registered in CI and still uses the private session. Migrating
-it to the public factory remains follow-up work.
+The demo uses `neko::reload_session` with `neko::wasm::create_backend()` and
+direct calls through the PLT. Its launch script builds and installs the
+Emscripten library before linking the page against `nekomata::neko`.
+The installed-consumer browser test checks the same package link and public
+PLT header. The demo itself is not registered in CI.
 
 The public integration connects preparation and safe-point activation without
 making the browser loader responsible for building code or owning the world.

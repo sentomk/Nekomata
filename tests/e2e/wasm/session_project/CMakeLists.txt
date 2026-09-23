@@ -8,7 +8,7 @@ set(INTERFACE_VERSION "1" CACHE STRING "Fixture descriptor version")
 set(GROUP_ID "flock" CACHE STRING "Fixture reload group identity")
 
 nekomata_add_reload_unit(flock_hot SOURCES ../generation.cpp)
-target_include_directories(flock_hot PRIVATE "${neko_root}/src")
+target_include_directories(flock_hot PRIVATE "${neko_root}/include")
 target_compile_definitions(flock_hot PRIVATE
   GENERATION_ID=${GENERATION_ID} INTERFACE_VERSION=${INTERFACE_VERSION} MISSING_UPDATE=0)
 nekomata_add_reload_group(flock UNITS flock_hot

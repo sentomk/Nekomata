@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-command demo entrypoint: locates the Emscripten toolchain and a native
-# publisher, configures and builds the page, then serves it. Republish a
+# publisher, installs the browser library, builds the page, then serves it. Republish a
 # generation from another terminal with:
 #   cmake --build examples/wasm_reload/build --target ball_reload
 set -euo pipefail
@@ -41,7 +41,17 @@ if [[ -z "$toolchain" ]]; then
   exit 1
 fi
 
+cmake -S "$repo" -B "$build/nekomata-library" -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE="$toolchain" \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_INSTALL_PREFIX="$build/nekomata-install" \
+  -DNEKOMATA_BUILD_TESTS=OFF \
+  -DNEKOMATA_BUILD_TOOLS=OFF \
+  -DNEKOMATA_BUILD_EXAMPLES=OFF
+cmake --build "$build/nekomata-library" --target install
+
 cmake -S "$here" -B "$build" -G Ninja \
+  -Dnekomata_DIR="$build/nekomata-install/lib/cmake/nekomata" \
   -DCMAKE_TOOLCHAIN_FILE="$toolchain" \
   -DCMAKE_BUILD_TYPE=Debug \
   -DNEKOMATA_PUBLISHER_EXECUTABLE="$publisher"

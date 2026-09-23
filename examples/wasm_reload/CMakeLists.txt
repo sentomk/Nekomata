@@ -1,11 +1,9 @@
-# The browser hot-reload demo as a real consumer of the CMake integration:
-# one reload group under the Emscripten toolchain, one page target linking
-# the private backend sources, publications landing in the served directory.
+# The browser demo consumes the installed library and CMake integration.
 cmake_minimum_required(VERSION 3.24)
 project(neko_wasm_reload_demo LANGUAGES C CXX)
 
-set(neko_root "${CMAKE_CURRENT_LIST_DIR}/../..")
-include("${neko_root}/cmake/nekomata.cmake")
+find_package(nekomata CONFIG REQUIRED)
+include("${nekomata_DIR}/nekomata.cmake")
 
 # Behavior selector for hot.cpp: switch with
 #   cmake -B build -DDEMO_BEHAVIOR=2 && cmake --build build --target ball_reload
@@ -17,37 +15,17 @@ endif()
 set(public "${CMAKE_BINARY_DIR}/public")
 
 # The persistent page: owns the world, drives the public reload session.
-# The backend sources compile in (there is no installed Emscripten library);
-# main.cpp itself uses only the public headers.
-add_executable(page
-  main.cpp
-  "${neko_root}/src/backends/wasm/wasm.cpp"
-  "${neko_root}/src/backends/wasm/registration.cpp"
-  "${neko_root}/src/backends/wasm/candidate.cpp"
-  "${neko_root}/src/backends/wasm/offer_poller.cpp"
-  "${neko_root}/src/backends/wasm/session.cpp"
-  "${neko_root}/src/backends/wasm/emscripten_loader.cpp"
-  "${neko_root}/src/backends/wasm/emscripten_scheduler.cpp"
-  "${neko_root}/src/backends/wasm/entry_set.cpp"
-  "${neko_root}/src/protocol/wasm_offer.cpp"
-  "${neko_root}/src/runtime/session.cpp"
-  "${neko_root}/src/core/log.cpp"
-  "${neko_root}/src/base/c/neko_sha256.c")
-target_include_directories(page PRIVATE
-  "${neko_root}/src" "${neko_root}/include" "${CMAKE_CURRENT_LIST_DIR}")
-# Exceptions stay enabled for the page: the offer codec reports malformed
-# manifests by throwing; RTTI too, for the acquire() driver lookup. The
-# side module keeps the fixture dialect.
-target_compile_options(page PRIVATE
-  $<$<COMPILE_LANGUAGE:CXX>:-std=c++20>
-  -O0 -g -Wall -Wextra -Werror -fPIC -sMAIN_MODULE=2 -fexceptions)
-target_link_options(page PRIVATE -sMAIN_MODULE=1 -sENVIRONMENT=web
-  -sALLOW_MEMORY_GROWTH=1 -sFETCH=1 -sASSERTIONS=2 -fexceptions)
+add_executable(page main.cpp)
+target_include_directories(page PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
+# The installed target supplies the browser runtime and its required link flags.
+target_compile_options(page PRIVATE -O0 -g -Wall -Wextra -Werror)
+target_link_options(page PRIVATE -sENVIRONMENT=web -sASSERTIONS=2)
 set_target_properties(page PROPERTIES OUTPUT_NAME "main" RUNTIME_OUTPUT_DIRECTORY "${public}")
 
 # The reloadable group: `ball_reload` republishes whenever hot.cpp changes.
 nekomata_add_reload_unit(ball_hot SOURCES hot.cpp)
-target_include_directories(ball_hot PRIVATE "${neko_root}/src" "${CMAKE_CURRENT_LIST_DIR}")
+target_link_libraries(ball_hot PRIVATE nekomata::runtime)
+target_include_directories(ball_hot PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 target_compile_definitions(ball_hot PRIVATE BEHAVIOR=${DEMO_BEHAVIOR})
 nekomata_add_reload_group(ball UNITS ball_hot
   GROUP_ID "demo-ball"
@@ -56,6 +34,7 @@ nekomata_add_reload_group(ball UNITS ball_hot
   ENTRIES identify update_world
   PLT_HEADER "plt.hpp"
   OFFER_ROOT "${public}/offers")
+target_link_libraries(page PRIVATE nekomata::neko ball)
 
 add_custom_command(
   OUTPUT "${public}/index.html"

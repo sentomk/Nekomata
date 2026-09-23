@@ -5,11 +5,10 @@ find_package(nekomata CONFIG REQUIRED)
 include("${nekomata_DIR}/nekomata.cmake")
 
 # The page receives registration from linked group targets, not handwritten C++.
-set(neko_root "${CMAKE_CURRENT_LIST_DIR}/../../../..")
 set(GENERATION_ID 1 CACHE STRING "Fixture generation")
 set(INTERFACE_VERSION 1 CACHE STRING "Fixture descriptor version")
 nekomata_add_reload_unit(beta_hot SOURCES ../generation.cpp)
-target_include_directories(beta_hot PRIVATE "${neko_root}/src")
+target_link_libraries(beta_hot PRIVATE nekomata::runtime)
 target_compile_definitions(beta_hot PRIVATE
   GENERATION_ID=${GENERATION_ID} INTERFACE_VERSION=${INTERFACE_VERSION} MISSING_UPDATE=0)
 nekomata_add_reload_group(beta UNITS beta_hot
@@ -17,8 +16,9 @@ nekomata_add_reload_group(beta UNITS beta_hot
   MANIFEST_URL beta/latest OFFER_ROOT "${FIXTURE_OUTPUT}/beta")
 nekomata_add_reload_group(alpha SOURCES ../generation.cpp
   GROUP_ID alpha ABI_ID flock-test-v1 ENTRIES identify update_world
-  MANIFEST_URL alpha/latest OFFER_ROOT "${FIXTURE_OUTPUT}/alpha")
-target_include_directories(alpha_neko_unit PRIVATE "${neko_root}/src")
+  MANIFEST_URL alpha/latest OFFER_ROOT "${FIXTURE_OUTPUT}/alpha"
+  PLT_HEADER "plt.hpp")
+target_link_libraries(alpha_neko_unit PRIVATE nekomata::runtime)
 target_compile_definitions(alpha_neko_unit PRIVATE
   GENERATION_ID=${GENERATION_ID} INTERFACE_VERSION=${INTERFACE_VERSION} MISSING_UPDATE=0)
 add_executable(public_session ../public_session.cpp)

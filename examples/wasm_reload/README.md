@@ -4,18 +4,19 @@ A minimal visible loop over the public `neko::reload_session` through the real
 CMake integration — the same shape as the native backends. A page owns a
 world, the build-discovered groups poll `offers/latest`, and every
 `ball_reload` build publishes a new behavior generation on the existing
-world; `neko::wasm::acquire` resolves the active entry set each frame. The trail color marks each generation and
-the tick counter never restarts — that is the whole point.
+world. The backend updates the PLT slots at `session.update()`, so the page's
+ordinary `demo::update_world()` call reaches the active generation. The trail
+color marks each generation and the tick counter never restarts.
 
 This is a development demo, not test infrastructure. The page drives the
-public session and entry acquisition; the headers under `src/backends/wasm`
-stay private to the backend sources the page compiles in.
+public session and PLT header, and links the installed Emscripten library.
 
 ## Run it
 
 Requirements: Emscripten (`emcc`/`em++` on `PATH`, or `EMSDK`), Python 3, any
 browser, and one native configure of this repository (`bash
-scripts/configure.sh debug`) providing the host publisher.
+scripts/configure.sh debug`) providing the host publisher. The script builds
+and installs a matching Emscripten library in the demo build directory.
 
 ```sh
 bash run_demo.sh            # terminal 1: configures, builds, serves the page
@@ -28,7 +29,7 @@ Then iterate from another terminal:
 ```sh
 build=examples/wasm_reload/build
 cmake --build $build --target ball_reload                    # republish hot.cpp
-cmake -B $build -DDEMO_BEHAVIOR=2 && cmake --build $build --target ball_reload
+cmake -S examples/wasm_reload -B $build -DDEMO_BEHAVIOR=2 && cmake --build $build --target ball_reload
 ```
 
 Behavior 1 is a linear bounce, 2 gravity arcs, 3 a spring pull toward the
@@ -46,10 +47,10 @@ rejections with their classification.
   and the manifest atomically replaces `offers/latest`. `ABI_ID` and
   `ENTRIES` are declared here; the side module's descriptor must match them,
   and the candidate validation rejects drift.
-- The page links the backend sources directly and calls `session.watch()`
+- The page links `nekomata::neko` and calls `session.watch()`
   to start event-loop polling. `session.update()` once per frame is the safe
   point: it activates a ready candidate without starting a fetch, and the
-  frame resolves every entry through the one `current(demo::group_id)` snapshot.
+  frame calls through the registered PLT slots.
   `unwatch()` pauses polling and activation while preserving the running
   behavior, pending candidate and consumer cursor; `watch()` resumes them.
 - Each artifact is verified against the manifest's SHA-256 before

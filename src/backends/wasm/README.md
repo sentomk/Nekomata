@@ -1,8 +1,8 @@
 # WASM candidate lifecycle
 
 This private implementation prepares cooperative Emscripten side modules.
-It has a private browser session, but is not yet connected to the public
-`neko::reload_session` or exposed by a backend factory.
+Its private browser session is owned by the public
+`neko::wasm::create_backend()` driver for `neko::reload_session`.
 Application state never enters the loader: it remains owned by the main module.
 
 `candidate` starts an asynchronous load and validates the descriptor's version,
@@ -46,8 +46,7 @@ nonzero `redirected_function_count`. `session_error.hpp` translates the
 candidate's typed error to `neko::reload_error_code`, preserving its diagnostic
 text. Load/descriptor failures are `object_rejected`, digest mismatches are
 `integrity`, and ABI/layout mismatches are `incompatible`. No candidate failure
-claims a rolled-back entry write through `commit_failed`. Sharing result types
-does not connect this private session to the public backend yet.
+claims a rolled-back entry write through `commit_failed`.
 Events are returned in ascending group ID order. Every group is an independent
 transaction: a rejection or pause in one does not block another. There is no
 cross-group atomic activation promise. Event storage and bookkeeping for all

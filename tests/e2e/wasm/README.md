@@ -129,9 +129,9 @@ cross-group atomicity, public backend integration or build-generated discovery.
 
 `public_factory` covers public backend integration separately without weakening
 the private tests. It cross-builds and installs the actual library, then builds
-`public_project` using `find_package(nekomata)` and `nekomata::neko`. The consumer
-includes only public Nekomata headers and the application's world contract;
-no source-tree backend include directory is supplied.
+`public_project` using `find_package(nekomata)` and `nekomata::neko`. The page
+uses public Nekomata headers; side modules use the installed internal
+descriptor contract. No source-tree backend include directory is supplied.
 
 The linked `alpha` and `beta` CMake targets generate their page registrations;
 the same declarations publish the tested generations using `SOURCES` and
@@ -139,11 +139,12 @@ the same declarations publish the tested generations using `SOURCES` and
 `neko::wasm::create_backend()` and `neko::wasm::acquire(session, group_id)`, it
 repeats the two-stream pause/resume and mixed-outcome scenario through public
 `neko::reload_session`. Every update preserves both world addresses and fields;
-owning `entry_set` snapshots provide generation-consistent calls. It also checks
+owning `entry_set` snapshots provide generation-consistent calls, and the
+installed PLT header redirects ordinary calls in the alpha group. It also checks
 global initialization order, independent sessions, unknown groups, both unsupported object-path
 watches, moving the session, immutable saved snapshots, and callable code after
 session destruction. CI requires this installed-consumer test explicitly.
 `empty_registry` separately links no group targets and checks empty snapshots,
 updates and the exact watch rejection. Native registration tests reject missing
 metadata, duplicate IDs and invalid entry membership. Both browser tests are
-required by CI. This does not migrate the existing demo.
+required by CI. The development demo also links the installed library.

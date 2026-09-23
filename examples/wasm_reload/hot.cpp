@@ -1,6 +1,6 @@
 #include "contract.hpp"
 
-#include <backends/wasm/module_descriptor.hpp>
+#include <neko/detail/wasm_module_descriptor.hpp>
 
 // One reloadable behavior generation. BEHAVIOR selects the physics; every
 // variant shares the descriptor contract, so a publish swaps behavior on

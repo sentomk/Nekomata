@@ -7,8 +7,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "plt.hpp"
 #include "session.hpp"
+#include <neko/wasm/plt.hpp>
 
 #include <cstdint>
 #include <functional>
