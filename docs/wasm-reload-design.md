@@ -126,19 +126,13 @@ re-pointable seam. Entry signatures are application knowledge and stay in
 plain code; slots register themselves, and committed generations remain
 resident so pointers callers already hold keep answering.
 
-`acquire()` remains an explicit alternative: it hands out an owning
-`entry_set` snapshot of the active generation. It is empty until the first
-successful activation; `get<signature>(name)` checks that an entry exists,
-not its actual C++ type — the caller must supply the signature covered by
-the group's ABI identity. An unknown entry throws a configuration error.
-
-`acquire(session, group_id)` selects an already registered group; it never
-registers one. Each factory copies the build-generated metadata into an
-independent session, with its own observation history and active code. A session
-move transfers that state; acquisition from a moved-from or non-browser session
-throws. Destroying a session stops observation; saved entry snapshots remain
-callable. A new session starts with no active generation, even if an older
-session consumed the same stream.
+The page uses one browser `reload_session` for its registered groups. PLT slots
+are global to the page, so `create_backend()` rejects a second live browser
+session instead of allowing two session histories to disagree about the active
+code. Moving a session transfers its backend. Destroying it stops observation;
+committed code and previously captured function pointers remain callable. A
+new session may then be created with fresh observation history, and its first
+successful activation rewrites the page's PLT slots.
 
 Generated records are installed before ordinary application global constructors,
 so a global session can discover them. Factory construction validates all
@@ -156,8 +150,7 @@ code; pausing retains that unreported rejection like any other prepared result.
 Lifecycle semantics are shared with native reload: watch, pause, resume,
 safe-point update, results and snapshots. Activation redirects through the
 PLT — the wasm analogue of patching entry bytes — so direct C++ calls reach
-the new generation without application-side indirection; `acquire()` covers
-consumers that prefer explicit entry snapshots. Object-path `watch`
+the new generation without application-side acquisition. Object-path `watch`
 overloads reject on the browser backend. The existing
 `redirected_function_count` field counts activated WASM entries, not patched
 machine instructions.
@@ -251,18 +244,17 @@ Activation performs no allocation, descriptor validation, or application
 behavior invocation. The caller must keep reloadable code quiescent during
 the call. In the fixtures, the application uses a frame boundary.
 
-`current()` returns an owning, immutable snapshot. A frame should retain one
-snapshot and resolve all of its entries through that snapshot, so its identity
-and update functions belong to the same module. Separately fetching the active
-module across a switch would not provide that guarantee.
+The private `current()` method returns an owning, immutable snapshot for
+backend tests and activation bookkeeping. Applications call their PLT-backed
+functions directly at safe points; they keep reloadable code quiescent during
+`update()`.
 
 Here, atomic activation means replacing one complete entry set on the event
 loop, not a hardware-atomic operation across threads. Direct calls through a
 registered PLT trampoline follow the latest activated generation for its group;
-arbitrary preexisting function pointers do not change. A saved entry snapshot
-still refers to its original generation. PLT slots are global to a page, so
-applications with multiple sessions for the same group use `acquire()` when
-they need each session's independent active generation.
+arbitrary preexisting function pointers do not change. A captured pointer to
+an earlier generation still refers to that generation. PLT slots are global to
+a page, so only one browser session may be active at a time.
 
 Committed images remain resident even after every C++ owner is destroyed.
 This deliberately favors valid old code pointers over reclamation. Repeated
@@ -389,7 +381,7 @@ observation callbacks. Transactions return the same `neko::update_result`
 defined in [`include/neko/session.hpp`](../include/neko/session.hpp), including
 `group_id`, `generation_id`, `redirected_function_count` and `any_applied()`.
 No second WASM result type or conversion wrapper is exposed. `current(group_id)`
-remains private; public applications use `neko::wasm::acquire(session, group_id)`.
+remains private; public applications call through their registered PLT entries.
 The private session also returns `neko::session_snapshot` by value through
 `snapshot() const`. The factory discovers build-generated registrations and
 passes their expected host contracts to the private session.
@@ -493,9 +485,8 @@ session tests are required explicitly by CI. The separate installed-consumer
 `public_factory` gate establishes public integration; none promises cross-group atomicity.
 
 Browser observation uses asynchronous event-loop scheduling instead of a
-native worker thread. Build targets supply registration; owning entry snapshots
-provide the behavior-call seam. Shared lifecycle results and observation snapshots remain
-distinct from owning callable snapshots; the private `current(group_id)->entry(...)`
+native worker thread. Build targets supply registration and PLT-backed calls
+provide the behavior-call seam. The private `current(group_id)->entry(...)`
 access pattern is not a public session promise.
 
 ### Build integration and remaining work

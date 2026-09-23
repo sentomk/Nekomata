@@ -22,7 +22,6 @@ class state_manager;
 class code_substituter;
 class patch_planner;
 class session_driver;
-class session_access;
 
 struct bundle;
 struct function_info;

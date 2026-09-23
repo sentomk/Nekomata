@@ -3,7 +3,6 @@
 
 #include <array>
 #include <backends/wasm/registration.hpp>
-#include <neko/wasm.hpp>
 #include <stdexcept>
 #include <string>
 
@@ -90,11 +89,4 @@ TEST_CASE("startup registration is idempotent for the same static record") {
   CHECK(found[0].group_id == "first");
   CHECK(found[1].group_id == "second");
   CHECK(discover_groups().size() == 2);
-}
-
-TEST_CASE("an empty callable snapshot reports no active generation") {
-  const neko::wasm::entry_set empty;
-  CHECK_FALSE(empty);
-  CHECK_THROWS_WITH(static_cast<void>(empty.get<void()>("tick")),
-                    "wasm entry_set: no active generation");
 }

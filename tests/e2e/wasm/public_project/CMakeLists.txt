@@ -13,7 +13,8 @@ target_compile_definitions(beta_hot PRIVATE
   GENERATION_ID=${GENERATION_ID} INTERFACE_VERSION=${INTERFACE_VERSION} MISSING_UPDATE=0)
 nekomata_add_reload_group(beta UNITS beta_hot
   GROUP_ID beta ABI_ID flock-test-v1 ENTRIES identify update_world
-  MANIFEST_URL beta/latest OFFER_ROOT "${FIXTURE_OUTPUT}/beta")
+  MANIFEST_URL beta/latest OFFER_ROOT "${FIXTURE_OUTPUT}/beta"
+  PLT_HEADER "plt.hpp")
 nekomata_add_reload_group(alpha SOURCES ../generation.cpp
   GROUP_ID alpha ABI_ID flock-test-v1 ENTRIES identify update_world
   MANIFEST_URL alpha/latest OFFER_ROOT "${FIXTURE_OUTPUT}/alpha"

@@ -136,14 +136,14 @@ descriptor contract. No source-tree backend include directory is supplied.
 The linked `alpha` and `beta` CMake targets generate their page registrations;
 the same declarations publish the tested generations using `SOURCES` and
 `UNITS`, respectively. No hot object is linked into the page. Using no-argument
-`neko::wasm::create_backend()` and `neko::wasm::acquire(session, group_id)`, it
+`neko::wasm::create_backend()`, it
 repeats the two-stream pause/resume and mixed-outcome scenario through public
 `neko::reload_session`. Every update preserves both world addresses and fields;
-owning `entry_set` snapshots provide generation-consistent calls, and the
-installed PLT header redirects ordinary calls in the alpha group. It also checks
-global initialization order, independent sessions, unknown groups, both unsupported object-path
-watches, moving the session, immutable saved snapshots, and callable code after
-session destruction. CI requires this installed-consumer test explicitly.
+the installed PLT header redirects ordinary calls in both groups. It also checks
+global initialization order, rejection of a second live browser session, unknown
+groups, both unsupported object-path watches, moving the session, captured
+function pointers, and callable code after session destruction. CI requires
+this installed-consumer test explicitly.
 `empty_registry` separately links no group targets and checks empty snapshots,
 updates and the exact watch rejection. Native registration tests reject missing
 metadata, duplicate IDs and invalid entry membership. Both browser tests are

@@ -190,7 +190,6 @@ public:
   [[nodiscard]] session_snapshot snapshot() const;
 
 private:
-  friend class backend::session_access;
   std::unique_ptr<backend::session_driver> impl_;
 };
 
