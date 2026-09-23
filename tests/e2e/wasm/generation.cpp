@@ -1,8 +1,10 @@
-#include "world.hpp"
+#include "generation.hpp"
 
+#if !defined(NEKO_GENERATED_DESCRIPTOR)
 #include <neko/detail/wasm_module_descriptor.hpp>
+#endif
 
-namespace {
+namespace wasm_fixture {
 
 std::uint32_t identify() {
   return GENERATION_ID;
@@ -20,17 +22,23 @@ std::uint32_t identify() {
   world->last_generation = GENERATION_ID;
 }
 
+} // namespace wasm_fixture
+
+#if !defined(NEKO_GENERATED_DESCRIPTOR)
+namespace {
 const neko::wasm::module_entry entries[] = {
-    {"identify", reinterpret_cast<neko::wasm::module_function>(identify)},
+    {"identify", reinterpret_cast<neko::wasm::module_function>(wasm_fixture::identify)},
     {"update_world",
-     MISSING_UPDATE ? nullptr : reinterpret_cast<neko::wasm::module_function>(update_world)},
+     MISSING_UPDATE ? nullptr
+                    : reinterpret_cast<neko::wasm::module_function>(wasm_fixture::update_world)},
 };
 
 const neko::wasm::module_descriptor descriptor{
     {INTERFACE_VERSION, sizeof(neko::wasm::module_descriptor)}, "flock-test-v1", 2, entries};
-
 } // namespace
 
-extern "C" const neko::wasm::module_header* neko_wasm_descriptor() {
+extern "C" __attribute__((visibility("default"))) const neko::wasm::module_header*
+neko_wasm_descriptor() {
   return &descriptor.header;
 }
+#endif

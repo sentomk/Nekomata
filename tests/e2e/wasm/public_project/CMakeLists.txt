@@ -6,22 +6,26 @@ include("${nekomata_DIR}/nekomata.cmake")
 
 # The page receives registration from linked group targets, not handwritten C++.
 set(GENERATION_ID 1 CACHE STRING "Fixture generation")
-set(INTERFACE_VERSION 1 CACHE STRING "Fixture descriptor version")
+set(INTERFACE_VERSION 1 CACHE STRING "Fixture compatibility version")
+set(alpha_abi_id flock-test-v1)
+if(INTERFACE_VERSION EQUAL 2)
+  set(alpha_abi_id flock-test-incompatible)
+endif()
 nekomata_add_reload_unit(beta_hot SOURCES ../generation.cpp)
-target_link_libraries(beta_hot PRIVATE nekomata::runtime)
 target_compile_definitions(beta_hot PRIVATE
-  GENERATION_ID=${GENERATION_ID} INTERFACE_VERSION=${INTERFACE_VERSION} MISSING_UPDATE=0)
+  GENERATION_ID=${GENERATION_ID} NEKO_GENERATED_DESCRIPTOR=1)
 nekomata_add_reload_group(beta UNITS beta_hot
   GROUP_ID beta ABI_ID flock-test-v1 ENTRIES identify update_world
   MANIFEST_URL beta/latest OFFER_ROOT "${FIXTURE_OUTPUT}/beta"
+  EXPORT_HEADER "../generation.hpp" EXPORT_NAMESPACE wasm_fixture
   PLT_HEADER "plt.hpp")
 nekomata_add_reload_group(alpha SOURCES ../generation.cpp
-  GROUP_ID alpha ABI_ID flock-test-v1 ENTRIES identify update_world
+  GROUP_ID alpha ABI_ID ${alpha_abi_id} ENTRIES identify update_world
   MANIFEST_URL alpha/latest OFFER_ROOT "${FIXTURE_OUTPUT}/alpha"
+  EXPORT_HEADER "../generation.hpp" EXPORT_NAMESPACE wasm_fixture
   PLT_HEADER "plt.hpp")
-target_link_libraries(alpha_neko_unit PRIVATE nekomata::runtime)
 target_compile_definitions(alpha_neko_unit PRIVATE
-  GENERATION_ID=${GENERATION_ID} INTERFACE_VERSION=${INTERFACE_VERSION} MISSING_UPDATE=0)
+  GENERATION_ID=${GENERATION_ID} NEKO_GENERATED_DESCRIPTOR=1)
 add_executable(public_session ../public_session.cpp)
 target_link_libraries(public_session PRIVATE nekomata::neko beta alpha)
 target_compile_options(public_session PRIVATE -Wall -Wextra -Werror)

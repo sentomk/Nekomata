@@ -1,6 +1,6 @@
 #include "registration.hpp"
 
-#include <neko/wasm/plt.hpp>
+#include <neko/wasm.hpp>
 
 #include <algorithm>
 #include <stdexcept>

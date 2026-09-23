@@ -45,8 +45,10 @@ rejections with their classification.
   `-sSIDE_MODULE=1` link) and drives the host publisher's `wasm` mode: the
   artifact lands at an immutable sequence-named path below `offers/modules/`
   and the manifest atomically replaces `offers/latest`. `ABI_ID` and
-  `ENTRIES` are declared here; the side module's descriptor must match them,
-  and the candidate validation rejects drift.
+  `ENTRIES` are declared here; `EXPORT_HEADER` and `EXPORT_NAMESPACE` let the
+  adapter build the side-module descriptor from `hot.hpp`. `hot.cpp` contains
+  behavior only. Candidate validation rejects drift without exposing the
+  descriptor layout to application code.
 - The page links `nekomata::neko` and calls `session.watch()`
   to start event-loop polling. `session.update()` once per frame is the safe
   point: it activates a ready candidate without starting a fetch, and the

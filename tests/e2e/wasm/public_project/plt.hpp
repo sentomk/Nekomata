@@ -2,7 +2,7 @@
 
 #include "../world.hpp"
 
-#include <neko/wasm/plt.hpp>
+#include <neko/wasm.hpp>
 
 namespace public_plt {
 

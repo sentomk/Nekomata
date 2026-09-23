@@ -3,13 +3,10 @@
 #include <cstdint>
 
 // Shared between the persistent main module and every reloadable side
-// module. The `abi_id` pins this layout plus both entry signatures: a
-// behavior change ships under the same identity, an ABI change does not.
-// The build integration registers the group and its entry names; nothing
-// here needs the backend's private headers.
+// module. CMake's ABI identity pins this layout and both entry signatures:
+// a behavior change keeps the identity, while an ABI change requires a new one.
 namespace demo {
 
-inline constexpr char abi_id[] = "demo-ball-v1";
 inline constexpr char group_id[] = "demo-ball";
 
 inline constexpr float world_width = 800.0f;

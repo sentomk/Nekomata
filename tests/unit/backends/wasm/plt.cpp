@@ -8,7 +8,7 @@
 #include <doctest/doctest.h>
 
 #include "session.hpp"
-#include <neko/wasm/plt.hpp>
+#include <neko/wasm.hpp>
 
 #include <cstdint>
 #include <functional>

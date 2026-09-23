@@ -1,12 +1,10 @@
-#include "contract.hpp"
-
-#include <neko/detail/wasm_module_descriptor.hpp>
+#include "hot.hpp"
 
 // One reloadable behavior generation. BEHAVIOR selects the physics; every
 // variant shares the descriptor contract, so a publish swaps behavior on
 // the existing world without any state migration.
 
-namespace {
+namespace demo::hot {
 
 std::uint32_t identify() {
   return BEHAVIOR;
@@ -59,19 +57,4 @@ void update_world(demo::world_state* world) {
   world->behavior = BEHAVIOR;
 }
 
-const neko::wasm::module_entry entries[] = {
-    {"identify", reinterpret_cast<neko::wasm::module_function>(identify)},
-    {"update_world", reinterpret_cast<neko::wasm::module_function>(update_world)},
-};
-
-const neko::wasm::module_descriptor descriptor{
-    {neko::wasm::module_interface_version, sizeof(neko::wasm::module_descriptor)},
-    demo::abi_id,
-    2,
-    entries};
-
-} // namespace
-
-extern "C" const neko::wasm::module_header* neko_wasm_descriptor() {
-  return &descriptor.header;
-}
+} // namespace demo::hot

@@ -49,8 +49,9 @@ native session implementation is used inside the browser.
 The implementation lives in [`src/backends/wasm`](../src/backends/wasm/).
 Its implementation headers are private. Applications include
 [`neko/wasm.hpp`](../include/neko/wasm.hpp) and
-[`neko/session.hpp`](../include/neko/session.hpp); side modules use the
-installed `neko/detail` descriptor as an internal build contract.
+[`neko/session.hpp`](../include/neko/session.hpp). Side-module behavior only
+includes application-owned declarations; the CMake adapter generates the
+descriptor through the installed internal `neko/detail` build contract.
 
 | Component | Responsibility |
 | --- | --- |
@@ -84,6 +85,7 @@ include("${nekomata_DIR}/nekomata.cmake")
 
 nekomata_add_reload_group(behavior SOURCES behavior.cpp
   GROUP_ID flock ABI_ID flock-v1 ENTRIES tick
+  EXPORT_HEADER behavior.hpp EXPORT_NAMESPACE flock
   MANIFEST_URL offers/latest OFFER_ROOT "${CMAKE_BINARY_DIR}/offers")
 add_executable(page main.cpp)
 target_link_libraries(page PRIVATE nekomata::neko behavior)
@@ -91,9 +93,10 @@ target_link_libraries(page PRIVATE nekomata::neko behavior)
 
 The cross-build also needs `NEKOMATA_PUBLISHER_EXECUTABLE` pointing to a native
 host publisher. The group target adds only generated registration to the page;
-`behavior_reload` builds and publishes its side module. The application does
-not repeat the URL, ABI identity or entry membership in C++. This example
-assumes the module implements `tick` with the agreed signature and world layout:
+`behavior_reload` builds and publishes its side module. The adapter generates
+its descriptor from `behavior.hpp`, so the application does not repeat the URL,
+ABI identity or entry membership in C++. This example assumes `flock::tick`
+uses the agreed world layout:
 
 ```cpp
 #include <neko/session.hpp>
@@ -118,7 +121,7 @@ slot in the main module: a typed function pointer plus a forwarding
 trampoline with the application-facing name, declared once per entry in a
 small application header the build adapter compiles into the main module
 (`PLT_HEADER`). The slot type lives in the installed
-[`neko/wasm/plt.hpp`](../include/neko/wasm/plt.hpp). Activation rewrites the slots at the safe point, exactly
+[`neko/wasm.hpp`](../include/neko/wasm.hpp). Activation rewrites the slots at the safe point, exactly
 where native reload patches entry bytes — the survey that established this:
 side-module code is immutable once instantiated, undefined-symbol imports
 are fixed at instantiation, so a compile-time indirect call is the only
@@ -176,6 +179,9 @@ the same toolchain. A module exports
 `neko_wasm_descriptor`, returning a pointer to a descriptor header. The full
 descriptor carries a layout version and size, an ABI identity, and an ordered
 list of named function addresses.
+The adapter hides behavior symbols in side modules so a later generation
+cannot bind a same-named function from an earlier one; only the descriptor is
+exported for discovery.
 
 Candidate preparation checks:
 

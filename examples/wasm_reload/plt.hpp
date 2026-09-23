@@ -9,7 +9,7 @@
 
 #include "contract.hpp"
 
-#include <neko/wasm/plt.hpp>
+#include <neko/wasm.hpp>
 
 namespace demo::plt {
 

@@ -12,7 +12,7 @@ if(NOT NEKOMATA_WASM_BROWSER)
 endif()
 
 set(wasm_flags -std=c++20 -O0 -g -Wall -Wextra -Werror
-  -fno-exceptions -fno-rtti -sASSERTIONS=2 "-I${PROJECT_SOURCE_DIR}/src"
+  -fno-exceptions -fno-rtti -fvisibility=hidden -sASSERTIONS=2 "-I${PROJECT_SOURCE_DIR}/src"
   "-I${PROJECT_SOURCE_DIR}/include")
 set(wasm_backend "${PROJECT_SOURCE_DIR}/src/backends/wasm")
 foreach(generation IN ITEMS a b incompatible incomplete)
@@ -33,7 +33,7 @@ foreach(generation IN ITEMS a b incompatible incomplete)
       "-DGENERATION_ID=${generation_id}" ${generation_defines}
       "${CMAKE_CURRENT_SOURCE_DIR}/generation.cpp"
       -o "${CMAKE_CURRENT_BINARY_DIR}/${generation}.wasm"
-    DEPENDS generation.cpp world.hpp
+    DEPENDS generation.cpp generation.hpp world.hpp
       "${PROJECT_SOURCE_DIR}/include/neko/detail/wasm_module_descriptor.hpp" VERBATIM)
 endforeach()
 add_custom_command(
