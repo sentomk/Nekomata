@@ -218,11 +218,17 @@ function(nekomata_add_reload_group name)
     # ordinary call sites reach fresh generations without application-side
     # indirection; the slots register themselves with the backend.
     if(ARG_PLT_HEADER)
-      if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${ARG_PLT_HEADER}")
+      cmake_path(ABSOLUTE_PATH ARG_PLT_HEADER NORMALIZE
+        BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" OUTPUT_VARIABLE plt_header)
+      if(NOT EXISTS "${plt_header}")
         message(FATAL_ERROR "nekomata_add_reload_group(${name}): PLT_HEADER "
-          "\"${ARG_PLT_HEADER}\" does not exist relative to ${CMAKE_CURRENT_SOURCE_DIR}")
+          "\"${ARG_PLT_HEADER}\" does not exist")
       endif()
-      set(cpp_plt_include "#include \"${CMAKE_CURRENT_SOURCE_DIR}/${ARG_PLT_HEADER}\"")
+      if(plt_header MATCHES "[\\\\\"\r\n]")
+        message(FATAL_ERROR "nekomata_add_reload_group(${name}): PLT_HEADER path "
+          "must not contain backslashes, quotes, or newlines")
+      endif()
+      set(cpp_plt_include "#include \"${plt_header}\"")
     else()
       set(cpp_plt_include "")
     endif()

@@ -7,24 +7,35 @@
 #include "registration.hpp"
 #include "session.hpp"
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace neko::wasm {
 namespace {
 bool browser_session_active = false;
 
-class browser_session final : public backend::session_driver {
+// Claims the page's PLT before any other member is built, and releases it
+// even when a later member's construction throws.
+class single_session_guard {
 public:
-  browser_session()
-      : groups_(detail::discover_groups()), session_(loader_, fetcher_, scheduler_, groups_) {
-    detail::validate_plt_slots(groups_);
+  single_session_guard() {
     if (browser_session_active) {
       throw std::invalid_argument("wasm backend: only one browser session may be active");
     }
     browser_session_active = true;
   }
+  ~single_session_guard() { browser_session_active = false; }
 
-  ~browser_session() override { browser_session_active = false; }
+  single_session_guard(const single_session_guard&) = delete;
+  single_session_guard& operator=(const single_session_guard&) = delete;
+};
+
+class browser_session final : public backend::session_driver {
+public:
+  browser_session()
+      : groups_(detail::discover_groups()), session_(loader_, fetcher_, scheduler_, groups_) {
+    detail::validate_plt_slots(groups_);
+  }
 
   // Slots defined in translation units initialized after a global session
   // register late, so every observation start checks the complete set.
@@ -42,6 +53,7 @@ public:
   [[nodiscard]] session_snapshot snapshot() const override { return session_.snapshot(); }
 
 private:
+  single_session_guard guard_;
   std::vector<group_registration> groups_;
   emscripten_loader loader_;
   emscripten_manifest_fetcher fetcher_;

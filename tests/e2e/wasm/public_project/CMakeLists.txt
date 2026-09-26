@@ -5,6 +5,8 @@ find_package(nekomata CONFIG REQUIRED)
 include("${nekomata_DIR}/nekomata.cmake")
 
 # The page receives registration from linked group targets, not handwritten C++.
+# One group names its PLT header by absolute path and the other relatively,
+# covering both path forms.
 set(GENERATION_ID 1 CACHE STRING "Fixture generation")
 set(INTERFACE_VERSION 1 CACHE STRING "Fixture compatibility version")
 set(alpha_abi_id flock-test-v1)
@@ -18,7 +20,7 @@ nekomata_add_reload_group(beta UNITS beta_hot
   GROUP_ID beta ABI_ID flock-test-v1 ENTRIES identify update_world
   MANIFEST_URL beta/latest OFFER_ROOT "${FIXTURE_OUTPUT}/beta"
   EXPORT_HEADER "../generation.hpp" EXPORT_NAMESPACE wasm_fixture
-  PLT_HEADER "plt.hpp")
+  PLT_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/plt.hpp")
 nekomata_add_reload_group(alpha SOURCES ../generation.cpp
   GROUP_ID alpha ABI_ID ${alpha_abi_id} ENTRIES identify update_world
   MANIFEST_URL alpha/latest OFFER_ROOT "${FIXTURE_OUTPUT}/alpha"
