@@ -7,12 +7,14 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include "registration.hpp"
 #include "session.hpp"
 #include <neko/wasm.hpp>
 
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -43,6 +45,8 @@ slot tick_slot{"game", "tick"};
 slot identity_slot{"game", "identity"};
 // A function type, as `decltype(side_module_declaration)` produces.
 neko::wasm::plt_slot<void()> function_type_slot{"game", "tick"};
+// The factory rejects these two before observation starts; the session
+// itself still leaves them untouched if it meets them.
 slot ghost_slot{"game", "ghost"};   // no module ever defines this entry
 slot foreign_slot{"other", "tick"}; // another group's slot, never ours
 
@@ -203,4 +207,20 @@ TEST_CASE("a rejected candidate leaves every slot untouched") {
   REQUIRE(result.events.size() == 1);
   CHECK(result.events[0].status == neko::update_status::rejected);
   CHECK(tick_slot.target == &behavior_a); // the old generation still answers
+}
+
+TEST_CASE("the page's registered slots are validated against the discovered contracts") {
+  const auto group = [](std::string id, std::vector<std::string> entries) {
+    return neko::wasm::group_registration{
+        std::move(id), "offers/latest", {}, {"test-v1", std::move(entries), {}}};
+  };
+  CHECK_NOTHROW(neko::wasm::detail::validate_plt_slots(
+      {group("game", {"tick", "identity", "ghost"}), group("other", {"tick"})}));
+  CHECK_THROWS_WITH_AS(neko::wasm::detail::validate_plt_slots(
+                           {group("game", {"tick", "identity"}), group("other", {"tick"})}),
+                       "wasm registration: PLT slot entry 'ghost' is not in group 'game'",
+                       std::invalid_argument);
+  CHECK_THROWS_WITH_AS(
+      neko::wasm::detail::validate_plt_slots({group("game", {"tick", "identity", "ghost"})}),
+      "wasm registration: PLT slot group 'other' is not registered", std::invalid_argument);
 }

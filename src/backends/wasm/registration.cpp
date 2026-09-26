@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace neko::wasm::detail {
@@ -75,6 +76,29 @@ std::vector<group_registration> read_group_records(const group_record* first) {
     }
   }
   return result;
+}
+
+void validate_plt_slots(const std::vector<group_registration>& groups,
+                        const plt_slot_record* first) {
+  for (auto* record = first; record; record = record->next) {
+    const auto group = std::find_if(groups.begin(), groups.end(), [&](const auto& value) {
+      return value.group_id == record->group;
+    });
+    if (group == groups.end()) {
+      throw std::invalid_argument("wasm registration: PLT slot group '" +
+                                  std::string{record->group} + "' is not registered");
+    }
+    const auto& entries = group->expected_contract.entries;
+    if (std::find(entries.begin(), entries.end(), record->entry) == entries.end()) {
+      throw std::invalid_argument("wasm registration: PLT slot entry '" +
+                                  std::string{record->entry} + "' is not in group '" +
+                                  group->group_id + "'");
+    }
+  }
+}
+
+void validate_plt_slots(const std::vector<group_registration>& groups) {
+  validate_plt_slots(groups, first_plt_slot);
 }
 
 std::vector<group_registration> discover_groups() {

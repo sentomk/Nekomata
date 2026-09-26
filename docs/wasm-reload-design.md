@@ -143,7 +143,11 @@ successful activation rewrites the page's PLT slots.
 
 Generated records are installed before ordinary application global constructors,
 so a global session can discover them. Factory construction validates all
-records and rejects duplicate IDs. The installed `neko/detail` registration
+records and rejects duplicate IDs. It also rejects a PLT slot whose group is
+not registered or whose entry is not in that group's contract, since such a
+slot would never be written. Slots in translation units initialized after a
+global session register late, so every `watch()` repeats that check before
+observation starts. The installed `neko/detail` registration
 header is an internal build/runtime contract, not an application registration API.
 
 Group IDs, manifest URLs and ABI IDs must be nonempty and contain no embedded

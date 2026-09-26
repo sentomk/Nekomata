@@ -90,3 +90,30 @@ TEST_CASE("startup registration is idempotent for the same static record") {
   CHECK(found[1].group_id == "second");
   CHECK(discover_groups().size() == 2);
 }
+
+TEST_CASE("PLT slots must name a registered group and one of its entries") {
+  group_record game{"game", "game/latest", "test-v1", entries};
+  const auto groups = read_group_records(&game);
+  plt_slot_record tick{"game", "tick", nullptr, nullptr};
+  plt_slot_record identity{"game", "identity", nullptr, nullptr, &tick};
+  CHECK_NOTHROW(validate_plt_slots(groups, &identity));
+  CHECK_NOTHROW(validate_plt_slots(groups, nullptr));
+
+  SUBCASE("unknown group") {
+    plt_slot_record foreign{"other", "tick", nullptr, nullptr, &identity};
+    CHECK_THROWS_WITH_AS(validate_plt_slots(groups, &foreign),
+                         "wasm registration: PLT slot group 'other' is not registered",
+                         std::invalid_argument);
+  }
+  SUBCASE("entry outside the contract") {
+    plt_slot_record ghost{"game", "ghost", nullptr, nullptr, &identity};
+    CHECK_THROWS_WITH_AS(validate_plt_slots(groups, &ghost),
+                         "wasm registration: PLT slot entry 'ghost' is not in group 'game'",
+                         std::invalid_argument);
+  }
+  SUBCASE("slot without any registered group") {
+    CHECK_THROWS_WITH_AS(validate_plt_slots({}, &tick),
+                         "wasm registration: PLT slot group 'game' is not registered",
+                         std::invalid_argument);
+  }
+}

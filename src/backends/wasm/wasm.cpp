@@ -7,6 +7,7 @@
 #include "registration.hpp"
 #include "session.hpp"
 #include <stdexcept>
+#include <vector>
 
 namespace neko::wasm {
 namespace {
@@ -14,7 +15,9 @@ bool browser_session_active = false;
 
 class browser_session final : public backend::session_driver {
 public:
-  browser_session() : session_(loader_, fetcher_, scheduler_, detail::discover_groups()) {
+  browser_session()
+      : groups_(detail::discover_groups()), session_(loader_, fetcher_, scheduler_, groups_) {
+    detail::validate_plt_slots(groups_);
     if (browser_session_active) {
       throw std::invalid_argument("wasm backend: only one browser session may be active");
     }
@@ -23,14 +26,23 @@ public:
 
   ~browser_session() override { browser_session_active = false; }
 
-  void watch() override { session_.watch(); }
-  void watch(std::string_view group_id) override { session_.watch(group_id); }
+  // Slots defined in translation units initialized after a global session
+  // register late, so every observation start checks the complete set.
+  void watch() override {
+    detail::validate_plt_slots(groups_);
+    session_.watch();
+  }
+  void watch(std::string_view group_id) override {
+    detail::validate_plt_slots(groups_);
+    session_.watch(group_id);
+  }
   void unwatch() override { session_.unwatch(); }
   void unwatch(std::string_view group_id) override { session_.unwatch(group_id); }
   [[nodiscard]] update_result update() override { return session_.update(); }
   [[nodiscard]] session_snapshot snapshot() const override { return session_.snapshot(); }
 
 private:
+  std::vector<group_registration> groups_;
   emscripten_loader loader_;
   emscripten_manifest_fetcher fetcher_;
   emscripten_poll_scheduler scheduler_;
