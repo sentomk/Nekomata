@@ -148,7 +148,9 @@ this installed-consumer test explicitly.
 assertions, as an ordinary release build links it. It applies a published
 generation and calls it through the PLT. The fixture's `update_world` has a
 stack frame, so the call runs the side module's stack-pointer code; a module
-that depended on an assertion-enabled page would trap there.
+that depended on an assertion-enabled page would trap there. Before creating
+its session, the page also checks that `neko::log` reaches `console.log`,
+`console.warn` and `console.error` by level, without ANSI escapes.
 `empty_registry` separately links no group targets and checks empty snapshots,
 updates and the exact watch rejection. Native registration tests reject missing
 metadata, duplicate IDs and invalid entry membership. All three public browser

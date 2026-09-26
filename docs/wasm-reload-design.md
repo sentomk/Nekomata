@@ -342,6 +342,7 @@ execution tests the lifecycle logic, not execution of WASM in a native host.
   private single- and multi-group tests retain their transport instrumentation.
 - `neko.e2e.wasm.public_release` links the same groups into a page built `-O2`
   without assertions and calls a published generation that uses a stack frame.
+  It also checks that `neko::log` reaches the console method for each level.
 - `neko.e2e.wasm.empty_registry` links no group targets and checks empty factory
   construction, snapshots, updates and the exact all-group watch rejection.
 
@@ -384,8 +385,10 @@ candidate lifecycle as observable events; its native suite drives it through
 mock fetchers. The factory's private lifecycle implementation,
 `neko::wasm::managed_session`, accepts a fixed list of private
 `group_registration` values carrying group ID, manifest URL and an optional
-diagnostics callback; build-discovered groups default that callback to
-`neko::log`.
+diagnostics callback. Build-discovered groups default that callback to
+`neko::log`, dropping consecutive repeats: a steady manifest re-delivers its
+current offer on every poll, and a missing one fails on every poll. In the
+browser, `neko::log` writes to the console method matching each level.
 IDs must be nonempty and unique, and all groups start disabled. Its `watch()`
 and `unwatch()` overloads control all groups or one named group while preserving
 each poller and its consumer cursor. The browser scheduler polls every 100 ms

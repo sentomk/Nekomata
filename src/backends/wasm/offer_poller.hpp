@@ -32,10 +32,8 @@ struct offer_event {
   std::string message;
 };
 
-/// Report one preparation event through `neko::log` — the default callback
-/// for build-discovered groups, whose registrations carry no page-side
-/// observer. Accepted and ignored offers log as info; conflicts and
-/// manifest problems as warnings.
+/// Report one preparation event through `neko::log`. Accepted and ignored
+/// offers log as info; conflicts and manifest problems as warnings.
 void log_offer_event(const offer_event& event);
 
 // Polls one stable manifest URL and turns superseding offers into loading
@@ -70,5 +68,15 @@ private:
   struct state;
   std::shared_ptr<state> state_;
 };
+
+/// Forward an event to `sink` unless it repeats the kind and message of the
+/// previous event this wrapper received. A steady manifest re-delivers its
+/// current offer on every poll, and a missing one fails on every poll; each
+/// wrapper keeps such a stream to one report per change.
+[[nodiscard]] offer_poller::event_callback suppress_repeats(offer_poller::event_callback sink);
+
+/// The diagnostics callback for build-discovered groups, whose registrations
+/// carry no page-side observer: `log_offer_event` without repeats.
+[[nodiscard]] offer_poller::event_callback make_offer_logger();
 
 } // namespace neko::wasm

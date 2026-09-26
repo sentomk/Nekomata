@@ -2,6 +2,7 @@
 
 #include <neko/log.hpp>
 
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -153,6 +154,22 @@ void log_offer_event(const offer_event& event) {
                          ? neko::log_level::info
                          : neko::log_level::warn;
   neko::log(level, "%s\n", event.message.c_str());
+}
+
+offer_poller::event_callback suppress_repeats(offer_poller::event_callback sink) {
+  auto previous = std::make_shared<std::optional<offer_event>>();
+  return [sink = std::move(sink), previous](const offer_event& event) {
+    if (previous->has_value() && (*previous)->kind == event.kind &&
+        (*previous)->message == event.message) {
+      return;
+    }
+    *previous = event;
+    sink(event);
+  };
+}
+
+offer_poller::event_callback make_offer_logger() {
+  return suppress_repeats(&log_offer_event);
 }
 
 } // namespace neko::wasm

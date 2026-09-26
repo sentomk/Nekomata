@@ -9,7 +9,9 @@
 // logo animation and the log-level cats alike.
 //
 // When stderr is not a TTY (pipes, CI, captured demos) the same cats are
-// printed plain (no ANSI), keeping logs greppable.
+// printed plain (no ANSI), keeping logs greppable. Under Emscripten each line
+// goes to the browser console method matching its level, plain: stderr there
+// would print every line through console.error.
 
 #include "cats.hpp"
 #include <neko/log.hpp>
@@ -17,7 +19,11 @@
 #include <cstdarg>
 #include <cstdio>
 
-#ifdef _WIN32
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/console.h>
+
+#include <string>
+#elif defined(_WIN32)
 #include <io.h>
 #else
 #include <unistd.h>
@@ -28,12 +34,16 @@ namespace neko {
 namespace {
 
 bool stderr_is_tty() {
-#ifdef _WIN32
+#if defined(__EMSCRIPTEN__)
+  return false;
+#else
+#if defined(_WIN32)
   static const bool tty = _isatty(_fileno(stderr)) != 0;
 #else
   static const bool tty = isatty(fileno(stderr)) != 0;
 #endif
   return tty;
+#endif
 }
 
 const char* colored(const char* plain, const char* ansi_code) {
@@ -62,11 +72,44 @@ const char* log_tag(log_level level) {
 
 /// Log one diagnostic line to stderr: the cat, a space, then the message.
 void log(log_level level, const char* fmt, ...) {
+#if defined(__EMSCRIPTEN__)
+  va_list args;
+  va_start(args, fmt);
+  va_list measure;
+  va_copy(measure, args);
+  const int length = std::vsnprintf(nullptr, 0, fmt, measure);
+  va_end(measure);
+  std::string line = std::string{log_tag(level)} + " ";
+  if (length > 0) {
+    const auto prefix = line.size();
+    line.resize(prefix + static_cast<std::size_t>(length) + 1);
+    std::vsnprintf(line.data() + prefix, static_cast<std::size_t>(length) + 1, fmt, args);
+    line.resize(prefix + static_cast<std::size_t>(length));
+  }
+  va_end(args);
+  // The console adds its own line break.
+  while (!line.empty() && line.back() == '\n') {
+    line.pop_back();
+  }
+  switch (level) {
+  case log_level::info:
+  case log_level::ok:
+    emscripten_console_log(line.c_str());
+    break;
+  case log_level::warn:
+    emscripten_console_warn(line.c_str());
+    break;
+  case log_level::error:
+    emscripten_console_error(line.c_str());
+    break;
+  }
+#else
   std::fprintf(stderr, "%s ", log_tag(level));
   va_list args;
   va_start(args, fmt);
   std::vfprintf(stderr, fmt, args);
   va_end(args);
+#endif
 }
 
 } // namespace neko

@@ -274,3 +274,34 @@ TEST_CASE("destruction discards a late manifest delivery") {
   fetcher.deliver_ok(offer_text(7, "gen-7", a_digest));
   CHECK(loader.opened_paths.empty());
 }
+
+TEST_CASE("repeated diagnostics reach the sink once per change") {
+  std::vector<std::string> seen;
+  const auto report = suppress_repeats([&](const offer_event& event) {
+    seen.push_back(std::to_string(static_cast<int>(event.kind)) + ":" + event.message);
+  });
+  const offer_event accepted{offer_event_kind::offer_accepted, "generation 'g' at sequence 1"};
+  const offer_event duplicate{offer_event_kind::offer_ignored, "duplicate generation 'g'"};
+  const offer_event failed{offer_event_kind::manifest_fetch_failed, "manifest fetch failed"};
+
+  report(accepted);
+  for (int poll = 0; poll < 50; ++poll) {
+    report(duplicate);
+  }
+  report(failed);
+  report(failed);
+  report(duplicate);
+  // Same message under a different kind is a change.
+  report({offer_event_kind::offer_conflict, "duplicate generation 'g'"});
+  CHECK(seen == std::vector<std::string>{"0:generation 'g' at sequence 1",
+                                         "1:duplicate generation 'g'", "4:manifest fetch failed",
+                                         "1:duplicate generation 'g'",
+                                         "2:duplicate generation 'g'"});
+
+  // Each wrapper keeps its own history.
+  std::vector<std::string> other;
+  const auto second =
+      suppress_repeats([&](const offer_event& event) { other.push_back(event.message); });
+  second(duplicate);
+  CHECK(other == std::vector<std::string>{"duplicate generation 'g'"});
+}
