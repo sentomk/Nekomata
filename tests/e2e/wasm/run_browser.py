@@ -35,13 +35,14 @@ def main():
     parser.add_argument("--browser", required=True)
     parser.add_argument("--root", required=True, type=pathlib.Path)
     parser.add_argument(
-        "--runner", choices=("runner", "lifecycle", "scheduler", "session", "multi_session", "public_session", "public_empty"),
+        "--runner", choices=("runner", "lifecycle", "scheduler", "session", "multi_session", "public_session", "public_release",
+                              "public_empty"),
         default="runner")
     for tool in ("cmake", "emcmake", "ninja", "publisher"):
         parser.add_argument("--" + tool)
     args = parser.parse_args()
     scenario = None
-    if args.runner in ("session", "multi_session", "public_session"):
+    if args.runner in ("session", "multi_session", "public_session", "public_release"):
         if not all((args.cmake, args.emcmake, args.ninja, args.publisher)):
             parser.error("session fixtures require --cmake, --emcmake, --ninja and --publisher")
         if args.runner == "session":

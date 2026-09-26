@@ -35,6 +35,13 @@ target_link_options(public_session PRIVATE -sENVIRONMENT=web -sASSERTIONS=2)
 set_target_properties(public_session PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${FIXTURE_OUTPUT}")
 
+# An optimized page without assertions, as an ordinary release build links it.
+add_executable(public_release ../public_release.cpp)
+target_link_libraries(public_release PRIVATE nekomata::neko beta alpha)
+target_compile_options(public_release PRIVATE -O2 -Wall -Wextra -Werror)
+target_link_options(public_release PRIVATE -O2 -sENVIRONMENT=web -sASSERTIONS=0)
+set_target_properties(public_release PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${FIXTURE_OUTPUT}")
+
 add_executable(public_empty ../public_empty.cpp)
 target_link_libraries(public_empty PRIVATE nekomata::neko)
 target_compile_options(public_empty PRIVATE -Wall -Wextra -Werror)

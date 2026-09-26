@@ -134,15 +134,17 @@ if(TARGET neko_publisher)
     "${PROJECT_SOURCE_DIR}/src/*/CMakeLists.txt" "${PROJECT_SOURCE_DIR}/cmake/*")
   add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/public_session.js" "${CMAKE_CURRENT_BINARY_DIR}/public_session.wasm"
+      "${CMAKE_CURRENT_BINARY_DIR}/public_release.js" "${CMAKE_CURRENT_BINARY_DIR}/public_release.wasm"
       "${CMAKE_CURRENT_BINARY_DIR}/public_empty.js" "${CMAKE_CURRENT_BINARY_DIR}/public_empty.wasm"
     COMMAND "${CMAKE_COMMAND}" "-DSOURCE_ROOT=${PROJECT_SOURCE_DIR}"
       "-DBINARY_ROOT=${CMAKE_CURRENT_BINARY_DIR}" "-DEMCMAKE=${NEKOMATA_EMCMAKE}"
       "-DNINJA=${NEKOMATA_WASM_NINJA}" "-DPUBLISHER=$<TARGET_FILE:neko_publisher>" -P "${CMAKE_CURRENT_SOURCE_DIR}/build_public.cmake"
     DEPENDS ${public_library_inputs} "${PROJECT_SOURCE_DIR}/CMakeLists.txt"
       build_public.cmake public_project/CMakeLists.txt public_project/plt.hpp public_session.cpp
-      public_empty.cpp world.hpp VERBATIM)
+      public_release.cpp public_empty.cpp world.hpp VERBATIM)
   add_custom_target(neko_wasm_public_fixture DEPENDS
     "${CMAKE_CURRENT_BINARY_DIR}/public_session.js" "${CMAKE_CURRENT_BINARY_DIR}/public_session.wasm"
+    "${CMAKE_CURRENT_BINARY_DIR}/public_release.js" "${CMAKE_CURRENT_BINARY_DIR}/public_release.wasm"
     "${CMAKE_CURRENT_BINARY_DIR}/public_empty.js" "${CMAKE_CURRENT_BINARY_DIR}/public_empty.wasm")
   add_dependencies(neko_wasm_public_fixture neko_publisher)
   add_dependencies(neko_wasm_fixtures neko_wasm_public_fixture)
@@ -165,6 +167,12 @@ if(TARGET neko_publisher)
       --cmake "${CMAKE_COMMAND}" --emcmake "${NEKOMATA_EMCMAKE}"
       --ninja "${NEKOMATA_WASM_NINJA}" --publisher "$<TARGET_FILE:neko_publisher>")
   set_tests_properties(neko.e2e.wasm.public_factory PROPERTIES TIMEOUT 180 LABELS "e2e;wasm")
+  add_test(NAME neko.e2e.wasm.public_release
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_browser.py"
+      --browser "${NEKOMATA_WASM_BROWSER}" --root "${CMAKE_CURRENT_BINARY_DIR}" --runner public_release
+      --cmake "${CMAKE_COMMAND}" --emcmake "${NEKOMATA_EMCMAKE}"
+      --ninja "${NEKOMATA_WASM_NINJA}" --publisher "$<TARGET_FILE:neko_publisher>")
+  set_tests_properties(neko.e2e.wasm.public_release PROPERTIES TIMEOUT 180 LABELS "e2e;wasm")
   add_test(NAME neko.e2e.wasm.empty_registry
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_browser.py"
       --browser "${NEKOMATA_WASM_BROWSER}" --root "${CMAKE_CURRENT_BINARY_DIR}" --runner public_empty)

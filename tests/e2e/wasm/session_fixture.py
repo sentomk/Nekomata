@@ -9,7 +9,7 @@ import threading
 
 
 def publish_generation(args, build, offer_root, generation, interface_version, group_id="flock"):
-    public_consumer = args.runner == "public_session"
+    public_consumer = args.runner in ("public_session", "public_release")
     project = "public_project" if public_consumer else "session_project"
     target = f"{group_id}_reload" if public_consumer else "flock_reload"
     project_options = (

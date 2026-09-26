@@ -187,10 +187,13 @@ function(nekomata_add_reload_group name)
     # command-line order; side modules relocate at instantiation. Hide
     # behavior symbols so later generations cannot bind to older modules'
     # identically named functions. The descriptor export is explicitly public.
+    # The link disables stack-overflow checks: their instrumentation imports
+    # a handler, and needs stack limits, that only a main module linked with
+    # assertions provides, so any release page would trap on the first call.
     set(wasm_compile_flags -std=c++20 -O0 -g -Wall -Wextra -Werror -fno-exceptions -fno-rtti
       -sSIDE_MODULE=2 -fPIC -fvisibility=hidden)
     set(wasm_link_flags -std=c++20 -O0 -g -Wall -Wextra -Werror -fno-exceptions -fno-rtti
-      -sASSERTIONS=2 -sSIDE_MODULE=1)
+      -sSTACK_OVERFLOW_CHECK=0 -sSIDE_MODULE=1)
 
     set(wasm_objects "")
     set(wasm_depends "")

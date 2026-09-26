@@ -169,6 +169,9 @@ machine instructions.
 With an Emscripten-built installation, ordinary `find_package(nekomata CONFIG
 REQUIRED)` consumers link `nekomata::neko`. The aggregate includes the browser
 backend and its required PIC, main-module, fetch, memory-growth and exception flags.
+Side modules link without stack-overflow checks, whose instrumentation needs a
+handler and stack limits that only a main module linked with assertions
+provides. Pages may therefore link with any optimization or assertion level.
 `nekomata::wasm` is also exported. Linking declared group targets adds their
 registration through the existing CMake adapter. The current browser contract
 uses the single application event loop, not pthreads or a native embedded runtime.
@@ -337,6 +340,8 @@ execution tests the lifecycle logic, not execution of WASM in a native host.
   generations from the same declarations. Global session construction checks
   registration initialization order. Existing
   private single- and multi-group tests retain their transport instrumentation.
+- `neko.e2e.wasm.public_release` links the same groups into a page built `-O2`
+  without assertions and calls a published generation that uses a stack frame.
 - `neko.e2e.wasm.empty_registry` links no group targets and checks empty factory
   construction, snapshots, updates and the exact all-group watch rejection.
 

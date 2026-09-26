@@ -144,7 +144,12 @@ global initialization order, rejection of a second live browser session, unknown
 groups, both unsupported object-path watches, moving the session, captured
 function pointers, and callable code after session destruction. CI requires
 this installed-consumer test explicitly.
+`public_release` links the same groups into a page built `-O2` without
+assertions, as an ordinary release build links it. It applies a published
+generation and calls it through the PLT. The fixture's `update_world` has a
+stack frame, so the call runs the side module's stack-pointer code; a module
+that depended on an assertion-enabled page would trap there.
 `empty_registry` separately links no group targets and checks empty snapshots,
 updates and the exact watch rejection. Native registration tests reject missing
-metadata, duplicate IDs and invalid entry membership. Both browser tests are
-required by CI. The development demo also links the installed library.
+metadata, duplicate IDs and invalid entry membership. All three public browser
+tests are required by CI. The development demo also links the installed library.

@@ -5,6 +5,14 @@
 #endif
 
 namespace wasm_fixture {
+namespace {
+// Taking a local's address gives update_world a stack frame. Leaf functions
+// without one never run the side module's stack-pointer checks, which a
+// release page must be able to serve.
+void advance(float& position, float velocity) {
+  position += velocity;
+}
+} // namespace
 
 std::uint32_t identify() {
   return GENERATION_ID;
@@ -17,7 +25,9 @@ std::uint32_t identify() {
     world->velocity = -1.0f;
   }
 #endif
-  world->position += world->velocity;
+  float position = world->position;
+  advance(position, world->velocity);
+  world->position = position;
   ++world->tick_count;
   world->last_generation = GENERATION_ID;
 }

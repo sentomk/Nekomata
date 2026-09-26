@@ -19,7 +19,7 @@
 </script>
 <body><script>
   const runner = new URLSearchParams(location.search).get("runner") || "runner";
-  if (!["runner", "lifecycle", "scheduler", "session", "multi_session", "public_session", "public_empty"].includes(runner)) throw new Error("unknown test runner");
+  if (!["runner", "lifecycle", "scheduler", "session", "multi_session", "public_session", "public_release", "public_empty"].includes(runner)) throw new Error("unknown test runner");
   const script = document.createElement("script");
   script.src = runner + ".js";
   document.body.appendChild(script);
