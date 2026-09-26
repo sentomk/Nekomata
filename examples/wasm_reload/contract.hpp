@@ -23,7 +23,4 @@ struct world_state {
   std::uint32_t behavior;
 };
 
-using identify_fn = std::uint32_t (*)();
-using update_fn = void (*)(world_state*);
-
 } // namespace demo

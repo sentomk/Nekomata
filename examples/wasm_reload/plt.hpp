@@ -4,17 +4,20 @@
 // The build adapter compiles this into the main module (PLT_HEADER), so the
 // page's call sites stay ordinary direct calls — demo::update_world(world) —
 // and the reload backend rewrites the slots at its safe point. This is the
-// whole application-side ceremony; entry signatures are application
-// knowledge and stay in plain, readable code.
+// whole application-side ceremony. Each slot takes its type from the
+// side-module declaration in hot.hpp, so a signature change there fails to
+// compile here; decltype does not need the definition in the main module.
 
 #include "contract.hpp"
+#include "hot.hpp"
 
 #include <neko/wasm.hpp>
 
 namespace demo::plt {
 
-inline neko::wasm::plt_slot<demo::update_fn> update_world{demo::group_id, "update_world"};
-inline neko::wasm::plt_slot<demo::identify_fn> identify{demo::group_id, "identify"};
+inline neko::wasm::plt_slot<decltype(demo::hot::update_world)> update_world{demo::group_id,
+                                                                            "update_world"};
+inline neko::wasm::plt_slot<decltype(demo::hot::identify)> identify{demo::group_id, "identify"};
 
 } // namespace demo::plt
 

@@ -42,7 +42,7 @@ void apply_plt_slots(std::string_view group, const prepared_module& module) noex
       continue;
     }
     if (const module_function entry = module.entry(record->entry); entry != nullptr) {
-      *record->target = entry;
+      record->assign(record->slot, entry);
     }
   }
 }

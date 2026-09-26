@@ -121,7 +121,10 @@ Ordinary calls stay ordinary because each reloadable entry also gets a PLT
 slot in the main module: a typed function pointer plus a forwarding
 trampoline with the application-facing name, declared once per entry in a
 small application header the build adapter compiles into the main module
-(`PLT_HEADER`). The slot type lives in the installed
+(`PLT_HEADER`). A slot accepts a function type, so
+`plt_slot<decltype(flock::tick)>` takes its signature from the export header
+without requiring a definition in the main module; a signature change then
+fails to compile instead of trapping at an indirect call. The slot type lives in the installed
 [`neko/wasm.hpp`](../include/neko/wasm.hpp). Activation rewrites the slots at the safe point, exactly
 where native reload patches entry bytes — the survey that established this:
 side-module code is immutable once instantiated, undefined-symbol imports

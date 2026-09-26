@@ -15,6 +15,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -40,8 +41,12 @@ using slot = neko::wasm::plt_slot<void (*)()>;
 // Static-duration slots, as an application PLT header declares them.
 slot tick_slot{"game", "tick"};
 slot identity_slot{"game", "identity"};
+// A function type, as `decltype(side_module_declaration)` produces.
+neko::wasm::plt_slot<void()> function_type_slot{"game", "tick"};
 slot ghost_slot{"game", "ghost"};   // no module ever defines this entry
 slot foreign_slot{"other", "tick"}; // another group's slot, never ours
+
+static_assert(std::is_same_v<decltype(function_type_slot.target), void (*)()>);
 
 class manual_scheduler final : public neko::wasm::poll_scheduler {
 public:
@@ -147,6 +152,7 @@ TEST_CASE("activation rewrites this group's slots with the new entries") {
   g_behavior_b_calls = 0;
   tick_slot.target = nullptr;
   identity_slot.target = nullptr;
+  function_type_slot.target = nullptr;
   ghost_slot.target = nullptr;
   foreign_slot.target = nullptr;
 
@@ -159,6 +165,7 @@ TEST_CASE("activation rewrites this group's slots with the new entries") {
 
   CHECK(tick_slot.target == &behavior_a);
   CHECK(identity_slot.target == &behavior_a);
+  CHECK(function_type_slot.target == &behavior_a);
   CHECK(ghost_slot.target == nullptr);   // entry absent from the module
   CHECK(foreign_slot.target == nullptr); // another group's slot
 

@@ -4,16 +4,21 @@
 
 #include <memory>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace neko::wasm::detail {
 
 using plt_function = void (*)();
 
+// Type-erased view of one plt_slot. `assign` converts the generic entry back
+// to the slot's own pointer type, so the slot is never written through an
+// lvalue of a different function pointer type.
 struct plt_slot_record {
   std::string_view group;
   std::string_view entry;
-  plt_function* target;
+  void* slot;
+  void (*assign)(void* slot, plt_function target) noexcept;
   plt_slot_record* next = nullptr;
 };
 
@@ -33,18 +38,30 @@ namespace neko::wasm {
 /// Define one slot and forwarding function per entry in the application header
 /// passed as PLT_HEADER to nekomata_add_reload_group. Call only after the
 /// group's first generation has activated.
+///
+/// `Signature` is a function type or a pointer to one. Prefer naming the
+/// side-module declaration, as in `plt_slot<decltype(game::tick)>`: the
+/// operand is unevaluated, so the main module needs no definition, and a
+/// signature change in the export header then fails to compile here instead
+/// of trapping at an indirect call. Each group and entry must be registered
+/// by the build adapter; the backend rejects unknown slots before observing.
 template <typename Signature>
 class plt_slot {
 public:
+  using pointer =
+      std::conditional_t<std::is_function_v<Signature>, std::add_pointer_t<Signature>, Signature>;
+  static_assert(std::is_pointer_v<pointer> && std::is_function_v<std::remove_pointer_t<pointer>>,
+                "plt_slot requires a function type or a function pointer type");
+
   plt_slot(std::string_view group, std::string_view entry)
-      : record_{group, entry, reinterpret_cast<detail::plt_function*>(&target)} {
+      : record_{group, entry, this, &plt_slot::assign} {
     detail::register_plt_slot(record_);
   }
 
   plt_slot(const plt_slot&) = delete;
   plt_slot& operator=(const plt_slot&) = delete;
 
-  Signature target = nullptr;
+  pointer target = nullptr;
 
   [[nodiscard]] explicit operator bool() const { return target != nullptr; }
 
@@ -54,6 +71,12 @@ public:
   }
 
 private:
+  // Descriptor addresses were cast from this entry's own type, so casting
+  // back restores the original function pointer.
+  static void assign(void* slot, detail::plt_function value) noexcept {
+    static_cast<plt_slot*>(slot)->target = reinterpret_cast<pointer>(value);
+  }
+
   detail::plt_slot_record record_;
 };
 
