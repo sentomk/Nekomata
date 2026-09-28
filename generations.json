@@ -11,7 +11,7 @@
   {
     "id": "tighter",
     "label": "v2 \u00b7 tighter flocks",
-    "title": "Tune the constants",
+    "title": "Tune constants",
     "summary": "Wider view, stronger cohesion: bigger, tighter flocks.",
     "snippet": "view_radius = 90.0f;      // was 48\ncohesion_weight = 0.010f; // was 0.004",
     "expect": "applied",
@@ -29,7 +29,7 @@
   {
     "id": "vortex",
     "label": "v4 \u00b7 vortex around the pointer",
-    "title": "Add a behavior",
+    "title": "Add a vortex",
     "summary": "Boids near the mouse pointer circle it. Hover over the canvas.",
     "snippet": "if (world->pointer_inside) {\n  // steer along the tangent\n  self.vx += -dy / distance * 0.6f;\n  self.vy +=  dx / distance * 0.6f;\n}",
     "expect": "applied",
@@ -38,7 +38,7 @@
   {
     "id": "layout",
     "label": "layout change",
-    "title": "Change the world layout",
+    "title": "Change the layout",
     "summary": "Built against a boid with an extra field, so its ABI identity no longer matches the page. The page refuses it before downloading.",
     "snippet": "struct boid {\n  ...\n  float flash;\n  float energy; // new field\n};",
     "expect": "incompatible",
@@ -47,7 +47,7 @@
   {
     "id": "tampered",
     "label": "tampered artifact",
-    "title": "Tamper with the bytes",
+    "title": "Tamper with bytes",
     "summary": "The v2 module under a manifest whose SHA-256 is off by one digit. The page refuses it before instantiating.",
     "snippet": "artifact \"modules/\u2026wasm\" \"\u2026\"\n// SHA-256 with one digit changed",
     "expect": "integrity",

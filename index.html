@@ -7,89 +7,67 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0b0e13;
-      --panel: #121720;
-      --line: #232b37;
-      --text: #d5dde7;
-      --muted: #7e8b9a;
-      --accent: #8ab4f8;
-      --ok: #7ee0a1;
+      --bg: #0c0e11;
+      --text: #d9dee5;
+      --muted: #737c88;
+      --faint: #2a3038;
+      --ok: #7bd88f;
       --bad: #ff6b6b;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0; padding: 24px 16px 40px;
+      margin: 0; padding: 28px 16px 40px;
       background: var(--bg); color: var(--text);
-      font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     }
     .stage { max-width: 960px; margin: 0 auto; }
-    .page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
-                 flex-wrap: wrap; margin-bottom: 12px; }
-    h1 { margin: 0; font-size: 15px; font-weight: 600; color: var(--accent); }
-    .hint { color: var(--muted); }
-    kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--text); }
+    h1 { margin: 0 0 14px; font-size: 14px; font-weight: 500; }
+    h1 span { color: var(--muted); font-weight: 400; }
     canvas {
       display: block; width: 100%; height: auto; aspect-ratio: 960 / 600;
-      background: #07090d; border: 1px solid var(--line); border-radius: 8px;
-      cursor: crosshair; touch-action: none; transition: border-color .4s, box-shadow .4s;
+      background: #07080a; border-radius: 6px; cursor: crosshair; touch-action: none;
     }
-    canvas.switched { border-color: var(--ok); box-shadow: 0 0 0 3px rgba(126, 224, 161, .25); }
-    canvas.refused { border-color: var(--bad); box-shadow: 0 0 0 3px rgba(255, 107, 107, .25); }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-             gap: 8px; margin-top: 12px; }
-    .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
-            padding: 8px 10px; }
-    .stat b { display: block; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .stat span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-    .stat.breaches b { color: var(--bad); transition: transform .15s; }
-    .stat.breaches.pulse b { transform: scale(1.15); }
-    .behavior { margin-top: 8px; background: var(--panel); border: 1px solid var(--line);
-                border-radius: 6px; padding: 8px 10px; display: flex; gap: 12px; flex-wrap: wrap; }
-    .behavior span { color: var(--muted); }
-    #log { margin: 8px 0 0; padding: 8px 10px; max-height: 11rem; overflow-y: auto;
-           background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
-           white-space: pre-wrap; font-size: 12px; min-height: 3rem; }
-    #log .ok { color: var(--ok); }
-    #log .bad { color: var(--bad); }
-    #log time { color: var(--muted); margin-right: 8px; }
+    .status {
+      display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+      margin-top: 12px; font-family: var(--mono); font-size: 13px;
+    }
+    .status .numbers { color: var(--muted); font-variant-numeric: tabular-nums; }
+    #breaches { color: var(--bad); }
+    #event { min-height: 1.55em; margin-top: 2px; font-size: 13px; color: var(--muted); }
+    #event.ok { color: var(--ok); }
+    #event.bad { color: var(--bad); }
+    .hint { margin-top: 10px; font-size: 12px; color: var(--muted); }
   </style>
   <link rel="stylesheet" href="pages.css">
 </head>
 <body>
 <div class="layout">
 <main class="stage">
-  <header class="page-head">
-    <h1>nekomata · flock — edit C++, keep the world</h1>
-    <div class="hint">drag to draw walls · click to release a flock · <kbd>C</kbd> clears walls</div>
-  </header>
+  <h1>nekomata · flock <span>— edit C++, keep the world</span></h1>
   <div class="view">
     <canvas id="world" width="960" height="600"></canvas>
-    <div class="stats">
-      <div class="stat"><span>world age</span><b id="age">0:00</b></div>
-      <div class="stat"><span>boids</span><b id="boids">0</b></div>
-      <div class="stat"><span>walls</span><b id="walls">0</b></div>
-      <div class="stat breaches" id="breach-card"><span>wall breaches</span><b id="breaches">0</b></div>
-      <div class="stat"><span>applied / rejected</span><b id="generations">0 / 0</b></div>
+    <div class="status">
+      <span id="behavior">starting…</span>
+      <span class="numbers"><span id="age">0:00</span> · <span id="breaches">0</span> breaches</span>
     </div>
-    <div class="behavior"><span>running</span><strong id="behavior">…</strong>
-      <span>generation</span><strong id="generation">none</strong></div>
+    <div id="event"></div>
   </div>
-  <div id="log"></div>
+  <p class="hint">Drag to draw walls, click to release a flock, press C to clear walls.</p>
 </main>
 </div>
 <script>
   const canvas = document.getElementById('world');
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
-  ctx.fillStyle = '#07090d';
-  ctx.fillRect(0, 0, W, H);
 
-  // Called once per frame with the boid and wall arrays in wasm memory.
+  // Called once per frame with the boid and wall arrays in wasm memory. Boids
+  // are drawn in one pale tone so that a breach, in red, is the only color.
   window.flock_render = (f32, boids, count, stride, walls, wallCount) => {
-    ctx.fillStyle = 'rgba(7, 9, 13, 0.24)';
+    ctx.fillStyle = 'rgba(7, 8, 10, 0.28)';
     ctx.fillRect(0, 0, W, H);
 
-    ctx.strokeStyle = '#c3cedc';
+    ctx.strokeStyle = '#7d8795';
     ctx.lineWidth = 4;
     ctx.lineCap = 'round';
     ctx.beginPath();
@@ -100,65 +78,64 @@
     }
     ctx.stroke();
 
+    ctx.fillStyle = '#d9dee5';
+    ctx.beginPath();
     for (let i = 0; i < count; ++i) {
       const b = boids + i * stride;
-      const x = f32[b], y = f32[b + 1], vx = f32[b + 2], vy = f32[b + 3], flash = f32[b + 4];
-      const angle = Math.atan2(vy, vx);
-      const hue = (angle * 180 / Math.PI + 360) % 360;
+      const x = f32[b], y = f32[b + 1];
+      const angle = Math.atan2(f32[b + 3], f32[b + 2]);
       const c = Math.cos(angle), s = Math.sin(angle);
-      ctx.fillStyle = `hsl(${hue}, 80%, 66%)`;
-      ctx.beginPath();
       ctx.moveTo(x + c * 7, y + s * 7);
       ctx.lineTo(x - c * 4 - s * 3.5, y - s * 4 + c * 3.5);
       ctx.lineTo(x - c * 4 + s * 3.5, y - s * 4 - c * 3.5);
       ctx.closePath();
-      ctx.fill();
+    }
+    ctx.fill();
+
+    ctx.lineWidth = 2;
+    for (let i = 0; i < count; ++i) {
+      const b = boids + i * stride;
+      const flash = f32[b + 4];
       if (flash > 0) {
-        ctx.strokeStyle = `rgba(255, 90, 90, ${flash})`;
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = `rgba(255, 107, 107, ${flash})`;
         ctx.beginPath();
-        ctx.arc(x, y, 6 + (1 - flash) * 14, 0, Math.PI * 2);
+        ctx.arc(f32[b], f32[b + 1], 6 + (1 - flash) * 14, 0, Math.PI * 2);
         ctx.stroke();
       }
     }
   };
 
   const el = (id) => document.getElementById(id);
-  let lastBreaches = 0;
-  window.flock_hud = (s) => {
-    const seconds = Math.floor(s.tick / 60);
-    el('age').textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-    el('boids').textContent = s.boids;
-    el('walls').textContent = s.walls;
-    el('breaches').textContent = s.breaches;
-    el('generations').textContent = `${s.applied} / ${s.rejected}`;
-    el('behavior').textContent = s.behavior;
-    el('generation').textContent = s.generation;
-    const card = el('breach-card');
-    card.classList.toggle('pulse', s.breaches !== lastBreaches);
-    lastBreaches = s.breaches;
+  const set = (id, text) => {
+    if (el(id).textContent !== text) el(id).textContent = text;
+  };
+  window.flock_hud = (tick, breaches, behavior) => {
+    const seconds = Math.floor(tick / 60);
+    set('age', `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`);
+    set('breaches', String(breaches));
+    set('behavior', behavior);
   };
 
-  let outline = 0;
-  window.flock_log = (ok, text) => {
-    if (/^(applied|rejected) generation/.test(text)) {
-      canvas.classList.remove('switched', 'refused');
-      canvas.classList.add(ok ? 'switched' : 'refused');
-      clearTimeout(outline);
-      outline = setTimeout(() => canvas.classList.remove('switched', 'refused'), 900);
-    }
-    const log = el('log');
-    const line = document.createElement('div');
+  // The latest reload transaction, in one line; the full reason is a tooltip.
+  const show = (ok, text, detail = '') => {
+    const line = el('event');
     line.className = ok ? 'ok' : 'bad';
-    const time = document.createElement('time');
-    time.textContent = new Date().toLocaleTimeString();
-    line.append(time, (ok ? '+ ' : '! ') + text);
-    log.append(line);
-    log.scrollTop = log.scrollHeight;
+    line.textContent = text;
+    line.title = detail;
+  };
+  // The first generation replaces nothing, so it needs no message.
+  let started = false;
+  window.flock_event = (event) => {
+    if (event.applied) {
+      if (started) show(true, 'Switched at the next frame. Nothing was reset.');
+      started = true;
+    } else {
+      show(false, `Rejected (${event.code}). Still running ${event.behavior}.`, event.message);
+    }
   };
 
   // A trap in behavior code stops the frame loop; say so instead of freezing silently.
-  window.addEventListener('error', (e) => window.flock_log(false, `page stopped: ${e.message}`));
+  window.addEventListener('error', (e) => show(false, `Page stopped: ${e.message}`));
 </script>
 <script src="pages.js"></script>
 </body>

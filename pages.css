@@ -1,75 +1,60 @@
 /* Wide screens: the world and the generations sit side by side, so the canvas
-   stays in view while a card is published. The stage shrinks until the
-   canvas, stats and running line fit in one viewport. */
+   stays in view while one is chosen. The stage shrinks until the canvas and
+   its status lines fit in one viewport. */
 .layout.with-tour {
-  display: grid; grid-template-columns: auto minmax(300px, 380px);
-  gap: 20px; justify-content: center; align-items: start;
+  display: grid; grid-template-columns: auto 300px;
+  gap: 40px; justify-content: center; align-items: start;
 }
 .layout.with-tour .stage {
-  width: min(960px, calc((100vh - 240px) * 1.6), calc(100vw - 440px));
+  width: min(960px, calc((100vh - 200px) * 1.6), calc(100vw - 380px));
   min-width: 480px; margin: 0;
 }
 
-.tour {
-  position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto;
-  padding-right: 2px;
+.tour { position: sticky; top: 28px; font-size: 13px; }
+.tour h2 { margin: 0 0 6px; font-size: 14px; font-weight: 500; }
+.tour .intro { margin: 0 0 14px; color: var(--muted); }
+.tour code, .tour pre { font-family: var(--mono); }
+.tour ol { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+.tour li { counter-increment: step; }
+.tour button {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  padding: 5px 0; border: 0; background: none; color: var(--muted);
+  font: inherit; text-align: left; cursor: pointer;
 }
-.tour h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--accent); }
-.tour .intro { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
-.tour .intro a { color: var(--accent); }
-.cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.tour button::before {
+  content: counter(step); width: 1ch; font-family: var(--mono); font-size: 12px;
+}
+.tour button::after {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; margin-left: auto;
+  align-self: center; flex: none;
+}
+.tour .title { flex: 1; }
+.tour .note { font-family: var(--mono); font-size: 12px; color: var(--bad); }
+.tour button:hover, .tour li.focused button { color: var(--text); }
+.tour button:focus-visible { outline: 1px solid var(--muted); outline-offset: 2px; }
+.tour li[data-state="waiting"] button::after { background: var(--muted); }
+.tour li[data-state="running"] button::after { background: var(--ok); }
+.tour li[data-state="running"] button { color: var(--text); }
 
-.card {
-  display: flex; flex-direction: column; gap: 6px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px;
-  transition: border-color .3s;
+.tour .detail { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--faint); }
+.tour .detail p { margin: 0 0 10px; color: var(--muted); }
+.tour pre {
+  margin: 0; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
 }
-.card header { display: flex; align-items: center; gap: 8px; }
-.card h3 { margin: 0; font-size: 13px; font-weight: 600; flex: 1; }
-.card .step {
-  display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none;
-  border: 1px solid var(--line); border-radius: 50%; font-size: 11px; color: var(--muted);
-}
-.card .summary { margin: 0; color: var(--muted); font-size: 12px; }
-.card .expect { color: #e0b36a; }
-.card pre {
-  margin: 0; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere;
-  background: #0b0f15; border: 1px solid var(--line); border-radius: 4px; font-size: 11px;
-}
-.card button {
-  flex: none; font: inherit; font-size: 12px; color: var(--text); background: #1b2330;
-  cursor: pointer; border: 1px solid var(--line); border-radius: 4px; padding: 3px 12px;
-}
-.card button:hover { border-color: var(--accent); }
-.card button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.card .status { margin: 0; font-size: 12px; color: var(--muted); }
-.card .status:empty { display: none; }
-.card[data-state="pending"] { border-color: var(--accent); }
-.card[data-state="pending"] .status { color: var(--accent); }
-.card[data-state="running"] { border-color: var(--ok); }
-.card[data-state="running"] .status { color: var(--ok); }
-.card[data-state="rejected"] { border-color: var(--bad); }
-.card[data-state="rejected"] .status { color: var(--bad); }
+.tour .source { margin: 16px 0 0; }
+.tour .source a { color: var(--muted); }
+.tour .source a:hover { color: var(--text); }
 
 /* Narrow screens: one column, with the world pinned to the top while the
-   cards scroll beneath it. The stage's children join the layout directly so
+   list scrolls beneath it. The stage's children join the layout directly so
    the pinned view can stay put past the end of the stage. */
-@media (max-width: 1099px) {
+@media (max-width: 899px) {
   .layout.with-tour { display: block; }
   .layout.with-tour .stage { display: contents; }
   .layout.with-tour .view {
     position: sticky; top: 0; z-index: 2; background: var(--bg);
-    margin: 0 -16px; padding: 8px 16px;
+    margin: 0 -16px; padding: 8px 16px 4px;
   }
   .layout.with-tour canvas { width: min(100%, calc(42vh * 1.6)); margin: 0 auto; }
-  .layout.with-tour .stats {
-    grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin-top: 6px;
-  }
-  .layout.with-tour .stat { padding: 4px 6px; }
-  .layout.with-tour .stat b { font-size: 13px; }
-  .layout.with-tour .stat span { font-size: 9px; letter-spacing: 0; }
-  .layout.with-tour .behavior { margin-top: 4px; padding: 4px 8px; font-size: 12px; }
-  .layout.with-tour .behavior span:nth-of-type(2), .layout.with-tour #generation { display: none; }
-  .tour { position: static; max-height: none; overflow: visible; margin-top: 12px; padding: 0; }
-  .cards { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .tour { position: static; margin-top: 20px; }
 }
