@@ -35,6 +35,13 @@
       URL.revokeObjectURL(retired.shift());
     }
     latest = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    // A card still waiting was superseded by this manifest and will never be reported.
+    for (const other of cards.values()) {
+      if (other.dataset.state === 'pending') {
+        other.dataset.state = 'idle';
+        other.querySelector('.status').textContent = 'superseded before its switch';
+      }
+    }
     const card = cards.get(generation.generation_id);
     if (card) {
       card.dataset.state = 'pending';
