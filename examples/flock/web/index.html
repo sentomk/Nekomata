@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nekomata Flock</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0e13;
+      --panel: #121720;
+      --line: #232b37;
+      --text: #d5dde7;
+      --muted: #7e8b9a;
+      --accent: #8ab4f8;
+      --ok: #7ee0a1;
+      --bad: #ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px 16px 40px;
+      background: var(--bg); color: var(--text);
+      font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+    .stage { max-width: 960px; margin: 0 auto; }
+    .page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+                 flex-wrap: wrap; margin-bottom: 12px; }
+    h1 { margin: 0; font-size: 15px; font-weight: 600; color: var(--accent); }
+    .hint { color: var(--muted); }
+    kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--text); }
+    canvas {
+      display: block; width: 100%; height: auto; aspect-ratio: 960 / 600;
+      background: #07090d; border: 1px solid var(--line); border-radius: 8px;
+      cursor: crosshair; touch-action: none; transition: border-color .4s, box-shadow .4s;
+    }
+    canvas.switched { border-color: var(--ok); box-shadow: 0 0 0 3px rgba(126, 224, 161, .25); }
+    canvas.refused { border-color: var(--bad); box-shadow: 0 0 0 3px rgba(255, 107, 107, .25); }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+             gap: 8px; margin-top: 12px; }
+    .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+            padding: 8px 10px; }
+    .stat b { display: block; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .stat span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+    .stat.breaches b { color: var(--bad); transition: transform .15s; }
+    .stat.breaches.pulse b { transform: scale(1.15); }
+    .behavior { margin-top: 8px; background: var(--panel); border: 1px solid var(--line);
+                border-radius: 6px; padding: 8px 10px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .behavior span { color: var(--muted); }
+    #log { margin: 8px 0 0; padding: 8px 10px; max-height: 11rem; overflow-y: auto;
+           background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+           white-space: pre-wrap; font-size: 12px; min-height: 3rem; }
+    #log .ok { color: var(--ok); }
+    #log .bad { color: var(--bad); }
+    #log time { color: var(--muted); margin-right: 8px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+<main class="stage">
+  <header class="page-head">
+    <h1>nekomata · flock — edit C++, keep the world</h1>
+    <div class="hint">drag to draw walls · click to release a flock · <kbd>C</kbd> clears walls</div>
+  </header>
+  <div class="view">
+    <canvas id="world" width="960" height="600"></canvas>
+    <div class="stats">
+      <div class="stat"><span>world age</span><b id="age">0:00</b></div>
+      <div class="stat"><span>boids</span><b id="boids">0</b></div>
+      <div class="stat"><span>walls</span><b id="walls">0</b></div>
+      <div class="stat breaches" id="breach-card"><span>wall breaches</span><b id="breaches">0</b></div>
+      <div class="stat"><span>applied / rejected</span><b id="generations">0 / 0</b></div>
+    </div>
+    <div class="behavior"><span>running</span><strong id="behavior">…</strong>
+      <span>generation</span><strong id="generation">none</strong></div>
+  </div>
+  <div id="log"></div>
+</main>
+</div>
+<script>
+  const canvas = document.getElementById('world');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#07090d';
+  ctx.fillRect(0, 0, W, H);
+
+  // Called once per frame with the boid and wall arrays in wasm memory.
+  window.flock_render = (f32, boids, count, stride, walls, wallCount) => {
+    ctx.fillStyle = 'rgba(7, 9, 13, 0.24)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = '#c3cedc';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < wallCount; ++i) {
+      const w = walls + i * 4;
+      ctx.moveTo(f32[w], f32[w + 1]);
+      ctx.lineTo(f32[w + 2], f32[w + 3]);
+    }
+    ctx.stroke();
+
+    for (let i = 0; i < count; ++i) {
+      const b = boids + i * stride;
+      const x = f32[b], y = f32[b + 1], vx = f32[b + 2], vy = f32[b + 3], flash = f32[b + 4];
+      const angle = Math.atan2(vy, vx);
+      const hue = (angle * 180 / Math.PI + 360) % 360;
+      const c = Math.cos(angle), s = Math.sin(angle);
+      ctx.fillStyle = `hsl(${hue}, 80%, 66%)`;
+      ctx.beginPath();
+      ctx.moveTo(x + c * 7, y + s * 7);
+      ctx.lineTo(x - c * 4 - s * 3.5, y - s * 4 + c * 3.5);
+      ctx.lineTo(x - c * 4 + s * 3.5, y - s * 4 - c * 3.5);
+      ctx.closePath();
+      ctx.fill();
+      if (flash > 0) {
+        ctx.strokeStyle = `rgba(255, 90, 90, ${flash})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 6 + (1 - flash) * 14, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  };
+
+  const el = (id) => document.getElementById(id);
+  let lastBreaches = 0;
+  window.flock_hud = (s) => {
+    const seconds = Math.floor(s.tick / 60);
+    el('age').textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    el('boids').textContent = s.boids;
+    el('walls').textContent = s.walls;
+    el('breaches').textContent = s.breaches;
+    el('generations').textContent = `${s.applied} / ${s.rejected}`;
+    el('behavior').textContent = s.behavior;
+    el('generation').textContent = s.generation;
+    const card = el('breach-card');
+    card.classList.toggle('pulse', s.breaches !== lastBreaches);
+    lastBreaches = s.breaches;
+  };
+
+  let outline = 0;
+  window.flock_log = (ok, text) => {
+    if (/^(applied|rejected) generation/.test(text)) {
+      canvas.classList.remove('switched', 'refused');
+      canvas.classList.add(ok ? 'switched' : 'refused');
+      clearTimeout(outline);
+      outline = setTimeout(() => canvas.classList.remove('switched', 'refused'), 900);
+    }
+    const log = el('log');
+    const line = document.createElement('div');
+    line.className = ok ? 'ok' : 'bad';
+    const time = document.createElement('time');
+    time.textContent = new Date().toLocaleTimeString();
+    line.append(time, (ok ? '+ ' : '! ') + text);
+    log.append(line);
+    log.scrollTop = log.scrollHeight;
+  };
+
+  // A trap in behavior code stops the frame loop; say so instead of freezing silently.
+  window.addEventListener('error', (e) => window.flock_log(false, `page stopped: ${e.message}`));
+</script>
+<script src="main.js"></script>
+</body>
+</html>

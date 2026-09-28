@@ -51,6 +51,13 @@ All objects in one published generation are prepared before the first entry
 write and committed together or rolled back together. See the
 [reload model](docs/reload-model.md) for the ready-marker format.
 
+## Try it in the browser
+
+<https://sentomk.github.io/Nekomata/> runs a flock of boids in the page and
+publishes new behavior generations into it, including a bug fix, while the
+world keeps its state. [`examples/flock`](examples/flock/) is its source; run
+it locally to edit the C++ yourself and watch each save reload.
+
 ## Try it (Linux)
 
 ```sh

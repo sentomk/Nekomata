@@ -20,6 +20,8 @@ everything under `tools/` is development infrastructure.
 - `src/tui/` — optional TUI library; enabled with `-DNEKOMATA_TUI=ON`
 - `examples/hello_reload/` — acceptance demo, doubles as an end-to-end test
 - `examples/playground/` — manual playground (bouncing ball)
+- `examples/flock/` — browser demo and its static GitHub Pages build;
+  a standalone package consumer driven by its own scripts
 - `tests/` — see the suite map in `CONTRIBUTING.md`
 - `scripts/` — configure, build, test and formatting entrypoints
 - `tools/` — pinned environment setup and development-only utilities

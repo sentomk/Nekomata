@@ -535,9 +535,11 @@ The existing CMake publication path supplies the consumer registration as well.
 Neither native backend factories nor a native embedded WASM runtime are
 prerequisites for this browser path.
 
-A richer demo can still show boids acquiring new avoidance and vortex code
-while retaining identity, position, velocity, trail, and world age; the
-current ball demo establishes the loop with a smaller world. Two pages
-receiving the same generation keep their separate worlds — the world is
-per-page state. The current fixtures remain tests, and the demo is a local
-development tool, not proof of remote generation delivery.
+[`examples/flock`](../examples/flock/) is the richer demo: boids acquire new
+steering and a wall-collision fix while keeping their positions, velocities,
+walls, world age and breach count, and a layout change is rejected as
+incompatible. Its static build, served from the `gh-pages` branch, publishes
+generations compiled ahead of time through the same browser backend. Two
+pages receiving the same generation keep their separate worlds — the world is
+per-page state. The fixtures remain tests, and the demos are development and
+presentation tools, not proof of remote generation delivery.
