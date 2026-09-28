@@ -1,34 +1,75 @@
-.tour { margin-top: 12px; }
-.tour-head h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--accent); }
-.tour-head p { margin: 0 0 10px; color: var(--muted); max-width: 72ch; }
-.tour-head a { color: var(--accent); }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 8px; }
+/* Wide screens: the world and the generations sit side by side, so the canvas
+   stays in view while a card is published. The stage shrinks until the
+   canvas, stats and running line fit in one viewport. */
+.layout.with-tour {
+  display: grid; grid-template-columns: auto minmax(300px, 380px);
+  gap: 20px; justify-content: center; align-items: start;
+}
+.layout.with-tour .stage {
+  width: min(960px, calc((100vh - 240px) * 1.6), calc(100vw - 440px));
+  min-width: 480px; margin: 0;
+}
+
+.tour {
+  position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto;
+  padding-right: 2px;
+}
+.tour h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--accent); }
+.tour .intro { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.tour .intro a { color: var(--accent); }
+.cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+
 .card {
   display: flex; flex-direction: column; gap: 6px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+  transition: border-color .3s;
 }
-.card header { display: flex; align-items: baseline; justify-content: flex-start; gap: 8px; margin: 0; }
-.card h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.card header { display: flex; align-items: center; gap: 8px; }
+.card h3 { margin: 0; font-size: 13px; font-weight: 600; flex: 1; }
 .card .step {
   display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none;
   border: 1px solid var(--line); border-radius: 50%; font-size: 11px; color: var(--muted);
 }
-.card .summary { margin: 0; color: var(--muted); }
+.card .summary { margin: 0; color: var(--muted); font-size: 12px; }
+.card .expect { color: #e0b36a; }
 .card pre {
   margin: 0; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere;
   background: #0b0f15; border: 1px solid var(--line); border-radius: 4px; font-size: 11px;
 }
-.card footer { margin-top: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .card button {
-  font: inherit; color: var(--text); background: #1b2330; cursor: pointer;
-  border: 1px solid var(--line); border-radius: 4px; padding: 4px 12px;
+  flex: none; font: inherit; font-size: 12px; color: var(--text); background: #1b2330;
+  cursor: pointer; border: 1px solid var(--line); border-radius: 4px; padding: 3px 12px;
 }
 .card button:hover { border-color: var(--accent); }
 .card button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.card .status { font-size: 12px; color: var(--muted); }
-.card .expect { font-size: 11px; color: #e0b36a; }
+.card .status { margin: 0; font-size: 12px; color: var(--muted); }
+.card .status:empty { display: none; }
+.card[data-state="pending"] { border-color: var(--accent); }
 .card[data-state="pending"] .status { color: var(--accent); }
 .card[data-state="running"] { border-color: var(--ok); }
 .card[data-state="running"] .status { color: var(--ok); }
 .card[data-state="rejected"] { border-color: var(--bad); }
 .card[data-state="rejected"] .status { color: var(--bad); }
+
+/* Narrow screens: one column, with the world pinned to the top while the
+   cards scroll beneath it. The stage's children join the layout directly so
+   the pinned view can stay put past the end of the stage. */
+@media (max-width: 1099px) {
+  .layout.with-tour { display: block; }
+  .layout.with-tour .stage { display: contents; }
+  .layout.with-tour .view {
+    position: sticky; top: 0; z-index: 2; background: var(--bg);
+    margin: 0 -16px; padding: 8px 16px;
+  }
+  .layout.with-tour canvas { width: min(100%, calc(42vh * 1.6)); margin: 0 auto; }
+  .layout.with-tour .stats {
+    grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin-top: 6px;
+  }
+  .layout.with-tour .stat { padding: 4px 6px; }
+  .layout.with-tour .stat b { font-size: 13px; }
+  .layout.with-tour .stat span { font-size: 9px; letter-spacing: 0; }
+  .layout.with-tour .behavior { margin-top: 4px; padding: 4px 8px; font-size: 12px; }
+  .layout.with-tour .behavior span:nth-of-type(2), .layout.with-tour #generation { display: none; }
+  .tour { position: static; max-height: none; overflow: visible; margin-top: 12px; padding: 0; }
+  .cards { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+}

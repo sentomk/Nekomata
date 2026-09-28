@@ -22,17 +22,19 @@
       background: var(--bg); color: var(--text);
       font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
-    main { max-width: 960px; margin: 0 auto; }
-    header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
-             flex-wrap: wrap; margin-bottom: 12px; }
+    .stage { max-width: 960px; margin: 0 auto; }
+    .page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+                 flex-wrap: wrap; margin-bottom: 12px; }
     h1 { margin: 0; font-size: 15px; font-weight: 600; color: var(--accent); }
     .hint { color: var(--muted); }
     kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--text); }
     canvas {
       display: block; width: 100%; height: auto; aspect-ratio: 960 / 600;
       background: #07090d; border: 1px solid var(--line); border-radius: 8px;
-      cursor: crosshair; touch-action: none;
+      cursor: crosshair; touch-action: none; transition: border-color .4s, box-shadow .4s;
     }
+    canvas.switched { border-color: var(--ok); box-shadow: 0 0 0 3px rgba(126, 224, 161, .25); }
+    canvas.refused { border-color: var(--bad); box-shadow: 0 0 0 3px rgba(255, 107, 107, .25); }
     .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
              gap: 8px; margin-top: 12px; }
     .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
@@ -54,23 +56,27 @@
   <link rel="stylesheet" href="pages.css">
 </head>
 <body>
-<main>
-  <header>
+<div class="layout">
+<main class="stage">
+  <header class="page-head">
     <h1>nekomata · flock — edit C++, keep the world</h1>
     <div class="hint">drag to draw walls · click to release a flock · <kbd>C</kbd> clears walls</div>
   </header>
-  <canvas id="world" width="960" height="600"></canvas>
-  <div class="stats">
-    <div class="stat"><span>world age</span><b id="age">0:00</b></div>
-    <div class="stat"><span>boids</span><b id="boids">0</b></div>
-    <div class="stat"><span>walls</span><b id="walls">0</b></div>
-    <div class="stat breaches" id="breach-card"><span>wall breaches</span><b id="breaches">0</b></div>
-    <div class="stat"><span>applied / rejected</span><b id="generations">0 / 0</b></div>
+  <div class="view">
+    <canvas id="world" width="960" height="600"></canvas>
+    <div class="stats">
+      <div class="stat"><span>world age</span><b id="age">0:00</b></div>
+      <div class="stat"><span>boids</span><b id="boids">0</b></div>
+      <div class="stat"><span>walls</span><b id="walls">0</b></div>
+      <div class="stat breaches" id="breach-card"><span>wall breaches</span><b id="breaches">0</b></div>
+      <div class="stat"><span>applied / rejected</span><b id="generations">0 / 0</b></div>
+    </div>
+    <div class="behavior"><span>running</span><strong id="behavior">…</strong>
+      <span>generation</span><strong id="generation">none</strong></div>
   </div>
-  <div class="behavior"><span>running</span><strong id="behavior">…</strong>
-    <span>generation</span><strong id="generation">none</strong></div>
   <div id="log"></div>
 </main>
+</div>
 <script>
   const canvas = document.getElementById('world');
   const ctx = canvas.getContext('2d');
@@ -133,7 +139,14 @@
     lastBreaches = s.breaches;
   };
 
+  let outline = 0;
   window.flock_log = (ok, text) => {
+    if (/^(applied|rejected) generation/.test(text)) {
+      canvas.classList.remove('switched', 'refused');
+      canvas.classList.add(ok ? 'switched' : 'refused');
+      clearTimeout(outline);
+      outline = setTimeout(() => canvas.classList.remove('switched', 'refused'), 900);
+    }
     const log = el('log');
     const line = document.createElement('div');
     line.className = ok ? 'ok' : 'bad';

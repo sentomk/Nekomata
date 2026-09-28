@@ -42,44 +42,46 @@
     }
   };
 
-  const panel = document.createElement('section');
+  const panel = document.createElement('aside');
   panel.className = 'tour';
   panel.innerHTML = `
-    <div class="tour-head">
-      <h2>Publish a generation</h2>
-      <p>This page is served as static files, so each generation below was compiled
-      ahead of time. Publishing one hands the running page a new manifest; the page
-      downloads the module, verifies it and switches at its next frame, without
-      touching the world. To hot-reload your own C++ edits, see
-      <a href="https://github.com/sentomk/Nekomata">Nekomata on GitHub</a>.</p>
-    </div>
+    <h2>Publish a generation</h2>
+    <p class="intro">Each card is a change to <code>flock.cpp</code>, compiled ahead of time
+    because this page is static. Publishing hands the running page its manifest; the page
+    verifies the module and switches at its next frame without touching the world.
+    To hot-reload your own edits, see
+    <a href="https://github.com/sentomk/Nekomata">Nekomata on GitHub</a>.</p>
     <div class="cards"></div>`;
   const list = panel.querySelector('.cards');
   generations.forEach((generation, index) => {
     const card = document.createElement('article');
     card.className = 'card';
-    card.dataset.expect = generation.expect;
     card.dataset.state = 'idle';
-    const expectation = generation.expect === 'applied'
-      ? ''
-      : `<span class="expect">expected: rejected (${generation.expect})</span>`;
     card.innerHTML = `
-      <header><span class="step">${index + 1}</span><h3></h3></header>
+      <header>
+        <span class="step">${index + 1}</span><h3></h3>
+        <button type="button">Publish</button>
+      </header>
       <p class="summary"></p>
       <pre><code></code></pre>
-      <footer>
-        <button type="button">Publish</button>
-        <span class="status"></span>
-      </footer>
-      ${expectation}`;
+      <p class="status"></p>`;
     card.querySelector('h3').textContent = generation.title;
-    card.querySelector('.summary').textContent = generation.summary;
+    const summary = card.querySelector('.summary');
+    summary.textContent = generation.summary;
+    if (generation.expect !== 'applied') {
+      const expectation = document.createElement('span');
+      expectation.className = 'expect';
+      expectation.textContent = ` Expected: rejected (${generation.expect}).`;
+      summary.append(expectation);
+    }
     card.querySelector('code').textContent = generation.snippet;
     card.querySelector('button').addEventListener('click', () => publish(generation));
     cards.set(generation.generation_id, card);
     list.append(card);
   });
-  document.querySelector('.behavior').after(panel);
+  const layout = document.querySelector('.layout');
+  layout.classList.add('with-tour');
+  layout.append(panel);
 
   // Reflect the page's own reload events on the cards.
   const log = window.flock_log;
