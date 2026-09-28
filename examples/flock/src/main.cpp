@@ -34,8 +34,6 @@ double pending_ms = 0.0;
 float previous_x[max_boids];
 float previous_y[max_boids];
 
-std::string last_generation = "none";
-
 EM_JS(void, render, (const float* boids, int count, int stride, const float* walls, int wall_count),
       {
         if (window.flock_render) {
@@ -43,29 +41,28 @@ EM_JS(void, render, (const float* boids, int count, int stride, const float* wal
         }
       });
 
-EM_JS(void, show_hud,
-      (unsigned tick, unsigned boids, unsigned walls, unsigned breaches, unsigned applied,
-       unsigned rejected, const char* behavior, const char* generation),
+EM_JS(void, show_hud, (unsigned tick, unsigned breaches, const char* behavior), {
+  if (window.flock_hud) {
+    window.flock_hud(tick, breaches, UTF8ToString(behavior));
+  }
+});
+
+// One reload transaction. `behavior` names the code running afterwards: the
+// new generation when applied, the kept one when rejected.
+EM_JS(void, report_event,
+      (bool applied, const char* generation, const char* behavior, const char* code,
+       const char* message),
       {
-        if (window.flock_hud) {
-          window.flock_hud({
-            tick : tick,
-            boids : boids,
-            walls : walls,
-            breaches : breaches,
+        if (window.flock_event) {
+          window.flock_event({
             applied : applied,
-            rejected : rejected,
+            generation : UTF8ToString(generation),
             behavior : UTF8ToString(behavior),
-            generation : UTF8ToString(generation)
+            code : UTF8ToString(code),
+            message : UTF8ToString(message)
           });
         }
       });
-
-EM_JS(void, log_event, (int ok, const char* text), {
-  if (window.flock_log) {
-    window.flock_log(!!ok, UTF8ToString(text));
-  }
-});
 
 std::uint32_t next_random() {
   std::uint32_t x = world.rng;
@@ -184,15 +181,8 @@ const char* code_name(neko::reload_error_code code) {
 bool frame(double now_ms, void*) {
   // Safe point: no flock code is running between frames.
   for (const auto& event : session->update().events) {
-    if (event.status == neko::update_status::applied) {
-      last_generation = event.generation_id;
-      log_event(1,
-                ("applied generation " + event.generation_id + " — " + flock::describe()).c_str());
-    } else {
-      log_event(0, ("rejected generation " + event.generation_id + " (" + code_name(event.code) +
-                    "): " + event.message + " — the previous generation keeps running")
-                       .c_str());
-    }
+    report_event(event.status == neko::update_status::applied, event.generation_id.c_str(),
+                 flock::describe(), code_name(event.code), event.message.c_str());
   }
 
   // Fixed 60 Hz simulation regardless of the display's refresh rate.
@@ -209,12 +199,7 @@ bool frame(double now_ms, void*) {
   render(&world.boids[0].x, static_cast<int>(world.boid_count),
          static_cast<int>(sizeof(boid) / sizeof(float)), &world.walls[0].x0,
          static_cast<int>(world.wall_count));
-  if (world.tick % 6 == 0) {
-    const auto observed = session->snapshot();
-    show_hud(world.tick, world.boid_count, world.wall_count, world.breaches,
-             static_cast<unsigned>(observed.applied), static_cast<unsigned>(observed.rejected),
-             flock::describe(), last_generation.c_str());
-  }
+  show_hud(world.tick, world.breaches, flock::describe());
   return true;
 }
 

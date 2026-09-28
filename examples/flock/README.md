@@ -35,7 +35,7 @@ changes. Set `PORT` to pick another port.
 flocks. The world age counts up from page load and never resets.
 
 **2. Watch the bug.** Some boids pass straight through walls, each one marked
-with a red ring, and the *wall breaches* counter climbs. The page counts breaches
+with a red ring, and the breach count under the canvas climbs. The page counts breaches
 itself by checking every boid's move against every wall. Behavior code doesn't
 report them.
 
@@ -117,8 +117,9 @@ first loop, add this right after the flocking force and before `limit_speed`:
 
 **6. Try something that cannot work.** Add a field to `struct boid` in
 `src/world.hpp` and save. The build publishes the generation, but its ABI
-identity no longer matches the page's. The log shows it *rejected
-(incompatible)*, and the flock keeps flying under the previous generation.
+identity no longer matches the page's. The line under the canvas reports it
+*rejected (incompatible)*, and the flock keeps flying under the previous
+generation.
 Revert the field and save again, and the page accepts the next generation.
 
 Two more things to try: a compile error in `flock.cpp` never reaches the page
@@ -136,13 +137,12 @@ This builds a version of the page for GitHub Pages or any other static host
 into `build/site`. A static host can't compile C++ or publish generations, so
 `scripts/generations.py` builds each generation of the tour ahead of time. It
 applies the same edits as above to a scratch copy of the sources and publishes
-each result through `flock_reload`. The site then shows one card per
-generation, beside the canvas so the switch is visible as it happens.
-Clicking a card's *Publish* button hands the running page that
-generation's manifest under a new sequence number, so generations can be
-published in any order. Nekomata still fetches the module, checks its ABI
-identity and SHA-256, and switches at the next frame. The last two cards must
-be rejected: one generation is built against a changed `boid` layout, and one
+each result through `flock_reload`. The site lists the generations beside
+the canvas, so each switch is visible as it happens. Choosing one hands the
+running page its manifest under a new sequence number, so generations can be
+chosen in any order. Nekomata still fetches the module, checks its ABI
+identity and SHA-256, and switches at the next frame. The last two must be
+rejected: one generation is built against a changed `boid` layout, and one
 manifest lists a SHA-256 that doesn't match its module's bytes.
 
 The live site is the repository's `gh-pages` branch, whose tree is exactly
@@ -161,7 +161,7 @@ directory's contents to `gh-pages`.
 | `src/main.cpp` | The page: world, input, breach referee, reload session, rendering bridge. |
 | `web/index.html` | Canvas renderer; it reads the boid array directly from wasm memory. |
 | `CMakeLists.txt` | The page, the `flock` reload group and its ABI identity. |
-| `web/pages.js`, `web/pages.css` | The static site's generation cards, added by `scripts/build_site.sh`. |
+| `web/pages.js`, `web/pages.css` | The static site's list of generations, added by `scripts/build_site.sh`. |
 | `scripts/dev.py` | Serves the page and runs `flock_reload` on every save. |
 | `scripts/generations.py` | Builds the tour's generations and assembles the static site. |
 

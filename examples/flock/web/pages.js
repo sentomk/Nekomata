@@ -1,17 +1,16 @@
 // Static-hosting flavor of the page. Every generation on the tour was compiled
-// ahead of time; publishing one here only decides which manifest the page's
+// ahead of time; choosing one here only decides which manifest the page's
 // poller sees next. Fetching the artifact, checking its SHA-256 and ABI
 // identity, and switching code at the frame boundary are Nekomata's own work.
 (async () => {
   const generations = await (await fetch('generations.json')).json();
-  const field = (manifest, name) => (manifest.match(new RegExp(`^${name} "([^"]*)"`, 'm')) || [])[1];
   for (const generation of generations) {
-    generation.generation_id = field(generation.manifest, 'generation_id');
+    generation.id = generation.manifest.match(/^generation_id "([^"]*)"/m)[1];
   }
 
   // The backend polls offers/latest through XMLHttpRequest. Answer with the
   // manifest published last, under a fresh sequence number so that any order
-  // of publishes supersedes the one before it.
+  // of choices supersedes the one before it.
   let sequence = 0;
   let latest = null;
   const retired = [];
@@ -23,7 +22,26 @@
     return open.call(this, method, url, ...rest);
   };
 
-  const cards = new Map();
+  const tour = document.createElement('aside');
+  tour.className = 'tour';
+  tour.innerHTML = `
+    <h2>Generations</h2>
+    <p class="intro">Changes to <code>flock.cpp</code>, compiled ahead of time.
+    Pick one and the running page switches to it at its next frame.</p>
+    <ol></ol>
+    <div class="detail"><p></p><pre><code></code></pre></div>
+    <p class="source"><a href="https://github.com/sentomk/Nekomata/tree/main/examples/flock">Source</a></p>`;
+  const list = tour.querySelector('ol');
+  const items = new Map();
+
+  const focus = (generation) => {
+    for (const [id, item] of items) {
+      item.classList.toggle('focused', id === generation.id);
+    }
+    tour.querySelector('.detail p').textContent = generation.summary;
+    tour.querySelector('.detail code').textContent = generation.snippet;
+  };
+
   const publish = (generation) => {
     sequence += 1;
     const text = generation.manifest.replace(/^sequence \d+$/m, `sequence ${sequence}`);
@@ -35,82 +53,48 @@
       URL.revokeObjectURL(retired.shift());
     }
     latest = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-    // A card still waiting was superseded by this manifest and will never be reported.
-    for (const other of cards.values()) {
-      if (other.dataset.state === 'pending') {
-        other.dataset.state = 'idle';
-        other.querySelector('.status').textContent = 'superseded before its switch';
+    // A choice still waiting is superseded by this one and will never be reported.
+    for (const item of items.values()) {
+      if (item.dataset.state === 'waiting') {
+        item.dataset.state = '';
       }
     }
-    const card = cards.get(generation.generation_id);
-    if (card) {
-      card.dataset.state = 'pending';
-      card.querySelector('.status').textContent = 'published — waiting for the next poll';
-    }
+    items.get(generation.id).dataset.state = 'waiting';
+    focus(generation);
   };
 
-  const panel = document.createElement('aside');
-  panel.className = 'tour';
-  panel.innerHTML = `
-    <h2>Publish a generation</h2>
-    <p class="intro">Each card is a change to <code>flock.cpp</code>, compiled ahead of time
-    because this page is static. Publishing hands the running page its manifest; the page
-    verifies the module and switches at its next frame without touching the world.
-    To hot-reload your own edits, see
-    <a href="https://github.com/sentomk/Nekomata">Nekomata on GitHub</a>.</p>
-    <div class="cards"></div>`;
-  const list = panel.querySelector('.cards');
-  generations.forEach((generation, index) => {
-    const card = document.createElement('article');
-    card.className = 'card';
-    card.dataset.state = 'idle';
-    card.innerHTML = `
-      <header>
-        <span class="step">${index + 1}</span><h3></h3>
-        <button type="button">Publish</button>
-      </header>
-      <p class="summary"></p>
-      <pre><code></code></pre>
-      <p class="status"></p>`;
-    card.querySelector('h3').textContent = generation.title;
-    const summary = card.querySelector('.summary');
-    summary.textContent = generation.summary;
-    if (generation.expect !== 'applied') {
-      const expectation = document.createElement('span');
-      expectation.className = 'expect';
-      expectation.textContent = ` Expected: rejected (${generation.expect}).`;
-      summary.append(expectation);
-    }
-    card.querySelector('code').textContent = generation.snippet;
-    card.querySelector('button').addEventListener('click', () => publish(generation));
-    cards.set(generation.generation_id, card);
-    list.append(card);
-  });
+  for (const generation of generations) {
+    const item = document.createElement('li');
+    item.innerHTML = '<button type="button"><span class="title"></span><span class="note"></span></button>';
+    item.querySelector('.title').textContent = generation.title;
+    item.querySelector('button').addEventListener('click', () => publish(generation));
+    items.set(generation.id, item);
+    list.append(item);
+  }
+
   const layout = document.querySelector('.layout');
   layout.classList.add('with-tour');
-  layout.append(panel);
+  layout.append(tour);
 
-  // Reflect the page's own reload events on the cards.
-  const log = window.flock_log;
-  window.flock_log = (ok, text) => {
-    log(ok, text);
-    const match = text.match(/^(applied|rejected) generation (\S+)(?: \((\w+)\))?/);
-    const card = match && cards.get(match[2]);
-    if (!card) {
+  // Mark each item with the page's own verdict on it.
+  const report = window.flock_event;
+  window.flock_event = (event) => {
+    report(event);
+    const item = items.get(event.generation);
+    if (!item) {
       return;
     }
-    if (match[1] === 'applied') {
-      for (const other of cards.values()) {
+    if (event.applied) {
+      for (const other of items.values()) {
         if (other.dataset.state === 'running') {
-          other.dataset.state = 'idle';
-          other.querySelector('.status').textContent = '';
+          other.dataset.state = '';
         }
       }
-      card.dataset.state = 'running';
-      card.querySelector('.status').textContent = 'running';
+      item.dataset.state = 'running';
+      item.querySelector('.note').textContent = '';
     } else {
-      card.dataset.state = 'rejected';
-      card.querySelector('.status').textContent = `rejected (${match[3]}) — previous code kept`;
+      item.dataset.state = 'rejected';
+      item.querySelector('.note').textContent = event.code;
     }
   };
 

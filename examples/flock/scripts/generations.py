@@ -112,7 +112,7 @@ GENERATIONS = [
     {
         "id": "tighter",
         "label": "v2 · tighter flocks",
-        "title": "Tune the constants",
+        "title": "Tune constants",
         "summary": "Wider view, stronger cohesion: bigger, tighter flocks.",
         "flock": TIGHTER,
         "snippet": "view_radius = 90.0f;      // was 48\n"
@@ -136,7 +136,7 @@ GENERATIONS = [
     {
         "id": "vortex",
         "label": "v4 · vortex around the pointer",
-        "title": "Add a behavior",
+        "title": "Add a vortex",
         "summary": "Boids near the mouse pointer circle it. Hover over the canvas.",
         "flock": VORTEX,
         "snippet": "if (world->pointer_inside) {\n"
@@ -149,7 +149,7 @@ GENERATIONS = [
     {
         "id": "layout",
         "label": "layout change",
-        "title": "Change the world layout",
+        "title": "Change the layout",
         "summary": "Built against a boid with an extra field, so its ABI identity no longer "
                    "matches the page. The page refuses it before downloading.",
         "world": LAYOUT,
@@ -161,7 +161,7 @@ GENERATIONS = [
 TAMPERED = {
     "id": "tampered",
     "label": "tampered artifact",
-    "title": "Tamper with the bytes",
+    "title": "Tamper with bytes",
     "summary": "The v2 module under a manifest whose SHA-256 is off by one digit. "
                "The page refuses it before instantiating.",
     "snippet": "artifact \"modules/…wasm\" \"…\"\n"
