@@ -1,0 +1,56 @@
+[
+  {
+    "id": "classic",
+    "label": "v1 \u00b7 classic flocking",
+    "title": "Classic flocking",
+    "summary": "The starting behavior. Fast boids slip through walls.",
+    "snippet": "// collide() only sees where a boid\n// ends its move, so a fast boid can\n// jump clean over a 6 px wall.",
+    "expect": "applied",
+    "manifest": "nekomata-wasm/1\ngroup_id \"flock\"\nsequence 1\ngeneration_id \"g-b15b1bcfeb072370\"\nabi_id \"flock-aecb6203b230164b\"\nartifact \"modules/1-g-b15b1bcfeb072370.wasm\" \"9472b71f700926dacc63e090cd6da148dbd9c011cd13742c2fa1b862605d3f6f\"\nentry \"step\"\nentry \"describe\"\n"
+  },
+  {
+    "id": "tighter",
+    "label": "v2 \u00b7 tighter flocks",
+    "title": "Tune the constants",
+    "summary": "Wider view, stronger cohesion: bigger, tighter flocks.",
+    "snippet": "view_radius = 90.0f;      // was 48\ncohesion_weight = 0.010f; // was 0.004",
+    "expect": "applied",
+    "manifest": "nekomata-wasm/1\ngroup_id \"flock\"\nsequence 2\ngeneration_id \"g-b1fd4a47e11b2d38\"\nabi_id \"flock-aecb6203b230164b\"\nartifact \"modules/2-g-b1fd4a47e11b2d38.wasm\" \"b71a97d4e1d5f611a36aec32e20f40d9982d4f25f9f46e84e0af7c3c62ebf513\"\nentry \"step\"\nentry \"describe\"\n"
+  },
+  {
+    "id": "fixed",
+    "label": "v3 \u00b7 swept wall collisions",
+    "title": "Fix the wall bug",
+    "summary": "Test the whole move against each wall, not just where it ends. The breach counter stops climbing.",
+    "snippet": "if (crossed(from_x, from_y, self, w)) {\n  self.x = from_x;\n  self.y = from_y;\n  bounce(self, w);\n}",
+    "expect": "applied",
+    "manifest": "nekomata-wasm/1\ngroup_id \"flock\"\nsequence 3\ngeneration_id \"g-c56ef17ab2a33c5f\"\nabi_id \"flock-aecb6203b230164b\"\nartifact \"modules/3-g-c56ef17ab2a33c5f.wasm\" \"b3ff4370093ebef19ce2c5c4b757b114cd817ea096745e204946762878ec1ed8\"\nentry \"step\"\nentry \"describe\"\n"
+  },
+  {
+    "id": "vortex",
+    "label": "v4 \u00b7 vortex around the pointer",
+    "title": "Add a behavior",
+    "summary": "Boids near the mouse pointer circle it. Hover over the canvas.",
+    "snippet": "if (world->pointer_inside) {\n  // steer along the tangent\n  self.vx += -dy / distance * 0.6f;\n  self.vy +=  dx / distance * 0.6f;\n}",
+    "expect": "applied",
+    "manifest": "nekomata-wasm/1\ngroup_id \"flock\"\nsequence 4\ngeneration_id \"g-80b6db71b260ddf0\"\nabi_id \"flock-aecb6203b230164b\"\nartifact \"modules/4-g-80b6db71b260ddf0.wasm\" \"c53f37563bffe1ffa9e8a7ed1fae9b14a9117a144ff75fb2cbf55d427474555c\"\nentry \"step\"\nentry \"describe\"\n"
+  },
+  {
+    "id": "layout",
+    "label": "layout change",
+    "title": "Change the world layout",
+    "summary": "Built against a boid with an extra field. Its ABI identity no longer matches the page, so it is rejected before download.",
+    "snippet": "struct boid {\n  ...\n  float flash;\n  float energy; // new field\n};",
+    "expect": "incompatible",
+    "manifest": "nekomata-wasm/1\ngroup_id \"flock\"\nsequence 5\ngeneration_id \"g-1f62dac572224eb5\"\nabi_id \"flock-d6d654ec3c917caf\"\nartifact \"modules/5-g-1f62dac572224eb5.wasm\" \"4e9c967f1262c59910ebe57c223c94a72ab013b910b75b3829c9852a7b1d9b75\"\nentry \"step\"\nentry \"describe\"\n"
+  },
+  {
+    "id": "tampered",
+    "label": "tampered artifact",
+    "title": "Tamper with the bytes",
+    "summary": "The v2 module under a manifest whose SHA-256 is off by one digit. Rejected before the module is instantiated.",
+    "snippet": "artifact \"modules/\u2026wasm\" \"\u2026\"\n// SHA-256 with one digit changed",
+    "expect": "integrity",
+    "manifest": "nekomata-wasm/1\ngroup_id \"flock\"\nsequence 2\ngeneration_id \"g-tampered\"\nabi_id \"flock-aecb6203b230164b\"\nartifact \"modules/2-g-b1fd4a47e11b2d38.wasm\" \"b71a97d4e1d5f611a36aec32e20f40d9982d4f25f9f46e84e0af7c3c62ebf510\"\nentry \"step\"\nentry \"describe\"\n"
+  }
+]

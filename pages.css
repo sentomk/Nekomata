@@ -1,0 +1,34 @@
+.tour { margin-top: 12px; }
+.tour-head h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--accent); }
+.tour-head p { margin: 0 0 10px; color: var(--muted); max-width: 72ch; }
+.tour-head a { color: var(--accent); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 8px; }
+.card {
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+}
+.card header { display: flex; align-items: baseline; justify-content: flex-start; gap: 8px; margin: 0; }
+.card h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.card .step {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none;
+  border: 1px solid var(--line); border-radius: 50%; font-size: 11px; color: var(--muted);
+}
+.card .summary { margin: 0; color: var(--muted); }
+.card pre {
+  margin: 0; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere;
+  background: #0b0f15; border: 1px solid var(--line); border-radius: 4px; font-size: 11px;
+}
+.card footer { margin-top: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.card button {
+  font: inherit; color: var(--text); background: #1b2330; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 4px; padding: 4px 12px;
+}
+.card button:hover { border-color: var(--accent); }
+.card button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card .status { font-size: 12px; color: var(--muted); }
+.card .expect { font-size: 11px; color: #e0b36a; }
+.card[data-state="pending"] .status { color: var(--accent); }
+.card[data-state="running"] { border-color: var(--ok); }
+.card[data-state="running"] .status { color: var(--ok); }
+.card[data-state="rejected"] { border-color: var(--bad); }
+.card[data-state="rejected"] .status { color: var(--bad); }
